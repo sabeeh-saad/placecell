@@ -60,20 +60,54 @@ for hit in recall.similar("fire extinguisher", k=3):
 Curator(store).run()  # expire what faded
 ```
 
-`my_captioner` is anything with a `caption(items) -> list[str]` method; a vision model
-adapter is the next piece on the roadmap.
+`my_captioner` is anything with a `caption(items) -> list[str]` method, for example
+`OpenAICompatibleCaptioner("gpt-4o-mini", api_key=...)` or any vision-language model behind
+an OpenAI-compatible server. Swap `InMemoryStore` for `LanceDBStore("~/.placecell", info)`
+to keep the memory on disk (`pip install placecell[lancedb]`).
+
+## Asking questions
+
+```python
+from placecell import Agent
+from placecell.providers import OpenAICompatibleChat
+
+agent = Agent(recall, OpenAICompatibleChat("gpt-4o-mini", api_key=...))
+answer = agent.ask("where did you last see a fire extinguisher?")
+print(answer.text, [m.memory.pose for m in answer.evidence])
+```
+
+The model gets three tools, similarity, time range and position radius, and must finish by
+citing the memory ids it used. `answer.grounded` is False when it answered in prose without
+citing anything, so a caller can refuse ungrounded answers.
+
+## ROS 2
+
+```bash
+pip install "placecell[video,lancedb]"
+export PLACECELL_API_KEY=...
+placecell-ros2 --ros-args -p image_topic:=/camera_front/color/image_raw -p robot_id:=mipa-01 \
+  -p embed_model:=text-embedding-3-small -p caption_model:=gpt-4o-mini -p chat_model:=gpt-4o-mini
+```
+
+The node subscribes to a `sensor_msgs/Image` (or `CompressedImage` with `compressed:=true`),
+looks up `map -> base_footprint` at each image stamp, writes keyframes, and ingests in a
+background thread. Publish a `std_msgs/String` question on `/placecell/ask` and read the JSON
+answer, with the cited memories and their map positions, on `/placecell/answer`. All settings
+are ROS parameters; the API key comes only from the environment.
 
 ## Layout
 
 ```
 src/placecell/
   memory.py        Pose, Evidence, Memory: the data model and its invariants
-  providers/       embedding contract, offline hashing embedder, OpenAI-compatible adapter
-  store/           store contract with push-down filters, in-memory reference backend
+  providers/       embedding, captioning and chat contracts; hashing embedder; OpenAI-compatible adapters
+  store/           store contract with push-down filters; in-memory reference backend; LanceDB backend
   retrieval.py     the three query tools and their ranking
   lifecycle.py     reinforcement, decay, retention curator, supersede, forget
   pipeline.py      segment -> caption -> embed -> persist, batched, idempotent
+  agent.py         the tool-calling reasoning loop that ends in a cited answer
   sources/         pose tracks from CSV, keyframes from video files
+  ros2/            message conversion (testable without ROS) and the rclpy node
 ```
 
 ## Design principles
@@ -94,13 +128,15 @@ src/placecell/
 
 ## Status
 
-Pre-alpha. The core library and its tests exist; captioning adapters, a persistent store
-backend, the reasoning agent and the ROS 2 wrapper are next. See `CHANGELOG.md`.
+Pre-alpha. The library, the LanceDB backend, the agent and the ROS 2 node exist and are
+tested; no release on PyPI yet. Next: a Gemini Embedding 2 adapter for clip mode, a queue-based
+distributed runner for the pipeline stages, and consolidation of repeated memories into
+summaries. See `CHANGELOG.md`.
 
 ## Development
 
 ```bash
-pip install -e ".[dev,video]"
+pip install -e ".[dev,video,lancedb]"
 ruff check . && ruff format --check . && mypy && pytest --cov
 ```
 

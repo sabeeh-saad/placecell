@@ -30,6 +30,9 @@ video = ["opencv-python-headless>=4.8"]
 lancedb = ["lancedb>=0.20", "pyarrow>=15"]
 dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.6", "mypy>=1.10", "pre-commit>=3"]
 
+[project.scripts]
+placecell-ros2 = "placecell.ros2.node:main"
+
 [project.urls]
 Homepage = "https://github.com/sabeeh-saad/placecell"
 Issues = "https://github.com/sabeeh-saad/placecell/issues"
@@ -58,8 +61,12 @@ warn_unreachable = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*"]
+module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy", "rclpy.*", "sensor_msgs.*", "std_msgs.*", "tf2_ros", "tf2_ros.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "placecell.ros2.node"
+disallow_subclassing_any = false  # rclpy.node.Node ships no stubs
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
