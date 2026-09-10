@@ -83,7 +83,8 @@ def embedded(
     camera: str = "front",
     **fields: Any,
 ) -> Memory:
-    m = Memory.create(robot, camera, t, Pose(x, y), frame(f"frames/{camera}_{round(t)}.jpg"), caption)
+    pose = fields.pop("pose", Pose(x, y))
+    m = Memory.create(robot, camera, t, pose, frame(f"frames/{camera}_{round(t)}.jpg"), caption)
     m = m.with_embedding(embedder.embed_text([caption])[0], embedder.model_name)
     if fields:
         from dataclasses import replace

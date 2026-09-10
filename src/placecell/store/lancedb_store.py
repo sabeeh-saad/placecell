@@ -73,6 +73,10 @@ class LanceDBStore:
                     pa.field("observations", pa.int64()),
                     pa.field("last_seen", pa.float64()),
                     pa.field("superseded", pa.bool_()),
+                    pa.field("misses", pa.int64()),
+                    pa.field("last_miss", pa.float64()),
+                    pa.field("role", pa.string()),
+                    pa.field("consolidated_into", pa.string()),
                     pa.field("schema_version", pa.int64()),
                 ]
             )
@@ -224,6 +228,10 @@ def _to_row(m: Memory) -> dict[str, Any]:
         "observations": m.observations,
         "last_seen": m.last_seen,
         "superseded": m.superseded,
+        "misses": m.misses,
+        "last_miss": m.last_miss,
+        "role": m.role,
+        "consolidated_into": m.consolidated_into,
         "schema_version": m.schema_version,
     }
 
@@ -248,5 +256,9 @@ def _from_row(r: dict[str, Any]) -> Memory:
         observations=int(r["observations"]),
         last_seen=r["last_seen"],
         superseded=bool(r["superseded"]),
+        misses=int(r["misses"]),
+        last_miss=r["last_miss"],
+        role=r["role"],
+        consolidated_into=r["consolidated_into"],
         schema_version=int(r["schema_version"]),
     )

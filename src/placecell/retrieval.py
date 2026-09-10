@@ -10,6 +10,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
+from placecell.corrections import CorrectionLog, Verdicts
 from placecell.errors import ModelMismatchError, ValidationError
 from placecell.memory import Memory, Pose
 from placecell.providers.base import EmbeddingProvider
@@ -41,6 +42,7 @@ class Recall:
         half_life_s: float = WEEK_S,
         clock: Callable[[], float] = time.time,
         oversample: int = 4,
+        corrections: CorrectionLog | None = None,
     ) -> None:
         if embedder.model_name != store.info.model:
             raise ModelMismatchError(
@@ -53,6 +55,7 @@ class Recall:
         self._half_life_s = half_life_s
         self._clock = clock
         self._oversample = oversample
+        self._corrections = corrections
 
     def similar(self, text: str, k: int = 10, where: Filter | None = None) -> list[RankedMemory]:
         """Memories whose content resembles the text, best first."""
@@ -63,7 +66,15 @@ class Recall:
         vector = self._embedder.embed_text([text])[0]
         now = self._clock()
         hits = self._store.search(vector, k * self._oversample, where)
-        ranked = [RankedMemory(h.memory, h.memory.effective_confidence(now, self._half_life_s), h.score) for h in hits]
+        weights = self._corrections.verdicts(h.memory.id for h in hits) if self._corrections else {}
+        ranked = [
+            RankedMemory(
+                h.memory,
+                h.memory.effective_confidence(now, self._half_life_s) * weights.get(h.memory.id, Verdicts()).weight,
+                h.score,
+            )
+            for h in hits
+        ]
         ranked.sort(key=lambda r: -r.score)
         return ranked[:k]
 

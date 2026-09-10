@@ -33,7 +33,7 @@ def test_data_survives_reopen_and_identity_is_enforced(tmp_path: Path, hashing: 
     with pytest.raises(ModelMismatchError):
         LanceDBStore(tmp_path, CollectionInfo("office", hashing.model_name, DIM + 1))
     with pytest.raises(ValidationError):
-        LanceDBStore(tmp_path, CollectionInfo("office", hashing.model_name, DIM, schema_version=99))
+        LanceDBStore(tmp_path, CollectionInfo("office", hashing.model_name, DIM, schema_version=1))
     with pytest.raises(ValidationError):
         LanceDBStore.open(tmp_path, "missing")
 

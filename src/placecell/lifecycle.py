@@ -14,6 +14,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from placecell.corrections import CorrectionLog
 from placecell.errors import ValidationError
 from placecell.memory import Evidence, Memory
 from placecell.store.base import EVERYTHING, Filter, VectorStore
@@ -96,8 +97,12 @@ class RetentionPolicy:
     max_age_s: float | None = None
     """Hard cap on the age of the first observation. None keeps reinforced memories forever."""
     drop_superseded_after_s: float = 24 * 3600.0
+    wrong_verdicts_to_supersede: int = 3
+    """A memory judged wrong this often, net of right verdicts, is superseded."""
 
     def __post_init__(self) -> None:
+        if self.wrong_verdicts_to_supersede < 1:
+            raise ValidationError("retention policy out of range")
         if self.half_life_s <= 0 or not (0 <= self.min_confidence <= 1) or self.protected_observations < 1:
             raise ValidationError("retention policy out of range")
         if (self.max_age_s is not None and self.max_age_s <= 0) or self.drop_superseded_after_s < 0:
@@ -110,6 +115,8 @@ class CuratorReport:
     expired: int = 0
     aged_out: int = 0
     superseded_dropped: int = 0
+    discredited: int = 0
+    """Superseded in this pass because operators judged answers based on them wrong."""
 
     @property
     def removed(self) -> int:
@@ -129,11 +136,13 @@ class Curator:
         policy: RetentionPolicy | None = None,
         remover: EvidenceRemover | None = None,
         clock: Callable[[], float] = time.time,
+        corrections: CorrectionLog | None = None,
     ) -> None:
         self._store = store
         self._policy = policy or RetentionPolicy()
         self._remover = remover
         self._clock = clock
+        self._corrections = corrections
 
     def run(self, scope: Filter = EVERYTHING, now: float | None = None) -> CuratorReport:
         now = self._clock() if now is None else now
@@ -142,8 +151,11 @@ class Curator:
         aged: list[Memory] = []
         dropped: list[Memory] = []
         scanned = 0
+        alive: list[Memory] = []
         for m in self._store.query(scope):
             scanned += 1
+            if not m.superseded:
+                alive.append(m)
             if m.superseded:
                 if now - m.last_seen >= p.drop_superseded_after_s:
                     dropped.append(m)
@@ -155,7 +167,22 @@ class Curator:
             ):
                 expired.append(m)
         self._remove(expired + aged + dropped)
-        return CuratorReport(scanned, len(expired), len(aged), len(dropped))
+        discredited = self._discredit([m for m in alive if m not in expired and m not in aged], now)
+        return CuratorReport(scanned, len(expired), len(aged), len(dropped), discredited)
+
+    def _discredit(self, alive: list[Memory], now: float) -> int:
+        if self._corrections is None or not alive:
+            return 0
+        verdicts = self._corrections.verdicts(m.id for m in alive)
+        doomed = [
+            replace(m, superseded=True, last_seen=max(m.last_seen, now))
+            for m in alive
+            if m.id in verdicts
+            and verdicts[m.id].wrong - verdicts[m.id].right >= self._policy.wrong_verdicts_to_supersede
+        ]
+        if doomed:
+            self._store.upsert(doomed)
+        return len(doomed)
 
     def supersede(self, memory_id: str, now: float | None = None) -> Memory | None:
         """Mark a memory as no longer true, keeping it for a grace period as a record."""

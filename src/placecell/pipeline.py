@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from placecell.errors import ModelMismatchError, ValidationError
 from placecell.lifecycle import Reinforcer
 from placecell.memory import Evidence, Memory, Pose, Vector
+from placecell.observer import Observer
 from placecell.providers.base import Captioner, EmbeddingProvider
 from placecell.store.base import VectorStore
 
@@ -78,6 +79,8 @@ class IngestReport:
     unsupported: int = 0
     """Observations no provider could embed: media the embedder rejects and no captioner to describe it."""
     unsupported_ids: tuple[str, ...] = field(default=())
+    contradicted: int = 0
+    """Memories superseded in this run because repeated visits no longer saw them."""
 
 
 class Ingester:
@@ -91,6 +94,7 @@ class Ingester:
         segmenter: Segmenter | None = None,
         reinforcer: Reinforcer | None = None,
         batch_size: int = 32,
+        observer: Observer | None = None,
     ) -> None:
         if embedder.model_name != store.info.model or embedder.dimension != store.info.dimension:
             raise ModelMismatchError(
@@ -104,22 +108,25 @@ class Ingester:
         self._segmenter = segmenter or Segmenter()
         self._reinforcer = reinforcer or Reinforcer(store)
         self._batch_size = batch_size
+        self._observer = observer
 
     def ingest(self, observations: Iterable[Observation]) -> IngestReport:
-        received = accepted = inserted = merged = 0
+        received = accepted = inserted = merged = contradicted = 0
         unsupported: list[str] = []
         batch: list[Observation] = []
 
         def flush() -> None:
-            nonlocal inserted, merged
+            nonlocal inserted, merged, contradicted
             if not batch:
                 return
             memories, rejected = self.embed(self.caption(batch))
             unsupported.extend(m.id for m in rejected)
             for m in memories:
-                _, was_merged = self.persist(m)
+                stored, was_merged = self.persist(m)
                 merged += was_merged
                 inserted += not was_merged
+                if self._observer is not None:
+                    contradicted += self._observer.observe(m, stored.id).superseded
             batch.clear()
 
         for obs in observations:
@@ -131,7 +138,7 @@ class Ingester:
             if len(batch) >= self._batch_size:
                 flush()
         flush()
-        return IngestReport(received, accepted, inserted, merged, len(unsupported), tuple(unsupported))
+        return IngestReport(received, accepted, inserted, merged, len(unsupported), tuple(unsupported), contradicted)
 
     # The stages. Each is usable on its own by a queue-based runner.
 

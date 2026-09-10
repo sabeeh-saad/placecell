@@ -11,13 +11,15 @@ from numpy.typing import ArrayLike, NDArray
 
 from placecell.errors import FrameMismatchError, ValidationError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 """Bumped whenever the stored shape of a memory changes. Stores record it per collection."""
 
 Vector = NDArray[np.float32]
 """One embedding: a 1-D float32 array."""
 Matrix = NDArray[np.float32]
 """A batch of embeddings: a 2-D float32 array, one row per input."""
+
+ROLES = frozenset({"episodic", "summary"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,11 +112,23 @@ class Memory:
     observations: int = 1
     last_seen: float = -1.0
     superseded: bool = False
+    misses: int = 0
+    """Separate visits on which the robot looked at this place and did not see the memory."""
+    last_miss: float = 0.0
+    """Time of the last such miss, 0 when there was none."""
+    role: str = "episodic"
+    """"episodic" for one sighting, "summary" for a consolidation of many."""
+    consolidated_into: str = ""
+    """Id of the summary memory this one has been folded into, empty when it stands alone."""
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         if self.last_seen < 0:
             object.__setattr__(self, "last_seen", self.timestamp)
+        if self.misses < 0 or self.last_miss < 0:
+            raise ValidationError("misses and last_miss must not be negative")
+        if self.role not in ROLES:
+            raise ValidationError(f"role must be one of {sorted(ROLES)}")
         if not (0.0 <= self.confidence <= 1.0):
             raise ValidationError("confidence must be within [0, 1]")
         if self.observations < 1:
