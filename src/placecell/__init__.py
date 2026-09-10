@@ -1,5 +1,7 @@
 """placecell: long-term visual memory for mobile robots."""
 
+from placecell.agent import TOOLS, Agent, Answer
+from placecell.chat import ChatMessage, ChatModel, ChatReply, ToolCall
 from placecell.lifecycle import Curator, CuratorReport, ReinforcementPolicy, Reinforcer, RetentionPolicy
 from placecell.memory import SCHEMA_VERSION, Evidence, EvidenceKind, Memory, Pose, memory_id
 from placecell.pipeline import Ingester, IngestReport, Observation, SegmentationPolicy, Segmenter
@@ -10,6 +12,12 @@ __version__ = "0.0.1"
 
 __all__ = [
     "SCHEMA_VERSION",
+    "TOOLS",
+    "Agent",
+    "Answer",
+    "ChatMessage",
+    "ChatModel",
+    "ChatReply",
     "CollectionInfo",
     "Curator",
     "CuratorReport",
@@ -30,6 +38,7 @@ __all__ = [
     "RetentionPolicy",
     "SegmentationPolicy",
     "Segmenter",
+    "ToolCall",
     "VectorStore",
     "__version__",
     "memory_id",
