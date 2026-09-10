@@ -19,7 +19,7 @@ import numpy as np
 
 from placecell.chat import ChatMessage, ChatModel
 from placecell.errors import ModelMismatchError, ProviderError, ValidationError
-from placecell.memory import Memory, Pose, memory_id
+from placecell.memory import Memory, Pose, Vector, memory_id
 from placecell.providers.base import EmbeddingProvider
 from placecell.store.base import Filter, VectorStore
 
@@ -147,7 +147,7 @@ def _cluster(members: Sequence[Memory], min_similarity: float) -> list[list[Memo
     """Greedy clustering by cosine to a running centre, strongest memories first."""
     ordered = sorted(members, key=lambda m: (-m.observations, m.timestamp))
     clusters: list[list[Memory]] = []
-    centres: list[np.ndarray] = []
+    centres: list[Vector] = []
     for m in ordered:
         v = m.embedding
         if v is None:  # pragma: no cover - stores refuse unembedded memories

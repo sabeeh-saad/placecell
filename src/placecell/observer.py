@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from placecell.errors import ValidationError
-from placecell.memory import Memory
+from placecell.memory import Memory, Vector
 from placecell.store.base import Filter, VectorStore
 
 
@@ -91,7 +91,7 @@ class Observer:
         return ObserverReport(len(in_view), confirmed, missed, superseded)
 
 
-def _cosine(a: np.ndarray, b: np.ndarray | None) -> float:
+def _cosine(a: Vector, b: Vector | None) -> float:
     if b is None:  # pragma: no cover - stores refuse unembedded memories
         return 0.0
     na, nb = float(np.linalg.norm(a)), float(np.linalg.norm(b))

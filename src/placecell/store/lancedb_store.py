@@ -114,13 +114,13 @@ class LanceDBStore:
         batch = list(dict.fromkeys(ids))
         for start in range(0, len(batch), _MAX_IN_LIST):
             expr = f"id IN ({', '.join(_quote(i) for i in batch[start : start + _MAX_IN_LIST])})"
-            removed += self._table.count_rows(expr)
+            removed += int(self._table.count_rows(expr))
             self._table.delete(expr)
         return removed
 
     def delete_where(self, where: Filter) -> int:
         expr = _sql(where) or "id IS NOT NULL"
-        removed = self._table.count_rows(expr)
+        removed = int(self._table.count_rows(expr))
         if removed:
             self._table.delete(expr)
         return removed
