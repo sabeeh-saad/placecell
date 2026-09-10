@@ -48,9 +48,9 @@ def test_consolidator_folds_a_cluster_into_a_summary(store: InMemoryStore, hashi
     assert store.get(chair[0].id).consolidated_into == ""  # type: ignore[union-attr]
     # idempotent: folded members are not folded again, small clusters stay
     assert consolidator.run() == consolidator.run().__class__(scanned=2, clusters=1)
-    # the summary answers similarity queries alongside its members
-    top = Recall(store, hashing, clock=lambda: 300.0).similar("printer on a table", k=3)
-    assert any(r.memory.role == "summary" for r in top)
+    # the summary is retrievable like any other memory
+    top = Recall(store, hashing, clock=lambda: 300.0).similar(near.caption, k=1)[0]
+    assert top.memory.role == "summary" and top.memory.id in {m.id for m in summaries}
 
 
 def test_consolidator_skips_captionless_clusters_and_validates(store: InMemoryStore, hashing: HashingEmbedder) -> None:
