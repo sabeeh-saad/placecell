@@ -17,9 +17,12 @@ from pathlib import Path
 from typing import Any
 
 from placecell.agent import Agent
+from placecell.consolidation import ChatSummarizer, Consolidator
+from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.errors import PlacecellError
 from placecell.lifecycle import Curator
 from placecell.memory import Pose
+from placecell.observer import Observer
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
 from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
 from placecell.retrieval import Recall
@@ -151,17 +154,22 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     "Set caption_model, or use an embedding model that accepts images."
                 )
             segmenter = Segmenter(SegmentationPolicy(p["min_interval_s"], p["min_travel_m"], p["min_turn_rad"]))
-            ingester = Ingester(embedder, store, captioner, segmenter, batch_size=p["batch_size"])
-            self._recall = Recall(store, embedder)
+            observer = Observer(store) if p["contradiction"] else None
+            ingester = Ingester(embedder, store, captioner, segmenter, batch_size=p["batch_size"], observer=observer)
+            self._corrections = JsonlCorrectionLog(Path(p["corrections_path"]).expanduser())
+            self._recall = Recall(store, embedder, corrections=self._corrections)
             self._agent: Agent | None = None
+            self._consolidator: Consolidator | None = None
             if p["chat_model"]:
                 from placecell.providers import OpenAICompatibleChat
 
                 chat = OpenAICompatibleChat(p["chat_model"], p["chat_base_url"], api_key)
                 self._agent = Agent(self._recall, chat, frame_id=p["map_frame"])
+                if p["consolidate_interval_s"] > 0:
+                    self._consolidator = Consolidator(store, embedder, ChatSummarizer(chat))
             self._lock = threading.Lock()
             self._worker = IngestWorker(ingester, self._lock, p["batch_size"], p["max_queue"], self.get_logger())
-            self._curator = Curator(store)
+            self._curator = Curator(store, corrections=self._corrections)
             writer = KeyframeWriter(Path(p["keyframe_dir"]).expanduser())
             self._builder = ObservationBuilder(p["robot_id"], p["camera_id"], writer)
             self._map_frame, self._base_frame, self._map_id = p["map_frame"], p["base_frame"], p["map_id"]
@@ -175,9 +183,12 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             else:
                 self.create_subscription(Image, p["image_topic"], self._on_image, qos_profile_sensor_data)
             self.create_subscription(String, "~/ask", self._on_ask, 10)
+            self.create_subscription(String, "~/correct", self._on_correct, 10)
             self._answers = self.create_publisher(String, "~/answer", 10)
             if p["curator_interval_s"] > 0:
                 self.create_timer(p["curator_interval_s"], self._curate)
+            if self._consolidator is not None:
+                self.create_timer(p["consolidate_interval_s"], self._consolidate)
             self._worker.start()
             where = f"lancedb {p['db_path']}" if p["db_path"] else "memory"
             self.get_logger().info(
@@ -212,6 +223,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "max_queue": 64,
                 "tf_timeout_s": 0.2,
                 "curator_interval_s": 3600.0,
+                "contradiction": True,
+                "corrections_path": "~/.placecell/corrections.jsonl",
+                "consolidate_interval_s": 0.0,
             }
             return {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
 
@@ -275,11 +289,38 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 payload = json.dumps({"question": question, "error": str(e)})
             self._answers.publish(String(data=payload))
 
+        def _on_correct(self, msg: Any) -> None:
+            """JSON: {"memory_id": ..., "verdict": "right"|"wrong", "question": ..., "note": ...}."""
+            try:
+                data = json.loads(msg.data)
+                correction = correction_now(
+                    str(data["memory_id"]),
+                    str(data["verdict"]),
+                    str(data.get("question", "")),
+                    str(data.get("note", "")),
+                )
+            except (ValueError, KeyError, TypeError, PlacecellError) as e:
+                self.get_logger().warning(f"ignored correction: {e}")
+                return
+            self._corrections.record(correction)
+
         def _curate(self) -> None:
             with self._lock:
                 report = self._curator.run()
-            if report.removed:
-                self.get_logger().info(f"curator removed {report.removed} memories")
+            if report.removed or report.discredited:
+                self.get_logger().info(f"curator removed {report.removed} memories, discredited {report.discredited}")
+
+        def _consolidate(self) -> None:
+            if self._consolidator is None:  # pragma: no cover - timer only exists with a consolidator
+                return
+            try:
+                with self._lock:
+                    report = self._consolidator.run()
+            except PlacecellError as e:
+                self.get_logger().error(f"consolidation failed: {e}")
+                return
+            if report.summaries:
+                self.get_logger().info(f"consolidated {report.folded} memories into {report.summaries} summaries")
 
         def destroy_node(self) -> bool:
             self._worker.stop()

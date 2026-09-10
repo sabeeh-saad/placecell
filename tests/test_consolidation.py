@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any
+
+import pytest
+
+from placecell import ChatMessage, ChatReply, InMemoryStore, Recall
+from placecell.consolidation import ChatSummarizer, ConsolidationPolicy, Consolidator, Summarizer
+from placecell.errors import ModelMismatchError, ProviderError, ValidationError
+from placecell.providers import HashingEmbedder
+from placecell.store.base import EVERYTHING
+from tests.conftest import DIM, embedded
+
+
+class JoinSummarizer:
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def summarize(self, captions: Sequence[str]) -> str:
+        self.calls.append(list(captions))
+        return f"summary of {len(captions)}: {captions[0]}"
+
+
+def test_consolidator_folds_a_cluster_into_a_summary(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+    printer = [
+        embedded(hashing, "a printer on a table", t=float(i), x=0.3 + 0.1 * i, y=0.2, observations=2) for i in range(5)
+    ]
+    chair = [embedded(hashing, "a grey chair", t=100.0 + i, x=0.5, y=0.5, camera="back") for i in range(2)]
+    far = [embedded(hashing, "a printer on a table", t=200.0 + i, x=9, y=9) for i in range(5)]
+    store.upsert(printer + chair + far)
+    summarizer = JoinSummarizer()
+    assert isinstance(summarizer, Summarizer)
+    consolidator = Consolidator(
+        store, hashing, summarizer, ConsolidationPolicy(cell_m=2.0, min_group=5, min_similarity=0.9)
+    )
+    report = consolidator.run()
+    assert (report.scanned, report.clusters, report.summaries, report.folded) == (12, 3, 2, 10)
+    summaries = [m for m in store.query(EVERYTHING) if m.role == "summary"]
+    assert len(summaries) == 2
+    near = next(m for m in summaries if m.pose.x < 5)
+    assert (
+        near.caption == "summary of 5: a printer on a table" and near.observations == 10 and near.camera_id == "summary"
+    )
+    assert near.pose.x == pytest.approx(0.5) and near.timestamp == 0.0 and near.last_seen == 4.0
+    assert near.evidence == printer[-1].evidence  # anchor: equal observations, latest sighting
+    assert all(store.get(m.id).consolidated_into == near.id for m in printer)  # type: ignore[union-attr]
+    assert store.get(chair[0].id).consolidated_into == ""  # type: ignore[union-attr]
+    # idempotent: folded members are not folded again, small clusters stay
+    assert consolidator.run() == consolidator.run().__class__(scanned=2, clusters=1)
+    # the summary answers similarity queries alongside its members
+    top = Recall(store, hashing, clock=lambda: 300.0).similar("printer on a table", k=3)
+    assert any(r.memory.role == "summary" for r in top)
+
+
+def test_consolidator_skips_captionless_clusters_and_validates(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+    rows = [embedded(hashing, "", t=float(i), x=0) for i in range(5)]
+    for i, m in enumerate(rows):  # captionless memories embedded from media in a real system
+        rows[i] = m.with_embedding(hashing.embed_text(["same picture"])[0], hashing.model_name)
+    store.upsert(rows)
+    report = Consolidator(store, hashing, JoinSummarizer(), ConsolidationPolicy(min_group=5)).run()
+    assert report.clusters == 1 and report.summaries == 0
+    with pytest.raises(ModelMismatchError):
+        Consolidator(store, HashingEmbedder(DIM * 2), JoinSummarizer())
+    with pytest.raises(ValidationError):
+        ConsolidationPolicy(min_group=1)
+
+
+def test_chat_summarizer() -> None:
+    class Chat:
+        def __init__(self, text: str | None) -> None:
+            self.text = text
+            self.messages: list[ChatMessage] = []
+
+        def complete(self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> ChatReply:
+            self.messages = list(messages)
+            assert tools == []
+            return ChatReply(self.text)
+
+    chat = Chat("  A printer\n on a table. ")
+    assert ChatSummarizer(chat).summarize(["printer", "printer on table"]) == "A printer on a table."
+    assert chat.messages[0].role == "system" and "- printer on table" in (chat.messages[1].content or "")
+    with pytest.raises(ProviderError):
+        ChatSummarizer(Chat("")).summarize(["x"])
+    with pytest.raises(ValidationError):
+        ChatSummarizer(chat).summarize([])
+    with pytest.raises(ValidationError):
+        ChatSummarizer(chat, prompt=" ")

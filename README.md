@@ -36,6 +36,24 @@ not have:
 Memories are built after mapping, not during it, because the map frame shifts while SLAM
 is still closing loops.
 
+## A memory that maintains itself
+
+- **Reinforcement.** Seeing the same thing at the same place again strengthens the existing
+  memory instead of adding one. A superseded memory revives if the object comes back.
+- **Contradiction.** When the robot looks at a place from the same spot and heading and no
+  longer sees what memory expects, that is a miss. Misses on separate visits add up, and after
+  enough of them the memory is superseded. One person blocking the view does not count.
+- **Corrections.** An operator can mark an answer right or wrong, on `/placecell/correct` in
+  ROS 2 or through `CorrectionLog` in the library. Wrong verdicts halve a memory's rank, and
+  repeated ones get it superseded by the curator. The log is append-only and mergeable.
+- **Decay and curation.** Confidence halves every week unless reinforced. Faded, aged-out and
+  superseded memories are removed with their keyframes.
+- **Consolidation.** Clusters of similar sightings in one map cell are summarised into one
+  sentence by a chat model and stored as a summary memory carrying the combined observation
+  count. Members stay, marked with the summary's id, for time questions and evidence.
+- **Re-embedding.** `reembed(source, target, embedder)` rebuilds a collection under a new
+  embedding model from the stored captions and keyframes, lifecycle fields intact.
+
 ## Quickstart, offline
 
 ```python
