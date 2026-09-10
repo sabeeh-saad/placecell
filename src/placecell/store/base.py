@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-import numpy as np
+from numpy.typing import ArrayLike
 
 from placecell.errors import ValidationError
 from placecell.memory import SCHEMA_VERSION, Memory, Pose
@@ -114,7 +114,7 @@ class VectorStore(Protocol):
         """Memories matching the filter, oldest first. No vector involved."""
         ...
 
-    def search(self, vector: np.ndarray, k: int, where: Filter | None = None) -> list[Hit]:
+    def search(self, vector: ArrayLike, k: int, where: Filter | None = None) -> list[Hit]:
         """The k most similar memories among those the filter keeps, best first."""
         ...
 

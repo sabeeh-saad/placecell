@@ -19,7 +19,7 @@ from typing import Any, Protocol
 import numpy as np
 
 from placecell.errors import ProviderError, RateLimitedError, UnsupportedMediaError, ValidationError
-from placecell.memory import Evidence
+from placecell.memory import Evidence, Matrix
 from placecell.providers.base import Capabilities, normalise_rows
 
 
@@ -128,16 +128,16 @@ class OpenAICompatibleEmbedder:
     def capabilities(self) -> Capabilities:
         return self._capabilities
 
-    def embed_text(self, texts: Sequence[str]) -> np.ndarray:
+    def embed_text(self, texts: Sequence[str]) -> Matrix:
         if not texts:
             return np.zeros((0, self.dimension), dtype=np.float32)
         rows = [self._request(texts[i : i + self._batch_size]) for i in range(0, len(texts), self._batch_size)]
         return normalise_rows(np.vstack(rows), len(texts), self.dimension)
 
-    def embed_media(self, items: Sequence[Evidence]) -> np.ndarray:
+    def embed_media(self, items: Sequence[Evidence]) -> Matrix:
         raise UnsupportedMediaError(f"{self._model} via the embeddings endpoint takes text only")
 
-    def _request(self, batch: Sequence[str]) -> np.ndarray:
+    def _request(self, batch: Sequence[str]) -> Matrix:
         payload = {"model": self._model, "input": list(batch)}
         for attempt in range(self._retry.attempts):
             status, headers, body = self._transport.post_json(self._url, self._headers, payload, self._timeout_s)
@@ -153,7 +153,7 @@ class OpenAICompatibleEmbedder:
             raise ProviderError(f"{self._url}: HTTP {status}: {_message(body)}")
         raise ProviderError("unreachable")  # pragma: no cover
 
-    def _parse(self, body: Any, expected: int) -> np.ndarray:
+    def _parse(self, body: Any, expected: int) -> Matrix:
         try:
             data = sorted(body["data"], key=lambda d: d["index"])
             matrix = np.asarray([d["embedding"] for d in data], dtype=np.float32)

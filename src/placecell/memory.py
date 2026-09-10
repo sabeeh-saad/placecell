@@ -7,11 +7,17 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from placecell.errors import FrameMismatchError, ValidationError
 
 SCHEMA_VERSION = 1
 """Bumped whenever the stored shape of a memory changes. Stores record it per collection."""
+
+Vector = NDArray[np.float32]
+"""One embedding: a 1-D float32 array."""
+Matrix = NDArray[np.float32]
+"""A batch of embeddings: a 2-D float32 array, one row per input."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +103,7 @@ class Memory:
     pose: Pose
     evidence: Evidence | None = None
     caption: str = ""
-    embedding: np.ndarray | None = field(default=None, compare=False, repr=False)
+    embedding: Vector | None = field(default=None, compare=False, repr=False)
     model: str = ""
     """Name of the embedding model that produced `embedding`. Empty while unembedded."""
     confidence: float = 1.0
@@ -141,7 +147,7 @@ class Memory:
             caption=caption,
         )
 
-    def with_embedding(self, vector: np.ndarray, model: str) -> Memory:
+    def with_embedding(self, vector: ArrayLike, model: str) -> Memory:
         if not model:
             raise ValidationError("model name must not be empty")
         return replace(self, embedding=as_vector(vector), model=model)
@@ -154,7 +160,7 @@ class Memory:
         return float(self.confidence * 0.5 ** (age / half_life_s))
 
 
-def as_vector(vector: np.ndarray) -> np.ndarray:
+def as_vector(vector: ArrayLike) -> Vector:
     """Validate and normalise a single embedding to a finite 1-D float32 array."""
     arr = np.asarray(vector, dtype=np.float32)
     if arr.ndim != 1 or arr.size == 0:

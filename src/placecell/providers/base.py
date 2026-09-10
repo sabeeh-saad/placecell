@@ -13,9 +13,10 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from placecell.errors import ValidationError
-from placecell.memory import Evidence, EvidenceKind
+from placecell.memory import Evidence, EvidenceKind, Matrix
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,9 +50,9 @@ class EmbeddingProvider(Protocol):
     @property
     def capabilities(self) -> Capabilities: ...
 
-    def embed_text(self, texts: Sequence[str]) -> np.ndarray: ...
+    def embed_text(self, texts: Sequence[str]) -> Matrix: ...
 
-    def embed_media(self, items: Sequence[Evidence]) -> np.ndarray: ...
+    def embed_media(self, items: Sequence[Evidence]) -> Matrix: ...
 
 
 @runtime_checkable
@@ -61,7 +62,7 @@ class Captioner(Protocol):
     def caption(self, items: Sequence[Evidence]) -> list[str]: ...
 
 
-def normalise_rows(vectors: np.ndarray, expected_rows: int, dimension: int) -> np.ndarray:
+def normalise_rows(vectors: ArrayLike, expected_rows: int, dimension: int) -> Matrix:
     """Coerce a backend's output into the contract shape and scale rows to unit length.
 
     All-zero rows are left as zeros rather than becoming NaN, so an empty input still

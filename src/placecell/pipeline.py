@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from placecell.errors import ModelMismatchError, ValidationError
 from placecell.lifecycle import Reinforcer
-from placecell.memory import Evidence, Memory, Pose
+from placecell.memory import Evidence, Memory, Pose, Vector
 from placecell.providers.base import Captioner, EmbeddingProvider
 from placecell.store.base import VectorStore
 
@@ -158,17 +158,14 @@ class Ingester:
         media_rows = [i for i, m in enumerate(memories) if m.evidence is not None and caps.supports(m.evidence)]
         text_rows = [i for i, m in enumerate(memories) if i not in set(media_rows) and m.caption and caps.text]
         rejected = [m for i, m in enumerate(memories) if i not in set(media_rows) | set(text_rows)]
-        vectors: dict[int, object] = {}
+        vectors: dict[int, Vector] = {}
         if media_rows:
             matrix = self._embedder.embed_media([memories[i].evidence for i in media_rows])  # type: ignore[misc]
             vectors.update(zip(media_rows, matrix, strict=True))
         if text_rows:
             matrix = self._embedder.embed_text([memories[i].caption for i in text_rows])
             vectors.update(zip(text_rows, matrix, strict=True))
-        embedded = [
-            memories[i].with_embedding(vectors[i], self._embedder.model_name)  # type: ignore[arg-type]
-            for i in sorted(vectors)
-        ]
+        embedded = [memories[i].with_embedding(vectors[i], self._embedder.model_name) for i in sorted(vectors)]
         return embedded, rejected
 
     def persist(self, memory: Memory) -> tuple[Memory, bool]:

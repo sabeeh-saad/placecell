@@ -10,9 +10,10 @@ import threading
 from collections.abc import Iterable
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from placecell.errors import ModelMismatchError, ValidationError
-from placecell.memory import Memory
+from placecell.memory import Matrix, Memory, Vector
 from placecell.store.base import CollectionInfo, Filter, Hit
 
 
@@ -21,7 +22,7 @@ class InMemoryStore:
         self._info = info
         self._rows: dict[str, Memory] = {}
         self._lock = threading.RLock()
-        self._matrix: np.ndarray | None = None
+        self._matrix: Matrix | None = None
         self._ids: list[str] = []
 
     @property
@@ -63,7 +64,7 @@ class InMemoryStore:
         rows.sort(key=lambda m: (m.timestamp, m.id))
         return rows[:limit] if limit is not None else rows
 
-    def search(self, vector: np.ndarray, k: int, where: Filter | None = None) -> list[Hit]:
+    def search(self, vector: ArrayLike, k: int, where: Filter | None = None) -> list[Hit]:
         if k < 1:
             raise ValidationError("k must be at least 1")
         query = np.asarray(vector, dtype=np.float32)
@@ -106,7 +107,7 @@ class InMemoryStore:
                 f"memory {memory.id} has dimension {memory.embedding.shape[0]}, collection has {self._info.dimension}"
             )
 
-    def _index(self) -> tuple[np.ndarray, list[str]]:
+    def _index(self) -> tuple[Matrix, list[str]]:
         """Row matrix with unit-length rows, rebuilt lazily after writes."""
         if self._matrix is None:
             self._ids = list(self._rows)
@@ -120,7 +121,7 @@ class InMemoryStore:
         return self._matrix, self._ids
 
 
-def _vector_of(memory: Memory) -> np.ndarray:
+def _vector_of(memory: Memory) -> Vector:
     if memory.embedding is None:  # pragma: no cover - upsert refuses unembedded memories
         raise ValidationError(f"memory {memory.id} has no embedding")
     return memory.embedding
