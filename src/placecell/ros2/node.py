@@ -285,15 +285,20 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._worker.stop()
             return bool(super().destroy_node())
 
-    rclpy.init(args=args)
+    import signal
+
+    from rclpy.signals import SignalHandlerOptions
+
+    # Own the signals: rclpy's handler tears the context down from inside the signal handler,
+    # which races with the executor's wait set. A flag lets the loop finish its iteration instead.
+    stop = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stop.set())
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = PlacecellNode()
     try:
-        # spin_once under an ok() check: a SIGTERM shuts the context down from the signal
-        # handler, and rclpy.spin() would raise from inside the wait set instead of returning
-        while rclpy.ok():
+        while not stop.is_set() and rclpy.ok():
             rclpy.spin_once(node, timeout_sec=0.2)
-    except KeyboardInterrupt:
-        pass
     finally:
         node.destroy_node()
         rclpy.try_shutdown()
