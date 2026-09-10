@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 
-from placecell import CollectionInfo, Evidence, EvidenceKind, InMemoryStore, Memory, Pose
+from placecell import CollectionInfo, Evidence, EvidenceKind, InMemoryStore, Memory, Pose, VectorStore
 from placecell.providers import Capabilities, HashingEmbedder, normalise_rows
 
 DIM = 64
@@ -96,9 +97,26 @@ def hashing() -> HashingEmbedder:
     return HashingEmbedder(DIM)
 
 
-@pytest.fixture
-def store(hashing: HashingEmbedder) -> InMemoryStore:
-    return InMemoryStore(CollectionInfo("test", hashing.model_name, DIM))
+def _backends() -> list[str]:
+    try:
+        import lancedb  # noqa: F401
+    except ImportError:  # pragma: no cover
+        return ["memory"]
+    return ["memory", "lancedb"]
+
+
+@pytest.fixture(params=_backends())
+def store(request: pytest.FixtureRequest, hashing: HashingEmbedder, tmp_path: Path) -> Iterator[VectorStore]:
+    """A fresh collection on each backend, so every store test doubles as a contract test."""
+    info = CollectionInfo("test", hashing.model_name, DIM)
+    if request.param == "memory":
+        s: VectorStore = InMemoryStore(info)
+    else:
+        from placecell.store.lancedb_store import LanceDBStore
+
+        s = LanceDBStore(tmp_path / "db", info)
+    yield s
+    s.close()
 
 
 @pytest.fixture

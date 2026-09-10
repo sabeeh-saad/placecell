@@ -9,6 +9,8 @@ from placecell.providers import HashingEmbedder
 from placecell.store.base import EVERYTHING
 from tests.conftest import DIM, embedded
 
+# Every test below runs against each backend through the `store` fixture in conftest.
+
 
 def test_store_fulfils_protocol_and_validates_collection() -> None:
     assert isinstance(InMemoryStore(CollectionInfo("c", "m", 3)), VectorStore)
@@ -18,7 +20,7 @@ def test_store_fulfils_protocol_and_validates_collection() -> None:
         CollectionInfo("c", "m", 0)
 
 
-def test_upsert_get_delete_and_binding(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+def test_upsert_get_delete_and_binding(store: VectorStore, hashing: HashingEmbedder) -> None:
     a = embedded(hashing, "a chair", t=1.0)
     assert store.upsert([a]) == 1 and store.get(a.id) == a and store.count() == 1
     newer = embedded(hashing, "a chair", t=1.0, confidence=0.5)
@@ -34,7 +36,7 @@ def test_upsert_get_delete_and_binding(store: InMemoryStore, hashing: HashingEmb
         store.upsert([embedded(hashing, "x", embedding=None, model="")])
 
 
-def test_filter_semantics(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+def test_filter_semantics(store: VectorStore, hashing: HashingEmbedder) -> None:
     rows = [
         embedded(hashing, "a", t=10, x=0, y=0, robot="r1", camera="front"),
         embedded(hashing, "b", t=20, x=5, y=0, robot="r1", camera="back"),
@@ -64,7 +66,7 @@ def test_filter_semantics(store: InMemoryStore, hashing: HashingEmbedder) -> Non
         store.query(limit=-1)
 
 
-def test_search_ranks_by_cosine_and_respects_filters(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+def test_search_ranks_by_cosine_and_respects_filters(store: VectorStore, hashing: HashingEmbedder) -> None:
     store.upsert(
         [
             embedded(hashing, "red fire extinguisher on the wall", t=1, x=0, y=0),
@@ -88,8 +90,13 @@ def test_search_ranks_by_cosine_and_respects_filters(store: InMemoryStore, hashi
         store.search(np.ones(3), 1)
 
 
-def test_search_on_empty_store_and_close(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+def test_search_on_empty_store(store: VectorStore, hashing: HashingEmbedder) -> None:
     assert store.search(hashing.embed_text(["x"])[0], 3) == []
+    assert store.query() == [] and store.count(EVERYTHING) == 0
+
+
+def test_in_memory_close_drops_everything(hashing: HashingEmbedder) -> None:
+    store = InMemoryStore(CollectionInfo("c", hashing.model_name, DIM))
     store.upsert([embedded(hashing, "a")])
     store.close()
     assert store.count(EVERYTHING) == 0
