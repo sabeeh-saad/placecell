@@ -38,7 +38,8 @@ class EmbeddingProvider(Protocol):
     """Contract every embedding backend fulfils.
 
     Both embed methods return an array of shape (len(inputs), dimension), dtype float32,
-    with every row scaled to unit length, in input order.
+    with every row scaled to unit length, in input order. embed_text encodes stored content;
+    asymmetric retrieval models may additionally implement QueryEmbeddingProvider.
     """
 
     @property
@@ -60,6 +61,13 @@ class Captioner(Protocol):
     """Describes media in words, one caption per item, in input order."""
 
     def caption(self, items: Sequence[Evidence]) -> list[str]: ...
+
+
+@runtime_checkable
+class QueryEmbeddingProvider(Protocol):
+    """Optional query encoder for models that distinguish documents from search queries."""
+
+    def embed_queries(self, texts: Sequence[str]) -> Matrix: ...
 
 
 def normalise_rows(vectors: ArrayLike, expected_rows: int, dimension: int) -> Matrix:

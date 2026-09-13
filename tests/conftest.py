@@ -87,7 +87,7 @@ def embedded(
     fields.setdefault("confidence", 1.0)
     fields.setdefault("localization_checked", True)
     m = Memory.create(robot, camera, t, pose, frame(f"frames/{camera}_{round(t)}.jpg"), caption)
-    m = m.with_embedding(embedder.embed_text([caption])[0], embedder.model_name)
+    m = m.with_embedding(embedder.embed_text([caption])[0], embedder.model_name, kind="caption")
     if fields:
         from dataclasses import replace
 

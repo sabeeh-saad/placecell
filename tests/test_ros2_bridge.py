@@ -199,6 +199,9 @@ def test_answer_payload_and_factories(hashing: HashingEmbedder, tmp_path: Path) 
         "observed_at": [5.0],
         "caption": "a door",
         "confidence": 0.5,
+        "similarity": 0.9,
+        "image_similarity": None,
+        "caption_similarity": None,
     }
     offline = build_embedder("https://x/v1", "", None, 0)
     assert isinstance(offline, HashingEmbedder)

@@ -133,7 +133,7 @@ class Consolidator:
             and current is not None
             and current.embedding is not None
             and memory.embedding is not None
-            and np.array_equal(current.embedding, memory.embedding)
+            and current.same_embeddings(memory)
         )
 
     def _summarise(self, cluster: Sequence[Memory], captions: Sequence[str]) -> Memory:
@@ -155,6 +155,7 @@ class Consolidator:
             evidence=anchor.evidence,
             caption=text,
             embedding=vector,
+            embedding_kind="caption",
             model=self._embedder.model_name,
             confidence=1.0,
             observations=sum(m.observations for m in cluster),

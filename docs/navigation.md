@@ -23,6 +23,10 @@ memories, new scenes create memories, and changed retained images schedule refin
 Arriving at a navigation goal does not itself increase memory confidence or prove an
 object is still there.
 
+The optional [multimodal embedding adapter](multimodal.md) searches both images and captions.
+It uses the same verified destination path. Changing embedding models requires a new
+collection and evaluation of similarity thresholds on your recordings.
+
 ## Robot prerequisites
 
 Run the robot's existing Nav2 stack and localization against a known map. Supply the

@@ -165,6 +165,8 @@ class Reinforcer:
             localization_checked=repeat.localization_checked if retain else existing.localization_checked,
             caption=repeat.caption if retain else existing.caption,
             embedding=repeat.embedding if retain else existing.embedding,
+            embedding_kind=repeat.embedding_kind if retain else existing.embedding_kind,
+            caption_embedding=repeat.caption_embedding if retain else existing.caption_embedding,
             model=repeat.model if retain else existing.model,
             schema_version=repeat.schema_version if retain else existing.schema_version,
             superseded=False,

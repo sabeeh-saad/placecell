@@ -16,8 +16,9 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from placecell.errors import ModelMismatchError, ProviderError, UnsupportedMediaError, ValidationError
-from placecell.memory import Memory
-from placecell.providers.base import Captioner, EmbeddingProvider, normalise_rows
+from placecell.memory import Memory, same_vector
+from placecell.providers.base import Captioner, EmbeddingProvider
+from placecell.providers.embedding import embed_memories
 from placecell.store.base import VectorStore
 from placecell.store.refinements import evidence_key
 
@@ -112,13 +113,11 @@ class MemoryRefiner:
                         or current != memory
                         or current is None
                         or current.embedding is None
-                        or not np.array_equal(current.embedding, memory.embedding)
+                        or not current.same_embeddings(memory)
                     ):
                         deferred += 1
                         continue
-                    if candidate.caption == memory.caption and np.allclose(
-                        candidate.embedding, memory.embedding, rtol=1e-6, atol=1e-7
-                    ):
+                    if candidate.caption == memory.caption and candidate.same_embeddings(memory):
                         changed = False
                     else:
                         self._store.upsert([candidate])
@@ -140,17 +139,15 @@ class MemoryRefiner:
         caption = " ".join(captions[0].split())
         if not caption or len(caption) > self._policy.max_caption_chars:
             raise ProviderError("refinement caption is empty or exceeds the configured limit")
-        caps = self._embedder.capabilities
-        if caps.supports(memory.evidence):
-            vectors = self._embedder.embed_media([memory.evidence])
-        elif caps.text:
-            vectors = self._embedder.embed_text([caption])
-        else:
+        embedded, _ = embed_memories([replace(memory, caption=caption)], self._embedder)
+        if not embedded:
             raise UnsupportedMediaError("refinement embedder cannot embed this evidence or its caption")
-        vector = normalise_rows(vectors, 1, self._store.info.dimension)[0]
-        if not np.any(vector):
+        candidate = embedded[0]
+        if not np.any(candidate.embedding) or (
+            candidate.caption_embedding is not None and not np.any(candidate.caption_embedding)
+        ):
             raise ProviderError("refinement embedding contains no signal")
-        return replace(memory, caption=caption, embedding=vector)
+        return candidate
 
     def rollback(self, memory_id: str) -> bool:
         """Undo the latest refinement if its caption, vector and source evidence are still current."""
@@ -166,9 +163,21 @@ class MemoryRefiner:
                 or memory.caption != revision.after_caption
                 or evidence_key(memory.evidence) != revision.evidence_key
                 or not np.array_equal(memory.embedding, revision.after_vector)
+                or memory.embedding_kind != revision.after_kind
+                or not same_vector(memory.caption_embedding, revision.after_caption_vector)
             ):
                 return False
-            self._store.upsert([replace(memory, caption=revision.before_caption, embedding=revision.before_vector)])
+            self._store.upsert(
+                [
+                    replace(
+                        memory,
+                        caption=revision.before_caption,
+                        embedding=revision.before_vector,
+                        embedding_kind=revision.before_kind,
+                        caption_embedding=revision.before_caption_vector,
+                    )
+                ]
+            )
             journal.mark_rolled_back(revision.id)
             journal.cancel(memory_id)
             return True

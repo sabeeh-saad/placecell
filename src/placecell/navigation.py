@@ -13,8 +13,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-import numpy as np
-
 from placecell.errors import ValidationError
 from placecell.memory import Memory, Pose
 from placecell.pipeline import Observation
@@ -244,7 +242,7 @@ class DestinationResolver:
             and current.localization_checked
             and current.embedding is not None
             and before.embedding is not None
-            and np.array_equal(current.embedding, before.embedding)
+            and current.same_embeddings(before)
             and 0 <= self._clock() - current.last_seen <= self._policy.max_age_s
             and self._recall.confidence(current) >= self._policy.min_confidence
         )

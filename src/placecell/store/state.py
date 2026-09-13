@@ -24,7 +24,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from placecell.errors import ModelMismatchError, ValidationError
-from placecell.memory import Evidence, EvidenceKind, Memory, Sighting
+from placecell.memory import Evidence, EvidenceKind, Memory, SearchChannel, Sighting
 from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row, to_row
 from placecell.store.jobs import WorkJournal
@@ -66,6 +66,13 @@ class StateStore:
             CREATE TABLE IF NOT EXISTS dirty_vectors (id TEXT PRIMARY KEY, generation INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS cleanup (uri TEXT PRIMARY KEY, payload TEXT NOT NULL);
         """)
+
+        columns = {r[1] for r in self._conn.execute("PRAGMA table_info(memories)")}
+        with self.transaction():
+            if "caption_vector" not in columns:
+                self._conn.execute("ALTER TABLE memories ADD COLUMN caption_vector BLOB")
+            if "embedding_kind" not in columns:
+                self._conn.execute("ALTER TABLE memories ADD COLUMN embedding_kind TEXT NOT NULL DEFAULT 'legacy'")
 
         self.jobs = WorkJournal(self._conn, self.transaction)
         self.refinements = RefinementJournal(self._conn, self.transaction)
@@ -110,7 +117,7 @@ class StateStore:
                 if previous and previous["consolidated_into"]:
                     old = json.loads(previous["payload"])
                     if any(old[k] != getattr(memory, k) for k in ("caption", "last_seen", "superseded")) or (
-                        memory.embedding is not None and previous["vector"] != memory.embedding.tobytes()
+                        not self._read(previous).same_embeddings(memory)
                     ):
                         self._invalidate_summary(
                             previous["consolidated_into"], memory.superseded_at or memory.last_seen
@@ -128,10 +135,13 @@ class StateStore:
     def _save(self, memory: Memory, previous: sqlite3.Row | None) -> None:
         row = to_row(memory)
         row.pop("vector")
+        row.pop("caption_vector")
         row.pop("sighting_ids")
         row.pop("sighting_times")
         assert memory.embedding is not None
         vector = memory.embedding.tobytes()
+        caption = memory.vector_for("caption")
+        caption_vector = caption.tobytes() if caption is not None else None
         columns = (
             "id",
             "robot_id",
@@ -150,13 +160,23 @@ class StateStore:
         values = [row[c] for c in columns]
         values[-1] = str(values[-1]).removeprefix("file://")
         self._conn.execute(
-            "INSERT INTO memories VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
-            + ",".join(f"{c}=excluded.{c}" for c in (*columns[1:], "payload", "vector")),
-            [*values, json.dumps(row, separators=(",", ":")), vector],
+            "INSERT INTO memories ("
+            + ",".join((*columns, "payload", "vector", "caption_vector", "embedding_kind"))
+            + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+            + ",".join(
+                f"{c}=excluded.{c}" for c in (*columns[1:], "payload", "vector", "caption_vector", "embedding_kind")
+            ),
+            [*values, json.dumps(row, separators=(",", ":")), vector, caption_vector, memory.embedding_kind],
         )
         self.append_sightings(memory.id, memory.sightings)
         projection = ("robot_id", "camera_id", "x", "y", "frame_id", "map_id", "role", "superseded")
-        if previous is None or previous["vector"] != vector or any(previous[c] != row[c] for c in projection):
+        if (
+            previous is None
+            or previous["vector"] != vector
+            or previous["caption_vector"] != caption_vector
+            or previous["embedding_kind"] != memory.embedding_kind
+            or any(previous[c] != row[c] for c in projection)
+        ):
             self._conn.execute(
                 "INSERT INTO dirty_vectors VALUES (?,1) ON CONFLICT(id) DO UPDATE SET generation=generation+1",
                 (memory.id,),
@@ -200,6 +220,10 @@ class StateStore:
     def _read(self, row: sqlite3.Row) -> Memory:
         payload = json.loads(row["payload"])
         payload["vector"] = np.frombuffer(row["vector"], dtype=np.float32)
+        payload["caption_vector"] = (
+            np.frombuffer(row["caption_vector"], dtype=np.float32) if row["caption_vector"] is not None else None
+        )
+        payload["embedding_kind"] = row["embedding_kind"]
         sightings = self._conn.execute(
             "SELECT observation_id,timestamp FROM sightings WHERE memory_id=? "
             "ORDER BY timestamp DESC, observation_id DESC LIMIT ?",
@@ -345,7 +369,11 @@ class StateStore:
             after = batch[-1].id
             yield batch
 
-    def search(self, vector: ArrayLike, k: int, where: Filter | None = None) -> list[Hit]:
+    def search(
+        self, vector: ArrayLike, k: int, where: Filter | None = None, *, channel: SearchChannel = "primary"
+    ) -> list[Hit]:
+        if channel not in {"primary", "image", "caption"}:
+            raise ValidationError("search channel must be primary, image or caption")
         query = np.asarray(vector, dtype=np.float32)
         if k < 1 or query.shape != (self.info.dimension,) or not np.all(np.isfinite(query)):
             raise ValidationError("invalid search size or query vector")
@@ -354,9 +382,15 @@ class StateStore:
             return []
         query = query / norm
         expr, params = self._predicate(where or Filter())
+        column = "caption_vector" if channel == "caption" else "vector"
+        expr += f" AND m.{column} IS NOT NULL"
+        if channel == "image":
+            expr += " AND m.embedding_kind='image'"
         best: list[tuple[float, str]] = []
         with self._lock:
-            cursor = self._conn.execute("SELECT m.id,m.vector FROM memories m WHERE " + expr + " ORDER BY m.id", params)
+            cursor = self._conn.execute(
+                f"SELECT m.id,m.{column} FROM memories m WHERE " + expr + " ORDER BY m.id", params
+            )
             while rows := cursor.fetchmany(256):
                 matrix = np.stack([np.frombuffer(row[1], dtype=np.float32) for row in rows])
                 norms = np.linalg.norm(matrix, axis=1)

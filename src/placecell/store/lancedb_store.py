@@ -18,7 +18,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from placecell.errors import ModelMismatchError, PlacecellError, ValidationError
-from placecell.memory import SCHEMA_VERSION
+from placecell.memory import SCHEMA_VERSION, SearchChannel
 from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row as _from_row
 from placecell.store.codec import to_row as _to_row
@@ -48,7 +48,7 @@ class LanceDBStore(StateStore):
                     f"not {info.model!r}/{info.dimension}"
                 )
             self._table = self._db.open_table(info.name)
-            if stored.schema_version in (2, 3, 4) and info.schema_version == SCHEMA_VERSION:
+            if stored.schema_version in (2, 3, 4, 5) and info.schema_version == SCHEMA_VERSION:
                 if stored.schema_version == 2:
                     self._upgrade_sightings()
                 else:
@@ -66,6 +66,8 @@ class LanceDBStore(StateStore):
                     "anchor_x": "x",
                     "anchor_y": "y",
                     "anchor_yaw": "yaw",
+                    "embedding_kind": "'legacy'",
+                    "caption_vector": "vector",
                 }.items()
                 if k not in self._table.schema.names
             }
@@ -89,6 +91,8 @@ class LanceDBStore(StateStore):
                     pa.field("evidence_duration", pa.float64()),
                     pa.field("caption", pa.string()),
                     pa.field("vector", pa.list_(pa.float32(), info.dimension)),
+                    pa.field("caption_vector", pa.list_(pa.float32(), info.dimension)),
+                    pa.field("embedding_kind", pa.string()),
                     pa.field("model", pa.string()),
                     pa.field("confidence", pa.float64()),
                     pa.field("observations", pa.int64()),
@@ -179,7 +183,11 @@ class LanceDBStore(StateStore):
                         "DELETE FROM dirty_vectors WHERE id=? AND generation=?", ((p[0], p[1]) for p in pending)
                     )
 
-    def search(self, vector: ArrayLike, k: int, where: Filter | None = None) -> list[Hit]:
+    def search(
+        self, vector: ArrayLike, k: int, where: Filter | None = None, *, channel: SearchChannel = "primary"
+    ) -> list[Hit]:
+        if channel not in {"primary", "image", "caption"}:
+            raise ValidationError("search channel must be primary, image or caption")
         scope = where or Filter()
         # A writer must see its uncommitted updates, and history filters belong to the state store.
         # Exact scans are paged and spatial filters are indexed before vectors are loaded.
@@ -190,7 +198,7 @@ class LanceDBStore(StateStore):
                 or scope.time_to is not None
                 or scope.observation_id is not None
             ):
-                return super().search(vector, k, scope)
+                return super().search(vector, k, scope, channel=channel)
         with self._projection_lock:
             query = np.asarray(vector, dtype=np.float32)
             if k < 1 or query.shape != (self.info.dimension,) or not np.all(np.isfinite(query)):
@@ -200,14 +208,19 @@ class LanceDBStore(StateStore):
             self._sync_index()
             from lancedb.query import LanceVectorQueryBuilder
 
-            builder = self._table.search(query.tolist(), query_type="vector")
+            column = "caption_vector" if channel == "caption" else "vector"
+            builder = self._table.search(query.tolist(), query_type="vector", vector_column_name=column)
             if not isinstance(builder, LanceVectorQueryBuilder):  # pragma: no cover
                 raise PlacecellError("unexpected vector query builder")
             builder = builder.distance_type("cosine")
             # These fields change without rewriting vector rows, so use the authoritative scan.
             if scope.evidence_uri is not None or scope.unconsolidated:
-                return super().search(vector, k, scope)
+                return super().search(vector, k, scope, channel=channel)
             expr = _sql(scope)
+            if channel == "image":
+                expr = f"({expr or 'true'}) AND embedding_kind = 'image'"
+            elif channel == "caption":
+                expr = f"({expr or 'true'}) AND embedding_kind <> 'legacy' AND caption_vector IS NOT NULL"
             if expr:
                 builder = builder.where(expr, prefilter=True)
             return [
@@ -223,15 +236,17 @@ class LanceDBStore(StateStore):
         """
         with self._projection_lock:
             self._sync_index()
-            if self._table.count_rows() >= vector_index_min_rows and not any(
-                "vector" in index.columns for index in self._table.list_indices()
-            ):
-                from lancedb.index import IvfFlat
+            for column in ("vector", "caption_vector"):
+                count = self._table.count_rows(f"{column} IS NOT NULL")
+                if count >= vector_index_min_rows and not any(
+                    column in index.columns for index in self._table.list_indices()
+                ):
+                    from lancedb.index import IvfFlat
 
-                self._table.create_index(
-                    "vector",
-                    config=IvfFlat(distance_type="cosine", num_partitions=max(1, self._table.count_rows() // 4096)),
-                )
+                    self._table.create_index(
+                        column,
+                        config=IvfFlat(distance_type="cosine", num_partitions=max(1, count // 4096)),
+                    )
             self._table.optimize()
 
     def rebuild_index(self) -> None:

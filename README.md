@@ -72,6 +72,13 @@ is still closing loops.
 
 ## Improving stored memories
 
+Image and caption retrieval is available through `GeminiEmbedder` (hosted) or the optional
+local `ClipEmbedder`. With a captioner,
+ingestion keeps separate image and caption vectors and searches both by default, including
+objects visible in a frame but omitted from its caption. See the [multimodal guide](docs/multimodal.md)
+for installation, ROS parameters, re-embedding recordings, and the `placecell-evaluate`
+comparison command. Real recording accuracy still needs measurement.
+
 The feedback loop is observation → refinement → consolidation → retrieval → feedback.
 For example, a memory first described as "a cabinet" can be rechecked against a later,
 clearer frame and described as "a red fire equipment cabinet". The description and its
@@ -99,7 +106,7 @@ undone = refiner.rollback(memory_id)
 
 Use a captioner that examines the source image carefully; it receives the evidence alone,
 without previous captions, summaries or correction notes. Text embeddings are rebuilt from
-the new caption; a provider with media support embeds the image, matching ingestion. This
+the new caption; a provider with media support also embeds the image, matching ingestion. This
 is evidence-driven maintenance, not model training, and a different caption is not proof of
 better accuracy. Evaluate the descriptions against actual robot scenes. Operator verdicts
 remain in force until later operator feedback changes their effect.
@@ -193,7 +200,7 @@ Time queries match actual sighting timestamps, not the interval between the firs
 visit. Results expose matching times through `RankedMemory.observed_at`; agent tool results
 and ROS answers include `observed_at` and `last_seen`. Nearby agent queries honor `map_id`.
 
-Existing schema 2, 3 and 4 collections are upgraded to schema 5 when opened. The upgrade retains
+Existing schema 2, 3, 4 and 5 collections are upgraded to schema 6 when opened. The upgrade retains
 stored rows, captions, evidence and lifecycle counts. It can preserve the recorded first
 and last times, but cannot reconstruct intermediate sightings or observation ids that the
 older schema discarded. Replay detection for merged observations is complete for sightings
@@ -203,6 +210,10 @@ Schema 5 keeps the retained image, capture pose, timestamp, caption and embeddin
 Nearby views merge only for the same robot and camera with compatible headings, within a
 fixed place anchor. Legacy image–pose pairings and localization quality cannot be recovered;
 those memories need a new checked observation before navigation can use them.
+
+Schema 6 adds vector modality and independent caption vectors. Older vectors remain
+searchable through the primary channel; re-embed saved frames and captions to populate
+both channels. The upgrade does not infer vector modality from stored image references.
 
 New memories start with an evidence weight of 0.5. Repeat frames from the same visit do not
 increase it; a revisit after a gap of at least ten minutes can increase it toward a ceiling
@@ -262,8 +273,8 @@ recordings. See `CHANGELOG.md`.
 Use a persistent `db_path` for restart recovery. Each collection now has a
 `<collection>.state.sqlite3` file containing authoritative memory metadata, observation
 history, ingestion jobs and cleanup intents. LanceDB supplies a derived vector index.
-Schema 2, 3 and 4 collections import into schema 5 in bounded batches when opened. The
-original sighting history is retained during import; older clients reject schema 5.
+Schema 2–5 collections import into schema 6 in bounded batches when opened. The
+original sighting history is retained during import; older clients reject schema 6.
 Stop writers and back up the entire database directory and keyframe directory together
 before an upgrade. Do not remove the state file when rebuilding a vector index.
 

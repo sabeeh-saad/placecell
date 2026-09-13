@@ -50,12 +50,52 @@ from placecell.store import CollectionInfo, VectorStore
 from placecell.verification import VisionVerifier
 
 
-def build_embedder(base_url: str, model: str, api_key: str | None, dimension: int) -> EmbeddingProvider:
+def build_embedder(
+    base_url: str,
+    model: str,
+    api_key: str | None,
+    dimension: int,
+    *,
+    backend: str = "auto",
+    device: str = "cpu",
+    revision: str = "",
+    local_files_only: bool = False,
+    batch_size: int = 16,
+    cache_folder: str = "",
+) -> EmbeddingProvider:
+    if backend == "gemini":
+        from placecell.providers.gemini import DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, GeminiEmbedder
+
+        return GeminiEmbedder(
+            model or DEFAULT_GEMINI_MODEL,
+            api_key=api_key,
+            dimension=dimension or 768,
+            base_url=base_url or GEMINI_BASE_URL,
+            batch_size=batch_size,
+        )
+    if backend == "clip":
+        from placecell.providers.clip import DEFAULT_CLIP_MODEL, ClipEmbedder
+
+        embedder = ClipEmbedder(
+            model or DEFAULT_CLIP_MODEL,
+            device=device,
+            revision=revision or None,
+            local_files_only=local_files_only,
+            batch_size=batch_size,
+            cache_folder=cache_folder or None,
+        )
+        if dimension and dimension != embedder.dimension:
+            raise ValidationError("embed_dimension does not match the CLIP checkpoint")
+        return embedder
+    if backend != "auto":
+        raise ValidationError("embed_backend must be auto, gemini or clip")
     if not model:
         return HashingEmbedder()
     from placecell.providers import OpenAICompatibleEmbedder
 
-    return OpenAICompatibleEmbedder(model, base_url, api_key, dimension=dimension or None)
+    return OpenAICompatibleEmbedder(
+        model, base_url or "https://api.openai.com/v1", api_key, dimension=dimension or None
+    )
 
 
 def build_store(db_path: str, collection: str, embedder: EmbeddingProvider) -> VectorStore:
@@ -86,6 +126,9 @@ def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[
                     "observed_at": list(r.observed_at or r.memory.sighting_times),
                     "caption": r.memory.caption,
                     "confidence": r.confidence,
+                    "similarity": r.similarity,
+                    "image_similarity": r.image_similarity,
+                    "caption_similarity": r.caption_similarity,
                 }
                 for r in evidence
             ],
@@ -264,7 +307,23 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             if p["navigation_enabled"] and (not p["map_id"].strip() or not p["localization_required"]):
                 raise ValidationError("Navigation requires a versioned map_id and localization_required:=true.")
             api_key = os.environ.get(p["api_key_env"]) or None
-            embedder = build_embedder(p["embed_base_url"], p["embed_model"], api_key, p["embed_dimension"])
+            embed_api_key = api_key
+            if p["embed_api_key_env"]:
+                embed_api_key = os.environ.get(p["embed_api_key_env"])
+            elif p["embed_backend"] == "gemini":
+                embed_api_key = os.environ.get("GEMINI_API_KEY") or api_key
+            embedder = build_embedder(
+                p["embed_base_url"],
+                p["embed_model"],
+                embed_api_key,
+                p["embed_dimension"],
+                backend=p["embed_backend"],
+                device=p["embed_device"],
+                revision=p["embed_revision"],
+                local_files_only=p["embed_local_files_only"],
+                batch_size=p["embed_batch_size"],
+                cache_folder=p["embed_cache_folder"],
+            )
             store = build_store(p["db_path"], p["collection"], embedder)
             captioner: Captioner | None = None
             if p["caption_model"]:
@@ -440,8 +499,15 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "db_path": "~/.placecell/db",
                 "collection": "default",
                 "keyframe_dir": "~/.placecell/keyframes",
-                "embed_base_url": "https://api.openai.com/v1",
+                "embed_base_url": "",
+                "embed_api_key_env": "",
                 "embed_model": "",
+                "embed_backend": "auto",
+                "embed_device": "cpu",
+                "embed_revision": "",
+                "embed_local_files_only": False,
+                "embed_batch_size": 16,
+                "embed_cache_folder": "",
                 "embed_dimension": 0,
                 "caption_base_url": "https://api.openai.com/v1",
                 "caption_model": "",

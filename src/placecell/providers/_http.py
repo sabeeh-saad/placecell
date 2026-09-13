@@ -1,4 +1,4 @@
-"""HTTP plumbing shared by the OpenAI-compatible adapters: transport, retries, error mapping.
+"""HTTP plumbing shared by provider adapters: transport, retries, error mapping.
 
 The transport is injectable so tests never open a socket. Retries cover rate limits and
 server errors with exponential backoff, honouring `Retry-After` when the server sends one.

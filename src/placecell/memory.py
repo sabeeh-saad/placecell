@@ -5,13 +5,14 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field, replace
 from enum import Enum
+from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from placecell.errors import FrameMismatchError, ValidationError
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 """Bumped whenever the stored shape of a memory changes. Stores record it per collection."""
 
 Vector = NDArray[np.float32]
@@ -20,6 +21,13 @@ Matrix = NDArray[np.float32]
 """A batch of embeddings: a 2-D float32 array, one row per input."""
 
 ROLES = frozenset({"episodic", "summary"})
+SearchChannel = Literal["primary", "image", "caption"]
+
+
+def same_vector(left: Vector | None, right: Vector | None) -> bool:
+    if left is None or right is None:
+        return left is right
+    return bool(np.array_equal(left, right))
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +156,10 @@ class Memory:
     """Fixed place anchor so successive nearby merges cannot walk across the map."""
     anchor_yaw: float | None = None
     """Fixed view direction so small successive turns cannot merge opposite views."""
+    embedding_kind: str = "legacy"
+    """Primary vector source: caption, image, video, or unknown for legacy rows."""
+    caption_embedding: Vector | None = field(default=None, compare=False, repr=False)
+    """Separate caption vector when the primary vector represents media, in the same model space."""
 
     def __post_init__(self) -> None:
         if self.anchor_position is None:
@@ -190,6 +202,15 @@ class Memory:
             raise ValidationError("embedding and model are set together or not at all")
         if self.embedding is not None:
             object.__setattr__(self, "embedding", as_vector(self.embedding))
+        if self.embedding_kind not in {"legacy", "caption", "image", "video"}:
+            raise ValidationError("invalid embedding_kind")
+        if self.caption_embedding is not None:
+            vector = as_vector(self.caption_embedding)
+            if self.embedding is None or vector.shape != self.embedding.shape or not self.caption:
+                raise ValidationError("caption_embedding requires a caption and a matching primary dimension")
+            if self.embedding_kind not in {"image", "video"}:
+                raise ValidationError("separate caption_embedding requires a media primary vector")
+            object.__setattr__(self, "caption_embedding", vector)
 
     @classmethod
     def create(
@@ -213,10 +234,26 @@ class Memory:
             view_timestamp=timestamp if evidence is not None else None,
         )
 
-    def with_embedding(self, vector: ArrayLike, model: str) -> Memory:
+    def with_embedding(self, vector: ArrayLike, model: str, *, kind: str = "legacy") -> Memory:
         if not model:
             raise ValidationError("model name must not be empty")
-        return replace(self, embedding=as_vector(vector), model=model)
+        return replace(self, embedding=as_vector(vector), model=model, embedding_kind=kind, caption_embedding=None)
+
+    def vector_for(self, channel: SearchChannel) -> Vector | None:
+        if channel == "primary":
+            return self.embedding
+        if channel == "image":
+            return self.embedding if self.embedding_kind == "image" else None
+        if channel == "caption":
+            return self.embedding if self.embedding_kind == "caption" else self.caption_embedding
+        raise ValidationError("search channel must be primary, image or caption")
+
+    def same_embeddings(self, other: Memory) -> bool:
+        return (
+            self.embedding_kind == other.embedding_kind
+            and same_vector(self.embedding, other.embedding)
+            and same_vector(self.caption_embedding, other.caption_embedding)
+        )
 
     def effective_confidence(self, now: float, half_life_s: float) -> float:
         """Confidence after exponential decay since the memory was last reinforced."""

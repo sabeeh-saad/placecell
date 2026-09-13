@@ -41,6 +41,10 @@ class MemoryRevision:
     before_vector: Vector = field(repr=False, compare=False)
     after_vector: Vector = field(repr=False, compare=False)
     rolled_back: bool = False
+    before_kind: str = "legacy"
+    after_kind: str = "legacy"
+    before_caption_vector: Vector | None = field(default=None, repr=False, compare=False)
+    after_caption_vector: Vector | None = field(default=None, repr=False, compare=False)
 
 
 class RefinementJournal:
@@ -64,6 +68,16 @@ class RefinementJournal:
             );
             CREATE INDEX IF NOT EXISTS revision_memory ON memory_revisions(memory_id, id DESC);
         """)
+        columns = {r[1] for r in self._conn.execute("PRAGMA table_info(memory_revisions)")}
+        with self._transaction():
+            for name, definition in (
+                ("before_kind", "TEXT NOT NULL DEFAULT 'legacy'"),
+                ("after_kind", "TEXT NOT NULL DEFAULT 'legacy'"),
+                ("before_caption_vector", "BLOB"),
+                ("after_caption_vector", "BLOB"),
+            ):
+                if name not in columns:
+                    self._conn.execute(f"ALTER TABLE memory_revisions ADD COLUMN {name} {definition}")
 
     def request(self, memory_id: str, reason: str = "explicit recheck") -> bool:
         """Coalesce requests for a live episodic memory; a new request resets failed attempts."""
@@ -150,7 +164,8 @@ class RefinementJournal:
         with self._transaction():
             self._conn.execute(
                 "INSERT INTO memory_revisions(memory_id,timestamp,reason,producer,evidence_key,"
-                "before_caption,after_caption,before_vector,after_vector) VALUES (?,?,?,?,?,?,?,?,?)",
+                "before_caption,after_caption,before_vector,after_vector,before_kind,after_kind,"
+                "before_caption_vector,after_caption_vector) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     before.id,
                     now,
@@ -161,6 +176,10 @@ class RefinementJournal:
                     after.caption,
                     before.embedding.tobytes(),
                     after.embedding.tobytes(),
+                    before.embedding_kind,
+                    after.embedding_kind,
+                    before.caption_embedding.tobytes() if before.caption_embedding is not None else None,
+                    after.caption_embedding.tobytes() if after.caption_embedding is not None else None,
                 ),
             )
             self._conn.execute(
@@ -189,6 +208,14 @@ class RefinementJournal:
                     np.frombuffer(r["before_vector"], dtype=np.float32),
                     np.frombuffer(r["after_vector"], dtype=np.float32),
                     bool(r["rolled_back"]),
+                    r["before_kind"],
+                    r["after_kind"],
+                    np.frombuffer(r["before_caption_vector"], dtype=np.float32)
+                    if r["before_caption_vector"] is not None
+                    else None,
+                    np.frombuffer(r["after_caption_vector"], dtype=np.float32)
+                    if r["after_caption_vector"] is not None
+                    else None,
                 )
                 for r in rows
             ]

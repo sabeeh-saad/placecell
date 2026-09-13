@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a native Gemini multimodal adapter with query/document formatting, bounded batches and retries; keep local CLIP as an optional adapter.
+- Expose embedding backend selection and separate API-key configuration in ROS.
+- Store independent image and caption embeddings in schema 6; retrieve candidates from both channels and expose their scores.
+- Preserve both channels through reinforcement, refinement rollback, migration and index recovery; upgrade old collections without guessing vector modality.
+- Add a labeled-recording evaluator comparing caption-only, image-only and combined retrieval, with per-query results and ranking metrics.
+
 - Keep retained images, capture poses, captions and embeddings together; separate incompatible camera views and prevent place drift during repeated merges.
 - Schema 5 records image capture time and localization provenance. Legacy views need a new observation before navigation can use them.
 - Start memory weights conservatively and require separated visits for bounded confidence increases.

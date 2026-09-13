@@ -11,6 +11,7 @@ from placecell.memory import Evidence, EvidenceKind, Memory, Pose, Sighting
 
 def to_row(m: Memory) -> dict[str, Any]:
     e = m.evidence
+    caption_vector = m.vector_for("caption")
     return {
         "id": m.id,
         "robot_id": m.robot_id,
@@ -27,6 +28,8 @@ def to_row(m: Memory) -> dict[str, Any]:
         "evidence_duration": e.duration_s if e else 0.0,
         "caption": m.caption,
         "vector": m.embedding.tolist() if m.embedding is not None else None,
+        "embedding_kind": m.embedding_kind,
+        "caption_vector": caption_vector.tolist() if caption_vector is not None else None,
         "model": m.model,
         "confidence": m.confidence,
         "observations": m.observations,
@@ -70,6 +73,12 @@ def from_row(r: dict[str, Any]) -> Memory:
         evidence=evidence,
         caption=r["caption"],
         embedding=np.asarray(r["vector"], dtype=np.float32),
+        embedding_kind=r.get("embedding_kind", "legacy"),
+        caption_embedding=(
+            np.asarray(r["caption_vector"], dtype=np.float32)
+            if r.get("embedding_kind") in {"image", "video"} and r.get("caption_vector") is not None
+            else None
+        ),
         model=r["model"],
         confidence=r["confidence"],
         observations=int(r["observations"]),

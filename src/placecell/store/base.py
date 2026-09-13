@@ -17,7 +17,7 @@ from typing import Literal, Protocol, runtime_checkable
 from numpy.typing import ArrayLike
 
 from placecell.errors import ValidationError
-from placecell.memory import SCHEMA_VERSION, Evidence, Memory, Pose, Sighting
+from placecell.memory import SCHEMA_VERSION, Evidence, Memory, Pose, SearchChannel, Sighting
 from placecell.store.jobs import WorkJournal
 from placecell.store.refinements import RefinementJournal
 
@@ -183,7 +183,9 @@ class VectorStore(Protocol):
 
     def drain_cleanup(self, remover: Callable[[Evidence], None], limit: int = 256) -> int: ...
 
-    def search(self, vector: ArrayLike, k: int, where: Filter | None = None) -> list[Hit]:
+    def search(
+        self, vector: ArrayLike, k: int, where: Filter | None = None, *, channel: SearchChannel = "primary"
+    ) -> list[Hit]:
         """The k most similar memories among those the filter keeps, best first."""
         ...
 

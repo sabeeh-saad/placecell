@@ -80,7 +80,10 @@ def test_ingester_prefers_media_embeddings_and_falls_back_to_captions(
     report = ingester.ingest([obs(0), clip])
     assert report.inserted == 2 and report.unsupported == 0
     assert len(media_embedder.media_calls) == 1 and media_embedder.media_calls[0][0].kind is EvidenceKind.FRAME
-    assert media_embedder.text_calls == [["a clip at c.mp4"]]  # the clip went through its caption
+    assert media_embedder.text_calls == [["a frame at frames/front_0.jpg", "a clip at c.mp4"]]
+    stored = media_store.query()
+    assert stored[0].embedding_kind == "image" and stored[0].caption_embedding is not None
+    assert stored[1].embedding_kind == "caption"  # unsupported video falls back to its caption
 
 
 def test_ingester_reports_what_it_cannot_embed(media_embedder: FakeMediaEmbedder, media_store: InMemoryStore) -> None:

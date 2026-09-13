@@ -84,7 +84,9 @@ def test_refinement_keeps_media_embedding_semantics(media_store, media_embedder)
     refiner = MemoryRefiner(media_store, media_embedder, FakeCaptioner("fire equipment"))
     assert refiner.run().updated == 1
     assert media_embedder.media_calls == [[old.evidence]]
-    assert len(media_embedder.text_calls) == before_text_calls
+    assert len(media_embedder.text_calls) == before_text_calls + 1
+    assert media_embedder.text_calls[-1] == ["fire equipment"]
+    assert np.allclose(media_store.get(old.id).caption_embedding, media_embedder.embed_text(["fire equipment"])[0])
     assert np.allclose(media_store.get(old.id).embedding, media_embedder.embed_media([old.evidence])[0])
 
 

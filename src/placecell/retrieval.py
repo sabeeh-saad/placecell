@@ -9,14 +9,17 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from typing import Literal
 
 import numpy as np
 
 from placecell.corrections import CorrectionLog, Verdicts
 from placecell.errors import ModelMismatchError, ValidationError
-from placecell.memory import Memory, Pose
-from placecell.providers.base import EmbeddingProvider
-from placecell.store.base import Filter, Hit, VectorStore
+from placecell.memory import Memory, Pose, SearchChannel
+from placecell.providers.base import EmbeddingProvider, QueryEmbeddingProvider, normalise_rows
+from placecell.store.base import Filter, VectorStore
+
+RetrievalMode = Literal["combined", "image", "caption"]
 
 WEEK_S = 7 * 24 * 3600.0
 
@@ -30,6 +33,9 @@ class RankedMemory:
     """Cosine similarity to the query for similarity searches, None for time and place lookups."""
     observed_at: tuple[float, ...] = ()
     """Sighting times inside a requested time window, oldest first."""
+
+    image_similarity: float | None = None
+    caption_similarity: float | None = None
 
     @property
     def score(self) -> float:
@@ -48,7 +54,7 @@ class Recall:
         oversample: int = 4,
         corrections: CorrectionLog | None = None,
     ) -> None:
-        if embedder.model_name != store.info.model:
+        if embedder.model_name != store.info.model or embedder.dimension != store.info.dimension:
             raise ModelMismatchError(
                 f"embedder {embedder.model_name!r} does not match collection model {store.info.model!r}"
             )
@@ -68,36 +74,59 @@ class Recall:
             memory.effective_confidence(self._clock(), self._half_life_s) * verdicts.get(memory.id, Verdicts()).weight
         )
 
-    def similar(self, text: str, k: int = 10, where: Filter | None = None) -> list[RankedMemory]:
-        """Memories whose content resembles the text, best first."""
+    def similar(
+        self, text: str, k: int = 10, where: Filter | None = None, *, mode: RetrievalMode = "combined"
+    ) -> list[RankedMemory]:
+        """Search each channel independently, then rank by the strongest cosine times confidence.
+
+        Combined includes legacy primary vectors of unknown modality. Channel-only searches
+        require known provenance. Missing channels never dilute a match from another channel.
+        Scores are model-dependent similarities, not calibrated probabilities.
+        """
         if not text.strip():
             raise ValidationError("query text must not be empty")
         if k < 1:
             raise ValidationError("k must be at least 1")
-        vector = self._embedder.embed_text([text])[0]
-        now = self._clock()
-        hits = self._store.search(vector, k * self._oversample, where)
-        # Fresh candidates must enter before decay reranking, even when many old rows have higher cosine.
-        candidates = {hit.memory.id: hit for hit in hits}
-        norm = float(np.linalg.norm(vector))
-        if not norm:
+        if mode not in {"combined", "image", "caption"}:
+            raise ValidationError("retrieval mode must be combined, image or caption")
+        encoded = (
+            self._embedder.embed_queries([text])
+            if isinstance(self._embedder, QueryEmbeddingProvider)
+            else self._embedder.embed_text([text])
+        )
+        vector = normalise_rows(encoded, 1, self._embedder.dimension)[0]
+        if not np.any(vector):
             return []
+        now = self._clock()
+        channels: tuple[SearchChannel, ...] = ("primary", "caption") if mode == "combined" else (mode,)
+        candidates: dict[str, Memory] = {}
+        for channel in channels:
+            for hit in self._store.search(vector, k * self._oversample, where, channel=channel):
+                candidates[hit.memory.id] = hit.memory
+        # Fresh candidates enter before decay reranking, even if old rows have higher cosine.
         for memory in self._store.query(where, limit=max(64, k * self._oversample), order="recent"):
-            if memory.id not in candidates and memory.embedding is not None:
-                other_norm = float(np.linalg.norm(memory.embedding))
-                similarity = float(vector @ memory.embedding / (norm * other_norm)) if other_norm else 0.0
-                candidates[memory.id] = Hit(memory, similarity)
-        hits = list(candidates.values())
-        weights = self._corrections.verdicts(h.memory.id for h in hits) if self._corrections else {}
-        ranked = [
-            RankedMemory(
-                h.memory,
-                h.memory.effective_confidence(now, self._half_life_s) * weights.get(h.memory.id, Verdicts()).weight,
-                h.score,
+            candidates[memory.id] = memory
+        weights = self._corrections.verdicts(candidates) if self._corrections else {}
+        ranked = []
+        for memory in candidates.values():
+            scores: dict[SearchChannel, float] = {}
+            for channel in ("primary", "image", "caption"):
+                other = memory.vector_for(channel)
+                if other is not None and (norm := float(np.linalg.norm(other))):
+                    scores[channel] = float(np.clip(vector @ other / norm, -1.0, 1.0))
+            selected = [scores[c] for c in channels if c in scores]
+            if not selected:
+                continue
+            ranked.append(
+                RankedMemory(
+                    memory,
+                    memory.effective_confidence(now, self._half_life_s) * weights.get(memory.id, Verdicts()).weight,
+                    max(selected),
+                    image_similarity=scores.get("image"),
+                    caption_similarity=scores.get("caption"),
+                )
             )
-            for h in hits
-        ]
-        ranked.sort(key=lambda r: -r.score)
+        ranked.sort(key=lambda r: (-r.score, r.memory.id))
         groups: set[str] = set()
         result = []
         for item in ranked:
