@@ -136,7 +136,7 @@ class Memory:
     """Id of the summary memory this one has been folded into, empty when it stands alone."""
     schema_version: int = SCHEMA_VERSION
     sightings: tuple[Sighting, ...] = ()
-    """Retained observation identities and times, even when their keyframes are replaced."""
+    """Bounded preview of recent sightings. Use store.sightings() for the retained history."""
     superseded_at: float | None = None
     """Start of the grace period; separate from the last positive observation."""
 

@@ -180,7 +180,9 @@ def test_curator_expires_ages_and_drops_superseded(
             embedded(hashing, "just gone", t=5, x=5, superseded=True, last_seen=99.5 * day),
         ]
     )
-    policy = RetentionPolicy(half_life_s=7 * day, min_confidence=0.05, protected_observations=5, max_age_s=200 * day)
+    policy = RetentionPolicy(
+        half_life_s=7 * day, min_confidence=0.05, protected_observations=5, max_age_s=200 * day, max_idle_s=None
+    )
     curator = Curator(store, policy, remover=removed.append, clock=lambda: 100 * day)
     report = curator.run()
     assert (report.scanned, report.expired, report.aged_out, report.superseded_dropped, report.removed) == (

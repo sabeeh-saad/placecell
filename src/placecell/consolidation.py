@@ -99,25 +99,32 @@ class Consolidator:
 
     def run(self, scope: Filter | None = None) -> ConsolidationReport:
         p = self._policy
-        rows = [m for m in self._store.query(scope) if m.role == "episodic" and not m.consolidated_into]
-        cells: dict[tuple[str, str, int, int], list[Memory]] = {}
-        for m in rows:
-            key = (m.pose.frame_id, m.pose.map_id, math.floor(m.pose.x / p.cell_m), math.floor(m.pose.y / p.cell_m))
-            cells.setdefault(key, []).append(m)
-        clusters = summaries = folded = 0
-        for members in cells.values():
-            for cluster in _cluster(members, p.min_similarity):
-                clusters += 1
-                if len(cluster) < p.min_group:
-                    continue
-                captions = [m.caption for m in cluster if m.caption][: p.max_captions]
-                if not captions:
-                    continue
-                summary = self._summarise(cluster, captions)
-                self._store.upsert([summary, *(replace(m, consolidated_into=summary.id) for m in cluster)])
-                summaries += 1
-                folded += len(cluster)
-        return ConsolidationReport(len(rows), clusters, summaries, folded)
+        scoped = replace(scope or Filter(), role="episodic", unconsolidated=True)
+        scanned = clusters = summaries = folded = 0
+        # Limit each clustering job to one page; remaining members stay available for later passes.
+        for rows in self._store.iter_query(scoped, batch_size=256):
+            scanned += len(rows)
+            cells: dict[tuple[str, str, int, int], list[Memory]] = {}
+            for m in rows:
+                key = (m.pose.frame_id, m.pose.map_id, math.floor(m.pose.x / p.cell_m), math.floor(m.pose.y / p.cell_m))
+                cells.setdefault(key, []).append(m)
+            for members in cells.values():
+                for cluster in _cluster(members, p.min_similarity):
+                    clusters += 1
+                    if len(cluster) < p.min_group:
+                        continue
+                    captions = [m.caption for m in cluster if m.caption][: p.max_captions]
+                    if not captions:
+                        continue
+                    summary = self._summarise(cluster, captions)
+                    # Slow model work happens above; commit only if the source memories stayed unchanged.
+                    with self._store.transaction():
+                        if any(self._store.get(m.id) != m for m in cluster):
+                            continue
+                        self._store.upsert([summary, *(replace(m, consolidated_into=summary.id) for m in cluster)])
+                    summaries += 1
+                    folded += len(cluster)
+        return ConsolidationReport(scanned, clusters, summaries, folded)
 
     def _summarise(self, cluster: Sequence[Memory], captions: Sequence[str]) -> Memory:
         text = self._summarizer.summarize(captions)
@@ -143,7 +150,7 @@ class Consolidator:
             observations=sum(m.observations for m in cluster),
             last_seen=max(m.last_seen for m in cluster),
             role="summary",
-            sightings=tuple(dict.fromkeys(s for m in cluster for s in m.sightings)),
+            sightings=tuple(sorted({s for m in cluster for s in m.sightings}, key=lambda s: (s.timestamp, s.id)))[-64:],
         )
 
 

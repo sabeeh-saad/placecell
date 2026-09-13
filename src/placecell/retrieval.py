@@ -10,11 +10,13 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
+import numpy as np
+
 from placecell.corrections import CorrectionLog, Verdicts
 from placecell.errors import ModelMismatchError, ValidationError
 from placecell.memory import Memory, Pose
 from placecell.providers.base import EmbeddingProvider
-from placecell.store.base import Filter, VectorStore
+from placecell.store.base import Filter, Hit, VectorStore
 
 WEEK_S = 7 * 24 * 3600.0
 
@@ -68,6 +70,17 @@ class Recall:
         vector = self._embedder.embed_text([text])[0]
         now = self._clock()
         hits = self._store.search(vector, k * self._oversample, where)
+        # Fresh candidates must enter before decay reranking, even when many old rows have higher cosine.
+        candidates = {hit.memory.id: hit for hit in hits}
+        norm = float(np.linalg.norm(vector))
+        if not norm:
+            return []
+        for memory in self._store.query(where, limit=max(64, k * self._oversample), order="recent"):
+            if memory.id not in candidates and memory.embedding is not None:
+                other_norm = float(np.linalg.norm(memory.embedding))
+                similarity = float(vector @ memory.embedding / (norm * other_norm)) if other_norm else 0.0
+                candidates[memory.id] = Hit(memory, similarity)
+        hits = list(candidates.values())
         weights = self._corrections.verdicts(h.memory.id for h in hits) if self._corrections else {}
         ranked = [
             RankedMemory(
@@ -78,7 +91,16 @@ class Recall:
             for h in hits
         ]
         ranked.sort(key=lambda r: -r.score)
-        return ranked[:k]
+        groups: set[str] = set()
+        result = []
+        for item in ranked:
+            group = item.memory.consolidated_into or item.memory.id
+            if group not in groups:
+                groups.add(group)
+                result.append(item)
+                if len(result) == k:
+                    break
+        return result
 
     def between(
         self, time_from: float, time_to: float, where: Filter | None = None, limit: int | None = None
@@ -102,10 +124,10 @@ class Recall:
                 m,
                 m.effective_confidence(now, self._half_life_s),
                 observed_at=tuple(
-                    t
-                    for t in m.sighting_times
-                    if (where.time_from is None or t >= where.time_from)
-                    and (where.time_to is None or t < where.time_to)
+                    dict.fromkeys(
+                        s.timestamp
+                        for s in self._store.sightings(m.id, limit=64, time_from=where.time_from, time_to=where.time_to)
+                    )
                 ),
             )
             for m in rows

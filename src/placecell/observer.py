@@ -59,6 +59,10 @@ class Observer:
 
     def observe(self, fresh: Memory, stored_as: str | None = None) -> ObserverReport:
         """Judge the memories in view of `fresh`. `stored_as` is the id the fresh memory was stored under."""
+        with self._store.transaction():
+            return self._observe(fresh, stored_as)
+
+    def _observe(self, fresh: Memory, stored_as: str | None) -> ObserverReport:
         if fresh.embedding is None:
             raise ValidationError("the fresh memory must be embedded")
         p = self._policy

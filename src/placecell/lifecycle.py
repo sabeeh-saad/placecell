@@ -31,10 +31,8 @@ def remove_local_file(evidence: Evidence) -> None:
 
 def remove_unreferenced(store: VectorStore, evidence: Iterable[Evidence], remover: EvidenceRemover) -> None:
     """Remove evidence only after the final reference, including superseded memories, is gone."""
-    unique = {e.uri.removeprefix("file://"): e for e in evidence}
-    for uri, item in unique.items():
-        if not store.count(Filter(evidence_uri=uri, include_superseded=True)):
-            remover(item)
+    store.enqueue_cleanup(evidence)
+    store.drain_cleanup(remover)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,13 +70,17 @@ class Reinforcer:
         left untouched, which makes ingestion idempotent. A superseded memory of the same
         thing at the same place is revived: the object came back.
         """
+        with self._store.transaction():
+            return self._reinforce(memory)
+
+    def _reinforce(self, memory: Memory) -> tuple[Memory, bool]:
         if memory.embedding is None:
             raise ValidationError("only embedded memories can be stored")
         existing = self.find_observation(memory.id)
         if existing is not None:
             self._discard_evidence([memory])
             return existing, True
-        where = Filter(near=memory.pose, radius=self._policy.radius_m, include_superseded=True)
+        where = Filter(near=memory.pose, radius=self._policy.radius_m, include_superseded=True, role="episodic")
         hits = self._store.search(memory.embedding, 1, where)
         if hits and hits[0].score >= self._policy.min_similarity:
             merged = self._merge(hits[0].memory, memory)
@@ -112,7 +114,7 @@ class Reinforcer:
             existing,
             observations=existing.observations + 1,
             timestamp=min(existing.timestamp, repeat.timestamp),
-            sightings=tuple(dict.fromkeys((*existing.sightings, *repeat.sightings))),
+            sightings=tuple(dict.fromkeys((*existing.sightings, *repeat.sightings)))[-64:],
             confidence=min(1.0, confidence),
             last_seen=max(existing.last_seen, repeat.timestamp),
             evidence=repeat.evidence if (p.keep_newest_evidence and newest and repeat.evidence) else existing.evidence,
@@ -134,10 +136,16 @@ class RetentionPolicy:
     max_age_s: float | None = None
     """Hard cap on the age of the first observation. None keeps reinforced memories forever."""
     drop_superseded_after_s: float = 24 * 3600.0
+    max_idle_s: float | None = 90 * 24 * 3600.0
+    """Expire even reinforced memories after this long without a sighting. None disables it."""
+    history_age_s: float = 90 * 24 * 3600.0
+    """Retain detailed sightings for this long, plus the latest sighting of each memory."""
     wrong_verdicts_to_supersede: int = 3
     """A memory judged wrong this often, net of right verdicts, is superseded."""
 
     def __post_init__(self) -> None:
+        if self.history_age_s <= 0 or (self.max_idle_s is not None and self.max_idle_s <= 0):
+            raise ValidationError("retention durations must be positive")
         if self.wrong_verdicts_to_supersede < 1:
             raise ValidationError("retention policy out of range")
         if self.half_life_s <= 0 or not (0 <= self.min_confidence <= 1) or self.protected_observations < 1:
@@ -184,28 +192,38 @@ class Curator:
     def run(self, scope: Filter = EVERYTHING, now: float | None = None) -> CuratorReport:
         now = self._clock() if now is None else now
         p = self._policy
-        expired: list[Memory] = []
-        aged: list[Memory] = []
-        dropped: list[Memory] = []
-        scanned = 0
-        alive: list[Memory] = []
-        for m in self._store.query(scope):
-            scanned += 1
-            if not m.superseded:
-                alive.append(m)
-            if m.superseded:
-                if m.superseded_at is not None and now - m.superseded_at >= p.drop_superseded_after_s:
-                    dropped.append(m)
-            elif p.max_age_s is not None and now - m.timestamp > p.max_age_s:
-                aged.append(m)
-            elif (
-                m.observations < p.protected_observations
-                and m.effective_confidence(now, p.half_life_s) < p.min_confidence
-            ):
-                expired.append(m)
-        self._remove(expired + aged + dropped)
-        discredited = self._discredit([m for m in alive if m not in expired and m not in aged], now)
-        return CuratorReport(scanned, len(expired), len(aged), len(dropped), discredited)
+        scanned = expired_count = aged_count = dropped_count = discredited = 0
+        for batch in self._store.iter_query(scope):
+            with self._store.transaction():
+                expired, aged, dropped, alive = [], [], [], []
+                for candidate in batch:
+                    m = self._store.get(candidate.id)
+                    if m is None:
+                        continue
+                    scanned += 1
+                    if m.superseded:
+                        if m.superseded_at is not None and now - m.superseded_at >= p.drop_superseded_after_s:
+                            dropped.append(m)
+                    elif (p.max_age_s is not None and now - m.timestamp > p.max_age_s) or (
+                        p.max_idle_s is not None and now - m.last_seen > p.max_idle_s
+                    ):
+                        aged.append(m)
+                    elif (
+                        m.observations < p.protected_observations
+                        and m.effective_confidence(now, p.half_life_s) < p.min_confidence
+                    ):
+                        expired.append(m)
+                    else:
+                        alive.append(m)
+                self._remove(expired + aged + dropped)
+                discredited += self._discredit(alive, now)
+                expired_count += len(expired)
+                aged_count += len(aged)
+                dropped_count += len(dropped)
+        self._store.prune_history(now - p.history_age_s)
+        if self._remover is not None:
+            self._store.drain_cleanup(self._remover)
+        return CuratorReport(scanned, expired_count, aged_count, dropped_count, discredited)
 
     def _discredit(self, alive: list[Memory], now: float) -> int:
         if self._corrections is None or not alive:
@@ -233,9 +251,12 @@ class Curator:
 
     def forget(self, where: Filter) -> int:
         """Delete every memory the filter matches, evidence included. The explicit-deletion path."""
-        doomed = self._store.query(where)
-        self._remove(doomed)
-        return len(doomed)
+        removed = 0
+        for doomed in self._store.iter_query(where):
+            with self._store.transaction():
+                self._remove(doomed)
+                removed += len(doomed)
+        return removed
 
     def _remove(self, memories: Iterable[Memory]) -> None:
         batch = list(memories)

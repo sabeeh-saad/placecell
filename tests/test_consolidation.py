@@ -101,8 +101,9 @@ def test_summary_keeps_its_image_after_members_are_deleted(
     Consolidator(store, hashing, JoinSummarizer(), ConsolidationPolicy(min_group=2)).run()
     curator = Curator(store, remover=remove_local_file)
     assert curator.forget(Filter(camera_id="front")) == 2
-    assert path.exists() and store.query()[0].role == "summary"
-    assert curator.forget(Filter(camera_id="summary")) == 1
+    assert path.exists() and store.query(EVERYTHING)[0].superseded
+    assert store.query() == []
+    assert curator.forget(Filter(camera_id="summary", include_superseded=True)) == 1
     assert not path.exists()
 
 

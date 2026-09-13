@@ -34,12 +34,11 @@ def reembed(
         )
     if batch_size < 1:
         raise ValidationError("batch_size must be positive")
-    rows = source.query(EVERYTHING)
-    written = 0
+    read = written = 0
     skipped: list[str] = []
     caps = embedder.capabilities
-    for start in range(0, len(rows), batch_size):
-        batch = rows[start : start + batch_size]
+    for batch in source.iter_query(EVERYTHING, batch_size):
+        read += len(batch)
         by_text = [m for m in batch if m.caption and caps.text]
         by_media = [m for m in batch if m not in by_text and m.evidence is not None and caps.supports(m.evidence)]
         skipped.extend(m.id for m in batch if m not in by_text and m not in by_media)
@@ -55,4 +54,9 @@ def reembed(
                 replace(m, embedding=v, model=embedder.model_name) for m, v in zip(by_media, vectors, strict=True)
             )
         written += target.upsert(out)
-    return MigrationReport(len(rows), written, len(skipped), tuple(skipped))
+        for memory in out:
+            after = None
+            while history := source.sightings(memory.id, limit=batch_size, after=after):
+                target.append_sightings(memory.id, history)
+                after = (history[-1].timestamp, history[-1].id)
+    return MigrationReport(read, written, len(skipped), tuple(skipped))
