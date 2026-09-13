@@ -9,8 +9,10 @@ from placecell.memory import SCHEMA_VERSION, Evidence, EvidenceKind, Memory, Pos
 from placecell.migrate import MigrationReport, reembed
 from placecell.observer import ContradictionPolicy, Observer, ObserverReport
 from placecell.pipeline import Ingester, IngestReport, Observation, SegmentationPolicy, Segmenter
+from placecell.refinement import MemoryRefiner, RefinementPolicy, RefinementReport
 from placecell.retrieval import RankedMemory, Recall
 from placecell.store import CollectionInfo, Filter, Hit, InMemoryStore, VectorStore
+from placecell.store.refinements import MemoryRevision
 
 __version__ = "0.0.1"
 
@@ -42,6 +44,8 @@ __all__ = [
     "Ingester",
     "JsonlCorrectionLog",
     "Memory",
+    "MemoryRefiner",
+    "MemoryRevision",
     "MigrationReport",
     "Observation",
     "Observer",
@@ -49,6 +53,8 @@ __all__ = [
     "Pose",
     "RankedMemory",
     "Recall",
+    "RefinementPolicy",
+    "RefinementReport",
     "ReinforcementPolicy",
     "Reinforcer",
     "RetentionPolicy",

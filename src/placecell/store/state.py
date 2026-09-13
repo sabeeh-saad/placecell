@@ -28,6 +28,7 @@ from placecell.memory import Evidence, EvidenceKind, Memory, Sighting
 from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row, to_row
 from placecell.store.jobs import WorkJournal
+from placecell.store.refinements import RefinementJournal
 
 HISTORY_PREVIEW = 64
 
@@ -67,6 +68,7 @@ class StateStore:
         """)
 
         self.jobs = WorkJournal(self._conn, self.transaction)
+        self.refinements = RefinementJournal(self._conn, self.transaction)
 
     @property
     def info(self) -> CollectionInfo:
@@ -161,6 +163,12 @@ class StateStore:
             )
         if previous:
             old = json.loads(previous["payload"])
+            evidence_fields = ("evidence_kind", "evidence_uri", "evidence_digest", "evidence_duration")
+            same_digest = bool(row["evidence_digest"]) and all(
+                old[k] == row[k] for k in ("evidence_kind", "evidence_digest", "evidence_duration")
+            )
+            if not same_digest and any(old[k] != row[k] for k in evidence_fields):
+                self.refinements.request(memory.id, "new evidence")
             if old["evidence_managed"] and old["evidence_uri"] != row["evidence_uri"]:
                 self.enqueue_cleanup(
                     [
@@ -173,6 +181,10 @@ class StateStore:
                         )
                     ]
                 )
+        elif memory.evidence is not None and not memory.caption:
+            self.refinements.request(memory.id, "missing caption")
+        if memory.superseded or memory.role != "episodic" or memory.evidence is None:
+            self._conn.execute("DELETE FROM refinement_jobs WHERE memory_id=?", (memory.id,))
 
     def _invalidate_summary(self, summary_id: str, now: float) -> None:
         summary = self._conn.execute("SELECT * FROM memories WHERE id=?", (summary_id,)).fetchone()

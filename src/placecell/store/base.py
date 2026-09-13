@@ -19,6 +19,7 @@ from numpy.typing import ArrayLike
 from placecell.errors import ValidationError
 from placecell.memory import SCHEMA_VERSION, Evidence, Memory, Pose, Sighting
 from placecell.store.jobs import WorkJournal
+from placecell.store.refinements import RefinementJournal
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +132,7 @@ class VectorStore(Protocol):
     """Contract every store backend fulfils."""
 
     jobs: WorkJournal
+    refinements: RefinementJournal
 
     @property
     def info(self) -> CollectionInfo: ...
