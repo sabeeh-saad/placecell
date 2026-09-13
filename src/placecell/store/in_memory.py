@@ -30,15 +30,15 @@ class InMemoryStore:
         return self._info
 
     def upsert(self, memories: Iterable[Memory]) -> int:
+        batch = list(memories)
+        for memory in batch:
+            self._check(memory)
         with self._lock:
-            written = 0
-            for memory in memories:
-                self._check(memory)
+            for memory in batch:
                 self._rows[memory.id] = memory
-                written += 1
-            if written:
+            if batch:
                 self._matrix = None
-            return written
+            return len(batch)
 
     def get(self, memory_id: str) -> Memory | None:
         with self._lock:

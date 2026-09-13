@@ -95,6 +95,22 @@ def test_search_on_empty_store(store: VectorStore, hashing: HashingEmbedder) -> 
     assert store.query() == [] and store.count(EVERYTHING) == 0
 
 
+def test_invalid_batch_preserves_rows_and_search_index(store: VectorStore, hashing: HashingEmbedder) -> None:
+    first = embedded(hashing, "printer", t=1)
+    store.upsert([first])
+    vector = hashing.embed_text(["printer"])[0]
+    store.search(vector, 10)  # populate the cached index before attempting a partial write
+    replacement = embedded(hashing, "chair", t=1)
+    addition = embedded(hashing, "desk", t=2)
+    invalid = embedded(hashing, "lamp", t=3, model="foreign")
+    with pytest.raises(ModelMismatchError):
+        store.upsert(iter([replacement, addition, invalid]))
+    assert store.query() == [first]
+    assert [h.memory for h in store.search(vector, 10)] == [first]
+    assert store.upsert([addition]) == 1
+    assert {h.memory.id for h in store.search(vector, 10)} == {first.id, addition.id}
+
+
 def test_in_memory_close_drops_everything(hashing: HashingEmbedder) -> None:
     store = InMemoryStore(CollectionInfo("c", hashing.model_name, DIM))
     store.upsert([embedded(hashing, "a")])
