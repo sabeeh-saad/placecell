@@ -47,6 +47,39 @@ def test_two_collections_share_one_directory(tmp_path: Path, hashing: HashingEmb
     assert (tmp_path / "a.collection.json").exists() and (tmp_path / "b.collection.json").exists()
 
 
+def test_version_four_memories_need_new_evidence_to_establish_pose_provenance(tmp_path, hashing):
+    import lancedb
+
+    info = CollectionInfo("legacy_view", hashing.model_name, DIM)
+    store = LanceDBStore(tmp_path, info)
+    memory = embedded(hashing, "printer", t=100)
+    store.upsert([memory])
+    with store.transaction():
+        store._conn.execute(
+            "UPDATE memories SET payload=json_remove(payload, '$.view_timestamp', '$.localization_checked', "
+            "'$.anchor_x', '$.anchor_y', '$.anchor_yaw')"
+        )
+    store.close()
+    table = lancedb.connect(str(tmp_path)).open_table(info.name)
+    table.drop_columns(["view_timestamp", "localization_checked", "anchor_x", "anchor_y", "anchor_yaw"])
+    metadata = tmp_path / "legacy_view.collection.json"
+    old = json.loads(metadata.read_text())
+    old["schema_version"] = 4
+    metadata.write_text(json.dumps(old))
+    reopened = LanceDBStore.open(tmp_path, info.name)
+    legacy = reopened.get(memory.id)
+    assert legacy.view_timestamp is None and not legacy.localization_checked
+    assert legacy.caption == memory.caption and legacy.sighting_times == (100,)
+    repeat = embedded(hashing, "printer", t=200, x=0.5)
+    retained, merged = Reinforcer(reopened).reinforce_or_insert(repeat)
+    assert merged and retained.pose == repeat.pose and retained.view_timestamp == 200
+    reopened.close()
+    reopened = LanceDBStore.open(tmp_path, info.name)
+    assert reopened.get(memory.id).view_timestamp == 200
+    assert reopened.get(memory.id).localization_checked
+    reopened.close()
+
+
 def test_delete_handles_large_id_lists_and_quotes(tmp_path: Path, hashing: HashingEmbedder) -> None:
     store = LanceDBStore(tmp_path, CollectionInfo("c", hashing.model_name, DIM))
     rows = [embedded(hashing, "m", t=float(i), camera="o'brien") for i in range(600)]
@@ -154,7 +187,7 @@ def test_version_two_collections_upgrade_without_losing_memories(
     assert upgraded.count(Filter(time_from=190, time_to=210)) == 1
     superseded = upgraded.get(gone.id)
     assert superseded is not None and superseded.superseded_at == 300 and superseded.last_seen == 300
-    repeat = embedded(hashing, "printer", t=400, camera="back")
+    repeat = embedded(hashing, "printer", t=400, camera="front")
     Reinforcer(upgraded).reinforce_or_insert(repeat)
     upgraded.close()
     reopened = LanceDBStore.open(tmp_path, info.name)

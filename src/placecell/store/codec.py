@@ -41,6 +41,11 @@ def to_row(m: Memory) -> dict[str, Any]:
         "sighting_times": [s.timestamp for s in m.sightings],
         "superseded_at": m.superseded_at,
         "evidence_managed": e.managed if e else False,
+        "view_timestamp": m.view_timestamp,
+        "localization_checked": m.localization_checked,
+        "anchor_x": m.anchor_position[0] if m.anchor_position else m.pose.x,
+        "anchor_y": m.anchor_position[1] if m.anchor_position else m.pose.y,
+        "anchor_yaw": m.anchor_yaw,
     }
 
 
@@ -77,4 +82,8 @@ def from_row(r: dict[str, Any]) -> Memory:
         schema_version=int(r["schema_version"]),
         sightings=tuple(Sighting(i, t) for i, t in zip(r["sighting_ids"], r["sighting_times"], strict=True)),
         superseded_at=r["superseded_at"],
+        view_timestamp=r.get("view_timestamp"),
+        localization_checked=bool(r.get("localization_checked", False)),
+        anchor_position=(r.get("anchor_x", r["x"]), r.get("anchor_y", r["y"])),
+        anchor_yaw=r.get("anchor_yaw", r["yaw"]),
     )

@@ -84,6 +84,8 @@ def embedded(
     **fields: Any,
 ) -> Memory:
     pose = fields.pop("pose", Pose(x, y))
+    fields.setdefault("confidence", 1.0)
+    fields.setdefault("localization_checked", True)
     m = Memory.create(robot, camera, t, pose, frame(f"frames/{camera}_{round(t)}.jpg"), caption)
     m = m.with_embedding(embedder.embed_text([caption])[0], embedder.model_name)
     if fields:

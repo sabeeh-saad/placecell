@@ -50,7 +50,7 @@ def test_memory_id_is_deterministic_and_validated() -> None:
 
 def test_memory_defaults_and_embedding_contract() -> None:
     m = Memory.create("r1", "front", 10.0, Pose(1, 2), caption="a chair")
-    assert m.last_seen == 10.0 and m.confidence == 1.0 and m.observations == 1 and m.embedding is None
+    assert m.last_seen == 10.0 and m.confidence == 0.5 and m.observations == 1 and m.embedding is None
     e = m.with_embedding(np.arange(4, dtype=np.float64), "m")
     assert e.embedding is not None and e.embedding.dtype == np.float32 and not e.embedding.flags.writeable
     assert e.model == "m"
@@ -72,10 +72,10 @@ def test_memory_rejects_out_of_range_fields(bad: dict[str, float]) -> None:
 
 def test_effective_confidence_halves_per_half_life() -> None:
     m = Memory.create("r", "c", 0.0, Pose(0, 0))
-    assert m.effective_confidence(0.0, 10.0) == 1.0
-    assert m.effective_confidence(10.0, 10.0) == pytest.approx(0.5)
-    assert m.effective_confidence(30.0, 10.0) == pytest.approx(0.125)
-    assert m.effective_confidence(-5.0, 10.0) == 1.0  # never grows into the past
+    assert m.effective_confidence(0.0, 10.0) == 0.5
+    assert m.effective_confidence(10.0, 10.0) == pytest.approx(0.25)
+    assert m.effective_confidence(30.0, 10.0) == pytest.approx(0.0625)
+    assert m.effective_confidence(-5.0, 10.0) == 0.5  # never grows into the past
     with pytest.raises(ValidationError):
         m.effective_confidence(1.0, 0.0)
 

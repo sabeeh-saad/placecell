@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,16 @@ from tests.conftest import DIM, FakeCaptioner, FakeMediaEmbedder, frame
 def obs(t: float, x: float = 0.0, yaw: float = 0.0, camera: str = "front", uri: str | None = None) -> Observation:
     evidence = frame(uri or f"frames/{camera}_{round(t * 1000)}.jpg", digest=f"d{t}{camera}")
     return Observation("r1", camera, t, Pose(x, 0, yaw), evidence)
+
+
+def test_ingestion_preserves_capture_quality_without_assuming_certainty(store, hashing):
+    checked = replace(obs(100), localization_checked=True)
+    unchecked = obs(200, x=5)
+    Ingester(hashing, store, FakeCaptioner("printer")).ingest([checked, unchecked])
+    trusted = store.get("r1:front:100000")
+    other = store.get("r1:front:200000")
+    assert trusted.localization_checked and trusted.view_timestamp == 100 and trusted.confidence == 0.5
+    assert not other.localization_checked and other.view_timestamp == 200 and other.confidence == 0.5
 
 
 def test_segmenter_needs_time_and_motion() -> None:

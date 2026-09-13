@@ -48,7 +48,7 @@ class LanceDBStore(StateStore):
                     f"not {info.model!r}/{info.dimension}"
                 )
             self._table = self._db.open_table(info.name)
-            if stored.schema_version in (2, 3) and info.schema_version == SCHEMA_VERSION:
+            if stored.schema_version in (2, 3, 4) and info.schema_version == SCHEMA_VERSION:
                 if stored.schema_version == 2:
                     self._upgrade_sightings()
                 else:
@@ -58,6 +58,19 @@ class LanceDBStore(StateStore):
                     f"collection {info.name!r} has schema version {stored.schema_version}, "
                     f"this code expects {info.schema_version}"
                 )
+            missing = {
+                k: v
+                for k, v in {
+                    "view_timestamp": "CAST(NULL AS DOUBLE)",
+                    "localization_checked": "false",
+                    "anchor_x": "x",
+                    "anchor_y": "y",
+                    "anchor_yaw": "yaw",
+                }.items()
+                if k not in self._table.schema.names
+            }
+            if missing:
+                self._table.add_columns(missing)
         else:
             schema = pa.schema(
                 [
@@ -90,6 +103,11 @@ class LanceDBStore(StateStore):
                     pa.field("sighting_times", pa.list_(pa.float64())),
                     pa.field("superseded_at", pa.float64()),
                     pa.field("evidence_managed", pa.bool_()),
+                    pa.field("view_timestamp", pa.float64()),
+                    pa.field("localization_checked", pa.bool_()),
+                    pa.field("anchor_x", pa.float64()),
+                    pa.field("anchor_y", pa.float64()),
+                    pa.field("anchor_yaw", pa.float64()),
                 ]
             )
             self._table = self._db.create_table(info.name, schema=schema)

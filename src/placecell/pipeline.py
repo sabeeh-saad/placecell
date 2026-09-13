@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from placecell.errors import ModelMismatchError, ValidationError
 from placecell.lifecycle import EvidenceRemover, Reinforcer, remove_local_file, remove_unreferenced
@@ -28,6 +28,7 @@ class Observation:
     timestamp: float
     pose: Pose
     evidence: Evidence
+    localization_checked: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +223,10 @@ class Ingester:
         if len(captions) != len(batch):
             raise ValidationError("captioner returned a different number of captions than items")
         return [
-            Memory.create(o.robot_id, o.camera_id, o.timestamp, o.pose, o.evidence, caption)
+            replace(
+                Memory.create(o.robot_id, o.camera_id, o.timestamp, o.pose, o.evidence, caption),
+                localization_checked=o.localization_checked,
+            )
             for o, caption in zip(batch, captions, strict=True)
         ]
 

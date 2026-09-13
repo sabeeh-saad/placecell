@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -53,6 +54,7 @@ def test_jobs_and_cleanup_resume_after_reopening(tmp_path: Path, hashing: Hashin
     observation = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path / "frames")).from_compressed(
         100, "jpeg", b"image", Pose(0, 0)
     )
+    observation = replace(observation, localization_checked=True)
     store.jobs.enqueue(observation, 10)
     store.close()
     reopened = LanceDBStore.open(tmp_path / "db", info.name)

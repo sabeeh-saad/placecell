@@ -71,7 +71,7 @@ def test_captionless_memory_is_queued_but_summaries_and_superseded_rows_are_excl
     assert not store.refinements.request(old.id)
     store.upsert([replace(old, role="summary")])
     assert not store.refinements.request(old.id)
-    store.upsert([replace(old, evidence=None)])
+    store.upsert([replace(old, evidence=None, view_timestamp=None)])
     assert not store.refinements.request(old.id)
     assert not store.refinements.request("missing")
 

@@ -11,7 +11,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from placecell.errors import FrameMismatchError, ValidationError
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 """Bumped whenever the stored shape of a memory changes. Stores record it per collection."""
 
 Vector = NDArray[np.float32]
@@ -122,7 +122,8 @@ class Memory:
     embedding: Vector | None = field(default=None, compare=False, repr=False)
     model: str = ""
     """Name of the embedding model that produced `embedding`. Empty while unembedded."""
-    confidence: float = 1.0
+    confidence: float = 0.5
+    """A heuristic evidence weight, not a probability that the caption is correct."""
     observations: int = 1
     last_seen: float = -1.0
     superseded: bool = False
@@ -139,8 +140,30 @@ class Memory:
     """Bounded preview of recent sightings. Use store.sightings() for the retained history."""
     superseded_at: float | None = None
     """Start of the grace period; separate from the last positive observation."""
+    view_timestamp: float | None = None
+    """Capture time of the retained image and its pose. Unknown for legacy rows."""
+    localization_checked: bool = False
+    """The retained observation passed the caller's localization quality gate."""
+    anchor_position: tuple[float, float] | None = None
+    """Fixed place anchor so successive nearby merges cannot walk across the map."""
+    anchor_yaw: float | None = None
+    """Fixed view direction so small successive turns cannot merge opposite views."""
 
     def __post_init__(self) -> None:
+        if self.anchor_position is None:
+            object.__setattr__(self, "anchor_position", (self.pose.x, self.pose.y))
+        elif len(self.anchor_position) != 2 or not all(math.isfinite(v) for v in self.anchor_position):
+            raise ValidationError("anchor_position must contain two finite coordinates")
+        else:
+            object.__setattr__(self, "anchor_position", tuple(self.anchor_position))
+        if self.anchor_yaw is None:
+            object.__setattr__(self, "anchor_yaw", self.pose.yaw)
+        elif not math.isfinite(self.anchor_yaw):
+            raise ValidationError("anchor_yaw must be finite")
+        if self.view_timestamp is not None and (
+            not math.isfinite(self.view_timestamp) or self.view_timestamp < 0 or self.evidence is None
+        ):
+            raise ValidationError("view_timestamp requires evidence and a finite, non-negative capture time")
         if self.last_seen < 0:
             object.__setattr__(self, "last_seen", self.timestamp)
         if not self.sightings:
@@ -187,6 +210,7 @@ class Memory:
             pose=pose,
             evidence=evidence,
             caption=caption,
+            view_timestamp=timestamp if evidence is not None else None,
         )
 
     def with_embedding(self, vector: ArrayLike, model: str) -> Memory:

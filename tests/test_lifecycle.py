@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -30,18 +31,18 @@ from tests.conftest import FakeCaptioner, embedded, frame
 
 
 def test_reinforcer_merges_same_thing_at_same_place(store: InMemoryStore, hashing: HashingEmbedder) -> None:
-    r = Reinforcer(store, ReinforcementPolicy(radius_m=1.0, min_similarity=0.95, gain=0.5))
+    r = Reinforcer(store, ReinforcementPolicy(radius_m=1.0, min_similarity=0.95, gain=0.5, confirmation_gap_s=100))
     first, merged = r.reinforce_or_insert(embedded(hashing, "printer on the left", t=100, x=0, y=0, confidence=0.5))
     assert not merged and store.count() == 1
-    repeat = embedded(hashing, "printer on the left", t=200, x=0.5, y=0, camera="back")
+    repeat = embedded(hashing, "printer on the left", t=200, x=0.5, y=0)
     stored, merged = r.reinforce_or_insert(repeat)
     assert merged and store.count() == 1
     assert stored.id == first.id and stored.observations == 2 and stored.last_seen == 200
-    assert stored.confidence == pytest.approx(0.75)
+    assert stored.confidence == pytest.approx(0.65)
     assert stored.evidence == repeat.evidence  # newest picture wins
     assert stored.caption == "printer on the left"
     stored, merged = r.reinforce_or_insert(embedded(hashing, "printer on the left", t=300, x=0.5, y=0))
-    assert stored.confidence == pytest.approx(0.875) and stored.observations == 3
+    assert stored.confidence == pytest.approx(0.725) and stored.observations == 3
 
 
 def test_reinforcer_keeps_different_things_and_places_apart(store: InMemoryStore, hashing: HashingEmbedder) -> None:
@@ -52,6 +53,76 @@ def test_reinforcer_keeps_different_things_and_places_apart(store: InMemoryStore
     _, merged = r.reinforce_or_insert(embedded(hashing, "a blue sofa", t=3, x=0, y=0))
     assert not merged  # same place, other thing
     assert store.count() == 3
+
+
+@pytest.mark.parametrize("fields", [{"pose": Pose(0.5, 0, math.pi)}, {"camera": "back"}, {"robot": "r2"}])
+def test_reinforcement_keeps_opposite_views_cameras_and_robots_separate(store, hashing, fields):
+    first = embedded(hashing, "printer", t=100)
+    repeat = embedded(hashing, "printer", t=200, **fields)
+    reinforcer = Reinforcer(store)
+    reinforcer.reinforce_or_insert(first)
+    retained, merged = reinforcer.reinforce_or_insert(repeat)
+    assert not merged and store.count() == 2
+    assert retained.pose == repeat.pose and retained.evidence == repeat.evidence
+    assert store.get(first.id).pose == first.pose
+
+
+def test_retained_image_pose_caption_and_vector_move_together_even_after_old_retries(store, hashing):
+    first = embedded(hashing, "printer", t=100, pose=Pose(0, 0))
+    repeat = replace(embedded(hashing, "printer", t=300, pose=Pose(0.5, 0, 0.2)), caption="printer beside a bin")
+    # Close vectors can describe different details; the selected caption must follow its image.
+    repeat = replace(repeat, embedding=first.embedding * 0.999, localization_checked=False)
+    reinforcer = Reinforcer(store)
+    reinforcer.reinforce_or_insert(first)
+    retained, merged = reinforcer.reinforce_or_insert(repeat)
+    assert merged and retained.pose == repeat.pose and retained.evidence == repeat.evidence
+    assert retained.caption == repeat.caption and (retained.embedding == repeat.embedding).all()
+    assert retained.view_timestamp == 300 and not retained.localization_checked
+    older = embedded(hashing, "printer", t=200)
+    retained, merged = reinforcer.reinforce_or_insert(older)
+    assert merged and retained.pose == repeat.pose and retained.evidence == repeat.evidence
+    assert retained.caption == repeat.caption and retained.view_timestamp == 300
+    retained = store.get(retained.id)
+    assert retained.pose == repeat.pose and retained.view_timestamp == 300
+
+
+def test_burst_sightings_do_not_manufacture_certainty(store, hashing):
+    reinforcer = Reinforcer(store)
+    first = embedded(hashing, "printer", t=100, confidence=0.5)
+    reinforcer.reinforce_or_insert(first)
+    for t in (102, 104, 106):
+        retained, _ = reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=t))
+        assert retained.confidence == 0.5
+    for t in range(1000, 10001, 1000):
+        retained, _ = reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=t))
+        assert 0.5 < retained.confidence < 0.8
+
+
+def test_a_chain_of_nearby_views_cannot_drift_one_memory_across_a_room(store, hashing):
+    reinforcer = Reinforcer(store)
+    first, _ = reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=100))
+    repeat, merged = reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=200, x=0.6))
+    assert merged and repeat.pose.x == 0.6 and repeat.anchor_position == (0, 0)
+    later, merged = reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=300, x=1.2))
+    assert not merged and later.id != first.id and store.count() == 2
+
+
+def test_small_successive_turns_cannot_merge_opposite_views(store, hashing):
+    reinforcer = Reinforcer(store)
+    first, _ = reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=100))
+    repeat, merged = reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=200, pose=Pose(0, 0, 0.4)))
+    assert merged and repeat.pose.yaw == 0.4 and repeat.anchor_yaw == 0
+    later, merged = reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=300, pose=Pose(0, 0, 0.8)))
+    assert not merged and later.id != first.id
+
+
+def test_keeping_original_evidence_also_keeps_its_pose_and_description(store, hashing):
+    first, repeat = embedded(hashing, "printer", t=100), embedded(hashing, "printer", t=200, x=0.5)
+    reinforcer = Reinforcer(store, ReinforcementPolicy(keep_newest_evidence=False))
+    reinforcer.reinforce_or_insert(first)
+    retained, merged = reinforcer.reinforce_or_insert(repeat)
+    assert merged and retained.pose == first.pose and retained.evidence == first.evidence
+    assert retained.view_timestamp == 100 and retained.last_seen == 200
 
 
 def test_reinforcer_is_idempotent_on_replay_and_needs_vectors(store: InMemoryStore, hashing: HashingEmbedder) -> None:
@@ -77,7 +148,7 @@ def test_reinforcing_a_superseded_memory_revives_it(store: InMemoryStore, hashin
 
 def test_merged_sightings_remain_idempotent_after_restart(store: InMemoryStore, hashing: HashingEmbedder) -> None:
     first = embedded(hashing, "printer", t=100)
-    repeat = embedded(hashing, "printer", t=200, camera="back")
+    repeat = embedded(hashing, "printer", t=200, camera="front")
     reinforcer = Reinforcer(store)
     reinforcer.reinforce_or_insert(first)
     stored, _ = reinforcer.reinforce_or_insert(repeat)

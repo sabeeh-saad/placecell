@@ -9,6 +9,7 @@ are left behind.
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
@@ -42,12 +43,23 @@ class ReinforcementPolicy:
     min_similarity: float = 0.9
     """Two observations at least this similar describe the same thing."""
     gain: float = 0.5
-    """Each repeat closes this fraction of the gap between the confidence and 1."""
+    """Each separated revisit closes this fraction of the gap to the confidence ceiling."""
     keep_newest_evidence: bool = True
+    max_heading_rad: float = 0.5
+    confirmation_gap_s: float = 600.0
+    confidence_ceiling: float = 0.8
 
     def __post_init__(self) -> None:
         if self.radius_m <= 0 or not (0 < self.gain <= 1) or not (-1 <= self.min_similarity <= 1):
             raise ValidationError("reinforcement policy out of range")
+        if not (
+            math.isfinite(self.max_heading_rad)
+            and 0 < self.max_heading_rad <= math.pi
+            and math.isfinite(self.confirmation_gap_s)
+            and self.confirmation_gap_s >= 0
+            and 0 < self.confidence_ceiling < 1
+        ):
+            raise ValidationError("invalid heading or confidence policy")
 
 
 class Reinforcer:
@@ -83,12 +95,36 @@ class Reinforcer:
         if existing is not None:
             self._discard_evidence([memory])
             return existing, True
-        where = Filter(near=memory.pose, radius=self._policy.radius_m, include_superseded=True, role="episodic")
-        hits = self._store.search(memory.embedding, 1, where)
-        if hits and hits[0].score >= self._policy.min_similarity:
-            merged = self._merge(hits[0].memory, memory)
+        where = Filter(
+            near=memory.pose,
+            radius=self._policy.radius_m,
+            include_superseded=True,
+            role="episodic",
+            robot_id=memory.robot_id,
+            camera_id=memory.camera_id,
+        )
+        hits = self._store.search(memory.embedding, 12, where)
+        match = next(
+            (
+                hit.memory
+                for hit in hits
+                if hit.score >= self._policy.min_similarity
+                and hit.memory.pose.heading_difference(memory.pose) <= self._policy.max_heading_rad
+                and hit.memory.anchor_yaw is not None
+                and abs((memory.pose.yaw - hit.memory.anchor_yaw + math.pi) % (2 * math.pi) - math.pi)
+                <= self._policy.max_heading_rad
+                and hit.memory.anchor_position is not None
+                and math.hypot(
+                    memory.pose.x - hit.memory.anchor_position[0], memory.pose.y - hit.memory.anchor_position[1]
+                )
+                <= self._policy.radius_m
+            ),
+            None,
+        )
+        if match is not None:
+            merged = self._merge(match, memory)
             self._store.upsert([merged])
-            self._discard_evidence([hits[0].memory, memory])
+            self._discard_evidence([match, memory])
             return merged, True
         self._store.upsert([memory])
         return memory, False
@@ -111,8 +147,11 @@ class Reinforcer:
 
     def _merge(self, existing: Memory, repeat: Memory) -> Memory:
         p = self._policy
-        confidence = existing.confidence + (1.0 - existing.confidence) * p.gain
+        confidence = min(existing.confidence, p.confidence_ceiling)
+        if repeat.timestamp - existing.last_seen >= p.confirmation_gap_s:
+            confidence += (p.confidence_ceiling - confidence) * p.gain
         newest = repeat.timestamp >= existing.last_seen
+        retain = p.keep_newest_evidence and newest and repeat.evidence is not None
         return replace(
             existing,
             observations=existing.observations + 1,
@@ -120,8 +159,14 @@ class Reinforcer:
             sightings=tuple(dict.fromkeys((*existing.sightings, *repeat.sightings)))[-64:],
             confidence=min(1.0, confidence),
             last_seen=max(existing.last_seen, repeat.timestamp),
-            evidence=repeat.evidence if (p.keep_newest_evidence and newest and repeat.evidence) else existing.evidence,
-            caption=existing.caption or repeat.caption,
+            evidence=repeat.evidence if retain else existing.evidence,
+            pose=repeat.pose if retain else existing.pose,
+            view_timestamp=repeat.view_timestamp if retain else existing.view_timestamp,
+            localization_checked=repeat.localization_checked if retain else existing.localization_checked,
+            caption=repeat.caption if retain else existing.caption,
+            embedding=repeat.embedding if retain else existing.embedding,
+            model=repeat.model if retain else existing.model,
+            schema_version=repeat.schema_version if retain else existing.schema_version,
             superseded=False,
             superseded_at=None,
             misses=0,
