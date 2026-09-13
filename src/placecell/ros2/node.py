@@ -14,6 +14,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.errors import PlacecellError, ValidationError
 from placecell.lifecycle import Curator, remove_local_file
+from placecell.localization import LocalizationGate, LocalizationPolicy
 from placecell.memory import Pose
 from placecell.navigation import (
     Destination,
@@ -36,9 +38,16 @@ from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmen
 from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
 from placecell.refinement import REFINEMENT_PROMPT, MemoryRefiner, RefinementPolicy
 from placecell.retrieval import Recall
-from placecell.ros2.bridge import KeyframeWriter, ObservationBuilder, pose_from_transform, stamp_to_seconds
+from placecell.ros2.bridge import (
+    KeyframeWriter,
+    ObservationBuilder,
+    pose_from_transform,
+    stamp_to_seconds,
+    update_localization,
+)
 from placecell.ros2.navigation import Nav2Navigator, create_navigator
 from placecell.store import CollectionInfo, VectorStore
+from placecell.verification import VisionVerifier
 
 
 def build_embedder(base_url: str, model: str, api_key: str | None, dimension: int) -> EmbeddingProvider:
@@ -91,6 +100,7 @@ def navigation_payload(update: NavigationUpdate) -> str:
             "label": destination.label,
             "source": destination.source,
             "memory_id": destination.memory.id if destination.memory else None,
+            "target": destination.target,
             "x": p.x,
             "y": p.y,
             "yaw": p.yaw,
@@ -240,6 +250,7 @@ class BoundedTasks:
 
 def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a ROS 2 environment
     import rclpy
+    from geometry_msgs.msg import PoseWithCovarianceStamped
     from rclpy.node import Node
     from rclpy.qos import qos_profile_sensor_data
     from sensor_msgs.msg import CompressedImage, Image
@@ -250,6 +261,8 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
         def __init__(self) -> None:
             super().__init__("placecell")
             p = self._params()
+            if p["navigation_enabled"] and (not p["map_id"].strip() or not p["localization_required"]):
+                raise ValidationError("Navigation requires a versioned map_id and localization_required:=true.")
             api_key = os.environ.get(p["api_key_env"]) or None
             embedder = build_embedder(p["embed_base_url"], p["embed_model"], api_key, p["embed_dimension"])
             store = build_store(p["db_path"], p["collection"], embedder)
@@ -318,6 +331,20 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._writer = writer
             self._builder = ObservationBuilder(p["robot_id"], p["camera_id"], writer)
             self._map_frame, self._base_frame, self._map_id = p["map_frame"], p["base_frame"], p["map_id"]
+            self._localization_required = p["localization_required"]
+            self._localization = LocalizationGate(
+                self._map_frame,
+                self._map_id,
+                LocalizationPolicy(
+                    max_age_s=p["localization_max_age_s"],
+                    max_position_std_m=p["localization_max_position_std_m"],
+                    max_yaw_std_rad=p["localization_max_yaw_std_rad"],
+                ),
+                clock=self._memory_time,
+            )
+            self.create_subscription(
+                PoseWithCovarianceStamped, p["localization_topic"], self._on_localization, qos_profile_sensor_data
+            )
             self._tf_timeout = p["tf_timeout_s"]
             self._tf = Buffer()
             self._tf_listener = TransformListener(self._tf, self)
@@ -337,19 +364,31 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._command_tasks: BoundedTasks | None = None
             if p["navigation_enabled"]:
                 places = load_named_places(p["places_file"]) if p["places_file"] else {}
+                verification_model = p["verification_model"] or p["caption_model"]
+                verifier = (
+                    VisionVerifier(
+                        verification_model,
+                        p["verification_base_url"] or p["caption_base_url"],
+                        api_key,
+                        timeout_s=p["verification_request_timeout_s"],
+                    )
+                    if verification_model
+                    else None
+                )
                 resolver = DestinationResolver(
                     store,
                     self._recall,
                     robot_id=p["robot_id"],
+                    camera_id=p["camera_id"],
                     frame_id=p["map_frame"],
                     map_id=p["map_id"],
                     clock=self._memory_time,
                     places=places,
+                    verifier=verifier,
                     policy=NavigationPolicy(
                         min_similarity=p["navigation_min_similarity"],
                         min_confidence=p["navigation_min_confidence"],
                         max_age_s=p["navigation_max_memory_age_s"],
-                        ambiguity_margin=p["navigation_ambiguity_margin"],
                     ),
                 )
                 self._navigator = create_navigator(
@@ -362,8 +401,12 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     self._submit_command,
                     self._publish_navigation,
                     request_timeout_s=p["navigation_lookup_timeout_s"],
+                    observation_clock=self._memory_time,
+                    localization_ready=self._localization.ready,
+                    arrival_timeout_s=p["navigation_arrival_timeout_s"],
                 )
                 self.create_timer(0.5, self._navigator.poll)
+                self.create_timer(0.2, self._commands.poll)
             # Volatile, depth-one commands are never replayed from durable ingestion work.
             self.create_subscription(String, "~/command", self._on_command, 1)
             if p["curator_interval_s"] > 0:
@@ -389,6 +432,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "map_frame": "map",
                 "base_frame": "base_footprint",
                 "map_id": "",
+                "localization_required": True,
+                "localization_topic": "/amcl_pose",
+                "localization_max_age_s": 5.0,
+                "localization_max_position_std_m": 0.3,
+                "localization_max_yaw_std_rad": 0.35,
                 "db_path": "~/.placecell/db",
                 "collection": "default",
                 "keyframe_dir": "~/.placecell/keyframes",
@@ -419,12 +467,15 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "refine_batch_size": 8,
                 "refine_model": "",
                 "navigation_enabled": False,
+                "verification_model": "",
+                "verification_base_url": "",
+                "verification_request_timeout_s": 8.0,
+                "navigation_arrival_timeout_s": 30.0,
                 "nav2_action": "navigate_to_pose",
                 "places_file": "",
                 "navigation_min_similarity": 0.5,
                 "navigation_min_confidence": 0.2,
                 "navigation_max_memory_age_s": 604800.0,
-                "navigation_ambiguity_margin": 0.1,
                 "navigation_response_timeout_s": 10.0,
                 "navigation_lookup_timeout_s": 30.0,
                 "navigation_timeout_s": 600.0,
@@ -433,6 +484,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
 
         def _memory_time(self) -> float:
             return float(self.get_clock().now().nanoseconds) / 1e9
+
+        def _on_localization(self, msg: Any) -> None:
+            update_localization(self._localization, msg, self._map_id)
 
         def _pose_at(self, sec: int, nanosec: int) -> Pose | None:
             from rclpy.duration import Duration
@@ -449,14 +503,21 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self.get_logger().warning(f"no pose for image: {e}", throttle_duration_sec=5.0)
                 return None
             t, q = tf.transform.translation, tf.transform.rotation
-            return pose_from_transform(t.x, t.y, q.x, q.y, q.z, q.w, self._map_frame, self._map_id)
+            pose = pose_from_transform(t.x, t.y, q.x, q.y, q.z, q.w, self._map_frame, self._map_id)
+            if self._localization_required and not self._localization.accepts(pose, stamp_to_seconds(sec, nanosec)):
+                self.get_logger().warning(
+                    "skipping image: localization is missing, stale or uncertain", throttle_duration_sec=5.0
+                )
+                return None
+            return pose
 
         def _on_image(self, msg: Any) -> None:
             pose = self._pose_at(msg.header.stamp.sec, msg.header.stamp.nanosec)
             if pose is None:
                 return
             stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
-            if not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
+            force = self._commands is not None and self._commands.needs_observation
+            if not force and not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
                 return
             if not self._worker.has_capacity():
                 self._worker.dropped += 1
@@ -468,6 +529,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
+            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp))
+            if self._commands is not None:
+                self._commands.observe(obs)
             if self._worker.submit(obs):
                 self._admission.accept(obs)
             self._writer.confirm(obs.evidence)
@@ -477,7 +541,8 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             if pose is None:
                 return
             stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
-            if not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
+            force = self._commands is not None and self._commands.needs_observation
+            if not force and not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
                 return
             if not self._worker.has_capacity():
                 self._worker.dropped += 1
@@ -487,6 +552,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
+            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp))
+            if self._commands is not None:
+                self._commands.observe(obs)
             if self._worker.submit(obs):
                 self._admission.accept(obs)
             self._writer.confirm(obs.evidence)

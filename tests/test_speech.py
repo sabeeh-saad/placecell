@@ -11,7 +11,7 @@ from placecell import DestinationResolver, Ingester, NavigationCommands, Observa
 from placecell.errors import ProviderError, ValidationError
 from placecell.speech import SpeechGate, SpeechWorker, Transcript, VoskRecognizer, load_vosk
 from tests.conftest import FakeCaptioner, embedded, frame
-from tests.test_navigation import FakeNavigator
+from tests.test_navigation import FakeNavigator, MatchingVerifier
 from tests.test_ros2_bridge import _Log
 
 
@@ -181,10 +181,17 @@ def test_recognizer_errors_discard_audio_and_shutdown_does_not_flush_a_partial_c
             SpeechWorker(Recognizer(), SpeechGate(), out.append, _Log(), **kwargs)
 
 
-def test_spoken_destination_reaches_navigation_while_observations_keep_updating(store, hashing):
+def test_spoken_destination_reaches_navigation_while_observations_keep_updating(store, hashing, monkeypatch):
+    monkeypatch.setattr("placecell.navigation.data_url", lambda uri: "data:image/jpeg;base64,YQ==")
     target = embedded(hashing, "printer")
     store.upsert([target])
-    resolver = DestinationResolver(store, Recall(store, hashing, clock=lambda: 3000), robot_id="r1", clock=lambda: 3000)
+    resolver = DestinationResolver(
+        store,
+        Recall(store, hashing, clock=lambda: 3000),
+        robot_id="r1",
+        clock=lambda: 3000,
+        verifier=MatchingVerifier(),
+    )
     navigator, tasks, statuses = FakeNavigator(), [], []
     commands = NavigationCommands(resolver, navigator, lambda f: tasks.append(f) is None, statuses.append)
     worker = SpeechWorker(

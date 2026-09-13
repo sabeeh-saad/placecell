@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from placecell.errors import PlacecellError, ValidationError
+from placecell.localization import LocalizationGate
 from placecell.memory import Evidence, EvidenceKind, Pose
 from placecell.pipeline import Observation
 from placecell.store.base import VectorStore
@@ -31,6 +32,25 @@ def pose_from_transform(
 ) -> Pose:
     """The planar pose of a child frame from a `geometry_msgs/Transform` parent->child."""
     return Pose(tx, ty, yaw_from_quaternion(qx, qy, qz, qw), frame_id, map_id)
+
+
+def update_localization(gate: LocalizationGate, message: Any, map_id: str) -> bool:
+    """Read a PoseWithCovarianceStamped estimate; malformed poses revoke readiness."""
+    try:
+        source = message.pose.pose
+        q = source.orientation
+        norm = sum(float(v) ** 2 for v in (q.x, q.y, q.z, q.w))
+        if not math.isfinite(norm) or not math.isclose(norm, 1.0, abs_tol=0.01):
+            raise ValidationError("localization quaternion is not normalized")
+        pose = pose_from_transform(
+            source.position.x, source.position.y, q.x, q.y, q.z, q.w, message.header.frame_id, map_id
+        )
+        return gate.update(
+            stamp_to_seconds(message.header.stamp.sec, message.header.stamp.nanosec), pose, message.pose.covariance
+        )
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        gate.invalidate()
+        return False
 
 
 class KeyframeWriter:

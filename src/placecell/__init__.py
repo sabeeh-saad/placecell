@@ -5,6 +5,7 @@ from placecell.chat import ChatMessage, ChatModel, ChatReply, ToolCall
 from placecell.consolidation import ChatSummarizer, ConsolidationPolicy, ConsolidationReport, Consolidator
 from placecell.corrections import Correction, CorrectionLog, InMemoryCorrectionLog, JsonlCorrectionLog
 from placecell.lifecycle import Curator, CuratorReport, ReinforcementPolicy, Reinforcer, RetentionPolicy
+from placecell.localization import LocalizationGate, LocalizationPolicy
 from placecell.memory import SCHEMA_VERSION, Evidence, EvidenceKind, Memory, Pose, Sighting, memory_id
 from placecell.migrate import MigrationReport, reembed
 from placecell.navigation import (
@@ -24,6 +25,7 @@ from placecell.refinement import MemoryRefiner, RefinementPolicy, RefinementRepo
 from placecell.retrieval import RankedMemory, Recall
 from placecell.store import CollectionInfo, Filter, Hit, InMemoryStore, VectorStore
 from placecell.store.refinements import MemoryRevision
+from placecell.verification import SceneVerdict, SceneVerifier, VisionVerifier
 
 __version__ = "0.0.1"
 
@@ -56,6 +58,8 @@ __all__ = [
     "IngestReport",
     "Ingester",
     "JsonlCorrectionLog",
+    "LocalizationGate",
+    "LocalizationPolicy",
     "Memory",
     "MemoryRefiner",
     "MemoryRevision",
@@ -76,11 +80,14 @@ __all__ = [
     "ReinforcementPolicy",
     "Reinforcer",
     "RetentionPolicy",
+    "SceneVerdict",
+    "SceneVerifier",
     "SegmentationPolicy",
     "Segmenter",
     "Sighting",
     "ToolCall",
     "VectorStore",
+    "VisionVerifier",
     "__version__",
     "load_named_places",
     "memory_id",

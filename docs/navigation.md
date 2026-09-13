@@ -6,8 +6,9 @@ The intended loop is:
 "robot go to the printer"
     → completed speech transcript
     → explicit movement command
-    → named place or remembered robot viewpoint
+    → named place or visually checked remembered robot viewpoint
     → Nav2 navigation goal
+    → fresh arrival image → destination verified or unverified (memory goals)
 
 camera + stamped robot pose → sampling → durable ingestion → memory updates
                                                            → caption refinement
@@ -29,6 +30,24 @@ camera topic and timestamped TF transform from the map frame to the robot base. 
 default base frame is `base_footprint`; use `base_frame:=base_link` if that is your robot's
 frame. Configure the same `map_id` for stored observations and destinations. Use a new map
 ID when a map's coordinate system changes.
+
+Navigation requires a nonempty, versioned `map_id` and `localization_required:=true`.
+Publish `geometry_msgs/PoseWithCovarianceStamped` estimates in the map frame on
+`localization_topic` (default `/amcl_pose`). Capture and dispatch require a recent estimate
+with planar position standard deviation at most 0.3 m and yaw standard deviation at most
+0.35 rad. The covariance must be finite, symmetric and positive semidefinite, with positive
+planar variances. All-zero covariance is treated as unknown quality. A capture's TF pose
+must also agree with the estimate within 0.5 m and 0.5 rad.
+
+The default maximum estimate age is five seconds, checked against both ROS time and
+monotonic receipt time. Configure `localization_max_age_s` for the localization publisher's
+actual update rate, including while stationary. AMCL can stop publishing new estimates
+when the robot is stationary; if its estimate ages out, captures and new goals wait for a
+fresh estimate and an active trip requests cancellation. Replaying an old estimate does
+not refresh its age. Alternative localization systems can provide the same message type.
+Memory-only recordings may explicitly set `localization_required:=false`; unchecked views
+remain ineligible for navigation. These checks cannot detect every localization failure,
+including an incorrectly confident estimate or a map changed without updating `map_id`.
 
 The action adapter uses asynchronous goal, feedback, result and cancellation interfaces
 shared by Humble and Jazzy. Nav2 handles path planning, obstacle avoidance and recovery
@@ -57,6 +76,7 @@ placecell-ros2 --ros-args \
   -p map_id:=office \
   -p places_file:=/absolute/path/places.json \
   -p image_topic:=/camera/color/image_raw \
+  -p localization_topic:=/amcl_pose \
   -p embed_model:="$EMBED_MODEL" \
   -p caption_model:="$VISION_MODEL" \
   -p embed_base_url:="$EMBED_URL" \
@@ -89,11 +109,44 @@ robot and map. Summary averages are excluded from navigation. The goal is the ro
 recorded observation pose and heading, not a measured object coordinate.
 
 Default gates require similarity of at least 0.5, effective confidence of at least 0.2,
-and a sighting within seven days. These are configurable starting values, not calibrated
-probabilities. Evaluate them with your embedding model and scenes. Different places within
-10% of the top score produce up to three numbered choices; nearby views within one metre
-are treated as one location. A choice or pending lookup expires after 30 seconds. Memory
-content, map, age and operator verdicts are checked again before dispatch.
+and a retained image captured within seven days with checked localization and a known
+image–pose pairing. These are configurable starting values, not calibrated probabilities.
+Evaluate them with your embedding model and scenes.
+
+The resolver checks up to three distinct candidate places with a vision model, comparing
+the actual image with the user's destination. Stored captions are not supplied to this
+check. The model must return a valid `matched`, `not_matched`, or `uncertain` verdict with
+visual evidence. Uncertainty, provider failures, missing images, or too many possible
+places produce a request for more detail or a failed lookup. Multiple visually matched
+places produce numbered choices even if their retrieval scores differ. Views from the
+same camera within one metre and 0.5 rad are grouped as one place. The ROS resolver uses
+only the currently configured camera. The previous score-based `navigation_ambiguity_margin`
+parameter has been removed. A choice or pending lookup expires after 30 seconds. Image
+identity, pose, map, age, localization and operator verdicts are checked again before dispatch.
+
+Set `verification_model` and optionally `verification_base_url` to a vision endpoint.
+They default to `caption_model` and `caption_base_url`. Each verification request has an
+eight-second timeout and no automatic retries. Without a verifier, memory destinations
+are unavailable; configured named places and numeric coordinates still work. Using the
+same model for captioning and verification can repeat the same mistake; query-specific
+pixel checks reduce reliance on caption retrieval but do not establish ground truth.
+
+After Nav2 reaches a memory goal, status changes to `awaiting_observation`. The next
+suitable camera frame bypasses the ordinary sampling interval and must have been captured
+after arrival, by the same robot and camera, within 0.35 m and 0.35 rad of the requested
+viewpoint, with valid localization. Its image is snapshotted before background ingestion
+can replace it. A matching visual check produces `succeeded`; a mismatch, uncertain result,
+missing frame or expired deadline produces `destination_unverified`. The default overall
+arrival deadline is 30 seconds. Stop also cancels pending verification, and late answers
+cannot complete a canceled trip. Verification does not increase memory confidence or
+sighting counts. Camera ingestion still updates memories from the actual observation.
+Named places and coordinate goals report Nav2's result without claiming visual identity.
+
+Schema 5 records retained-image capture time and localization provenance. Earlier memories
+remain searchable for questions but cannot become navigation goals until a new checked
+observation establishes their pairing. Updating captions alone cannot repair an unknown
+capture pose. The robot returns to a recorded viewpoint; object coordinates, approach
+poses and manipulation are outside this interface.
 
 Supported commands include:
 
@@ -168,5 +221,7 @@ uncertainty rather than claiming the robot stopped.
 
 The main parameters are `navigation_enabled`, `nav2_action`, `places_file`,
 `navigation_min_similarity`, `navigation_min_confidence`, `navigation_max_memory_age_s`,
-`navigation_ambiguity_margin`, `navigation_lookup_timeout_s`,
-`navigation_response_timeout_s`, and `navigation_timeout_s`.
+`navigation_lookup_timeout_s`, `navigation_response_timeout_s`, `navigation_timeout_s`,
+`navigation_arrival_timeout_s`, `verification_model`, `verification_base_url`,
+`verification_request_timeout_s`, `localization_topic`, `localization_max_age_s`,
+`localization_max_position_std_m`, and `localization_max_yaw_std_rad`.

@@ -17,8 +17,11 @@ import numpy as np
 
 from placecell.errors import ValidationError
 from placecell.memory import Memory, Pose
-from placecell.retrieval import Recall
+from placecell.pipeline import Observation
+from placecell.providers.captioning import data_url
+from placecell.retrieval import RankedMemory, Recall
 from placecell.store.base import Filter, VectorStore
+from placecell.verification import SceneVerdict, SceneVerifier
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,18 +70,23 @@ class NavigationPolicy:
     min_similarity: float = 0.5
     min_confidence: float = 0.2
     max_age_s: float = 7 * 24 * 3600.0
-    ambiguity_margin: float = 0.1
     same_place_radius_m: float = 1.0
     candidates: int = 12
+    verification_candidates: int = 3
 
     def __post_init__(self) -> None:
-        for value in (self.min_similarity, self.min_confidence, self.ambiguity_margin):
+        for value in (self.min_similarity, self.min_confidence):
             if not math.isfinite(value) or not 0 < value <= 1:
                 raise ValidationError("navigation score thresholds must be finite and within (0, 1]")
         if any(not math.isfinite(v) or v <= 0 for v in (self.max_age_s, self.same_place_radius_m)):
             raise ValidationError("navigation age and distance limits must be finite and positive")
         if not isinstance(self.candidates, int) or not 2 <= self.candidates <= 50:
             raise ValidationError("navigation candidates must be within 2..50")
+        if (
+            not isinstance(self.verification_candidates, int)
+            or not 1 <= self.verification_candidates <= self.candidates
+        ):
+            raise ValidationError("verification candidates must fit within the retrieval limit")
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +95,7 @@ class Destination:
     pose: Pose
     source: Literal["memory", "named_place", "coordinates"]
     memory: Memory | None = field(default=None, repr=False, compare=False)
+    target: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,19 +131,24 @@ class DestinationResolver:
         recall: Recall,
         *,
         robot_id: str,
+        camera_id: str = "",
         frame_id: str = "map",
         map_id: str = "",
         places: Mapping[str, Pose] | None = None,
         policy: NavigationPolicy | None = None,
+        verifier: SceneVerifier | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         if not robot_id:
             raise ValidationError("navigation robot_id must not be empty")
         self._store, self._recall = store, recall
-        self._scope = Filter(robot_id=robot_id, frame_id=frame_id, map_id=map_id, role="episodic")
+        self._scope = Filter(
+            robot_id=robot_id, camera_id=camera_id or None, frame_id=frame_id, map_id=map_id, role="episodic"
+        )
         self._origin = Pose(0, 0, frame_id=frame_id, map_id=map_id)
         self._places = {" ".join(k.casefold().split()).removeprefix("the "): v for k, v in (places or {}).items()}
         self._policy, self._clock = policy or NavigationPolicy(), clock
+        self._verifier = verifier
 
     def resolve(self, command: MovementCommand) -> Resolution:
         if command.kind != "go":
@@ -152,6 +166,8 @@ class DestinationResolver:
             return Resolution(
                 "resolved", "Using the named place.", (Destination(command.destination, pose, "named_place"),)
             )
+        if self._verifier is None:
+            return Resolution("not_found", "Visual destination verification is not configured.")
         hits = self._recall.similar(command.destination, k=self._policy.candidates, where=self._scope)
         now, p = self._clock(), self._policy
         hits = [
@@ -161,24 +177,52 @@ class DestinationResolver:
             and h.similarity >= p.min_similarity
             and h.confidence >= p.min_confidence
             and 0 <= now - h.memory.last_seen <= p.max_age_s
+            and h.memory.view_timestamp is not None
+            and 0 <= now - h.memory.view_timestamp <= p.max_age_s
+            and h.memory.localization_checked
+            and h.memory.evidence is not None
         ]
         if not hits:
             return Resolution(
                 "not_found", "I don't have a sufficiently recent, reliable location for that destination."
             )
-        top = hits[0]
-        candidates = [top]
-        for hit in hits[1:]:
-            if top.score - hit.score <= top.score * p.ambiguity_margin and all(
-                hit.memory.pose.distance_to(c.memory.pose) > p.same_place_radius_m for c in candidates
+        # Check distinct places rather than spending the entire budget on near-duplicate views.
+        candidates: list[RankedMemory] = []
+        for hit in hits:
+            if all(
+                hit.memory.camera_id != c.memory.camera_id
+                or hit.memory.pose.distance_to(c.memory.pose) > p.same_place_radius_m
+                or hit.memory.pose.heading_difference(c.memory.pose) > 0.5
+                for c in candidates
             ):
                 candidates.append(hit)
-        choices = tuple(Destination(h.memory.caption, h.memory.pose, "memory", h.memory) for h in candidates[:3])
+        # Do not silently ignore another plausible place just because the verification budget is small.
+        if len(candidates) > p.verification_candidates:
+            return Resolution("not_found", "Too many possible places. Please describe the destination more precisely.")
+        choices_list = []
+        for hit in candidates:
+            memory = hit.memory
+            assert memory.evidence is not None
+            verdict = self.verify(command.destination, data_url(memory.evidence.uri))
+            if verdict.result == "uncertain":
+                return Resolution(
+                    "not_found", "The images do not clearly identify the destination. Please give more detail."
+                )
+            if verdict.result == "matched":
+                choices_list.append(Destination(memory.caption, memory.pose, "memory", memory, command.destination))
+        choices = tuple(choices_list)
+        if not choices:
+            return Resolution("not_found", "The retrieved images do not show the requested destination.")
         if len(choices) > 1:
             return Resolution(
                 "ambiguous", "I found several places. Say 'option one', 'option two', or give more detail.", choices
             )
         return Resolution("resolved", "Navigating to the remembered observation viewpoint.", choices)
+
+    def verify(self, target: str, image_url: str) -> SceneVerdict:
+        if self._verifier is None:
+            return SceneVerdict("uncertain", "Visual verification is unavailable.")
+        return self._verifier.verify(target, image_url)
 
     def current(self, destination: Destination) -> bool:
         """Recheck the source just before dispatch; later content changes must not silently change the goal."""
@@ -193,6 +237,11 @@ class DestinationResolver:
             and self._scope.matches(current)
             and current.pose == destination.pose
             and current.caption == before.caption
+            and current.evidence == before.evidence
+            and current.view_timestamp == before.view_timestamp
+            and current.view_timestamp is not None
+            and 0 <= self._clock() - current.view_timestamp <= self._policy.max_age_s
+            and current.localization_checked
             and current.embedding is not None
             and before.embedding is not None
             and np.array_equal(current.embedding, before.embedding)
@@ -236,9 +285,14 @@ class NavigationCommands:
         *,
         request_timeout_s: float = 30.0,
         clock: Callable[[], float] = time.monotonic,
+        observation_clock: Callable[[], float] = time.time,
+        localization_ready: Callable[[], bool] = lambda: True,
+        arrival_timeout_s: float = 30.0,
     ) -> None:
         if not math.isfinite(request_timeout_s) or request_timeout_s <= 0:
             raise ValidationError("command timeout must be finite and positive")
+        if not math.isfinite(arrival_timeout_s) or arrival_timeout_s <= 0:
+            raise ValidationError("arrival timeout must be finite and positive")
         self._resolver, self._navigator, self._submit, self._publish = resolver, navigator, submit, publish
         self._timeout, self._clock = request_timeout_s, clock
         self._requested_at = self._choices_at = 0.0
@@ -249,6 +303,9 @@ class NavigationCommands:
         self._choices: tuple[Destination, ...] = ()
         self._closed = False
         self._canceling = False
+        self._observation_clock, self._localization_ready = observation_clock, localization_ready
+        self._arrival_timeout = arrival_timeout_s
+        self._arrival_after = self._arrival_deadline = 0.0
 
     @property
     def busy(self) -> bool:
@@ -271,6 +328,12 @@ class NavigationCommands:
                     NavigationUpdate(
                         request_id, "busy", "Navigation is busy or shutting down. Stop the current trip first."
                     )
+                )
+                return
+            if not self._localization_ready():
+                self._choices = ()
+                self._publish(
+                    NavigationUpdate(request_id, "unavailable", "Localization is missing, stale or uncertain.")
                 )
                 return
             chosen = None
@@ -319,6 +382,8 @@ class NavigationCommands:
                 return
             if self._clock() - self._requested_at > self._timeout:
                 result = Resolution("not_found", "Destination lookup timed out. Please repeat the command.")
+            if not self._localization_ready():
+                result = Resolution("not_found", "Localization became unavailable during destination lookup.")
             if result.state != "resolved":
                 self._active = None
                 self._choices = result.choices
@@ -336,6 +401,26 @@ class NavigationCommands:
         with self._lock:
             if request_id != self._active:
                 return
+            if self._state in {"awaiting_observation", "verifying_arrival"}:
+                return  # Late transport feedback cannot finish or restart visual verification.
+            if event.state == "succeeded" and self._destination is not None and self._destination.source == "memory":
+                if self._canceling or not self._localization_ready():
+                    self._finish_arrival(
+                        request_id, False, "Reached the pose; the destination was not visually verified."
+                    )
+                    return
+                self._state = "awaiting_observation"
+                self._arrival_after = self._observation_clock()
+                self._arrival_deadline = self._clock() + self._arrival_timeout
+                self._publish(
+                    NavigationUpdate(
+                        request_id,
+                        self._state,
+                        "Reached the pose. Waiting for a fresh view of the destination.",
+                        self._destination,
+                    )
+                )
+                return
             if self._canceling and event.state == "navigating":
                 event = NavigationEvent("canceling", "Waiting for cancellation to finish.", event.distance_remaining)
             self._state = event.state
@@ -351,6 +436,88 @@ class NavigationCommands:
                 )
             )
 
+    @property
+    def needs_observation(self) -> bool:
+        with self._lock:
+            return self._active is not None and self._state == "awaiting_observation"
+
+    def observe(self, observation: Observation) -> None:
+        """Offer a live capture after arrival, independent of captioning and ingestion latency."""
+        with self._lock:
+            destination, request_id = self._destination, self._active
+            if request_id is None or self._state != "awaiting_observation" or destination is None:
+                return
+            memory = destination.memory
+            if (
+                memory is None
+                or observation.robot_id != memory.robot_id
+                or observation.camera_id != memory.camera_id
+                or not observation.localization_checked
+                or not self._localization_ready()
+                or not self._arrival_after < observation.timestamp <= self._observation_clock()
+                or not observation.pose.same_frame(destination.pose)
+                or observation.pose.distance_to(destination.pose) > 0.35
+                or observation.pose.heading_difference(destination.pose) > 0.35
+            ):
+                return
+            self._state = "verifying_arrival"
+        try:
+            # Snapshot bytes before ingestion can replace and clean up this keyframe.
+            image = data_url(observation.evidence.uri)
+            if not self._submit(lambda: self._verify_arrival(request_id, destination, image)):
+                raise ValidationError("the verification worker is busy")
+        except Exception as e:
+            self._finish_arrival(request_id, False, f"Could not inspect the arrival image: {e}")
+
+    def _verify_arrival(self, request_id: str, destination: Destination, image: str) -> None:
+        with self._lock:
+            if request_id != self._active or self._clock() >= self._arrival_deadline:
+                return
+        try:
+            verdict = self._resolver.verify(destination.target, image)
+            matched, reason = verdict.result == "matched", verdict.reason
+        except Exception as e:
+            matched, reason = False, f"Visual verification failed: {e}"
+        self._finish_arrival(request_id, matched, reason)
+
+    def _finish_arrival(self, request_id: str, matched: bool, reason: str) -> None:
+        with self._lock:
+            if request_id != self._active:
+                return
+            matched = matched and self._localization_ready() and self._clock() < self._arrival_deadline
+            self._active = None
+            self._state = "succeeded" if matched else "destination_unverified"
+            message = (
+                "Destination visible at the reached viewpoint. "
+                if matched
+                else "Reached the pose; destination unverified. "
+            ) + reason
+            self._publish(NavigationUpdate(request_id, self._state, message, self._destination))
+
+    def poll(self) -> None:
+        """Bound arrival waits and request cancellation if localization is lost during a trip."""
+        with self._lock:
+            if self._active is None:
+                return
+            if self._state == "resolving" and self._clock() - self._requested_at >= self._timeout:
+                request_id, self._active = self._active, None
+                self._publish(
+                    NavigationUpdate(
+                        request_id, "not_found", "Destination lookup timed out. Please repeat the command."
+                    )
+                )
+                return
+            ready = self._localization_ready()
+            if self._state in {"awaiting_observation", "verifying_arrival"}:
+                if not ready or self._clock() >= self._arrival_deadline:
+                    self._finish_arrival(
+                        self._active,
+                        False,
+                        "Fresh visual evidence or localization was unavailable before the deadline.",
+                    )
+            elif not ready and not self._canceling:
+                self.cancel()
+
     def cancel(self) -> None:
         with self._lock:
             self._choices = ()
@@ -358,9 +525,9 @@ class NavigationCommands:
                 self._publish(NavigationUpdate("", "idle", "No navigation request is active."))
                 return
             request_id = self._active
-            if self._state == "resolving":
+            if self._state in {"resolving", "awaiting_observation", "verifying_arrival"}:
                 self._active = None
-                self._publish(NavigationUpdate(request_id, "canceled", "Destination lookup canceled."))
+                self._publish(NavigationUpdate(request_id, "canceled", "Destination lookup or verification canceled."))
                 return
             self._state = "canceling"
             self._canceling = True

@@ -63,7 +63,7 @@ warn_unreachable = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy", "rclpy.*", "sensor_msgs.*", "std_msgs.*", "tf2_ros", "tf2_ros.*", "nav2_msgs.*", "vosk", "sounddevice"]
+module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy", "rclpy.*", "sensor_msgs.*", "std_msgs.*", "tf2_ros", "tf2_ros.*", "nav2_msgs.*", "geometry_msgs.*", "vosk", "sounddevice"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

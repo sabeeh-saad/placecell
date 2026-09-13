@@ -21,7 +21,19 @@ from placecell import (
 )
 from placecell.errors import ValidationError
 from placecell.ros2.node import navigation_payload
+from placecell.verification import SceneVerdict
 from tests.conftest import embedded
+
+
+class MatchingVerifier:
+    def verify(self, target, image_url):
+        return SceneVerdict("matched", "Requested object visible")
+
+
+@pytest.fixture(autouse=True)
+def image_payload(monkeypatch):
+    # Existing controller tests use synthetic evidence URIs. Pixel transport is tested separately.
+    monkeypatch.setattr("placecell.navigation.data_url", lambda uri: "data:image/jpeg;base64,YQ==")
 
 
 class FakeNavigator:
@@ -37,6 +49,7 @@ class FakeNavigator:
 
 
 def make_commands(store, hashing, **kwargs):
+    kwargs.setdefault("verifier", MatchingVerifier())
     resolver = DestinationResolver(
         store, Recall(store, hashing, clock=lambda: 3000), robot_id="r1", clock=lambda: 3000, **kwargs
     )
@@ -117,7 +130,8 @@ def test_memory_resolution_excludes_summaries_other_maps_and_other_robots(store,
     navigator.sent[0][2](NavigationEvent("navigating", distance_remaining=2.0))
     assert events[-1].distance_remaining == 2
     navigator.sent[0][2](NavigationEvent("succeeded"))
-    assert not commands.busy
+    assert commands.busy and events[-1].state == "awaiting_observation"
+    commands.cancel()
 
 
 @pytest.mark.parametrize(
@@ -140,7 +154,7 @@ def test_age_limit_and_feedback_apply_at_resolution_and_dispatch(store, hashing)
     store.upsert([row])
     log = InMemoryCorrectionLog()
     recall = Recall(store, hashing, clock=lambda: 3000, corrections=log)
-    resolver = DestinationResolver(store, recall, robot_id="r1", clock=lambda: 3000)
+    resolver = DestinationResolver(store, recall, robot_id="r1", clock=lambda: 3000, verifier=MatchingVerifier())
     destination = resolver.resolve(parse_movement("go to printer")).choices[0]
     for _ in range(3):
         log.record(Correction(row.id, "wrong"))

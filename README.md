@@ -193,11 +193,22 @@ Time queries match actual sighting timestamps, not the interval between the firs
 visit. Results expose matching times through `RankedMemory.observed_at`; agent tool results
 and ROS answers include `observed_at` and `last_seen`. Nearby agent queries honor `map_id`.
 
-Existing schema 2 and 3 collections are upgraded to schema 4 when opened. The upgrade retains
+Existing schema 2, 3 and 4 collections are upgraded to schema 5 when opened. The upgrade retains
 stored rows, captions, evidence and lifecycle counts. It can preserve the recorded first
 and last times, but cannot reconstruct intermediate sightings or observation ids that the
 older schema discarded. Replay detection for merged observations is complete for sightings
 ingested after the upgrade.
+
+Schema 5 keeps the retained image, capture pose, timestamp, caption and embedding together.
+Nearby views merge only for the same robot and camera with compatible headings, within a
+fixed place anchor. Legacy image–pose pairings and localization quality cannot be recovered;
+those memories need a new checked observation before navigation can use them.
+
+New memories start with an evidence weight of 0.5. Repeat frames from the same visit do not
+increase it; a revisit after a gap of at least ten minutes can increase it toward a ceiling
+of 0.8. This weight is a retention and ranking heuristic, not a probability that a caption
+is correct. Visual destination checks and fresh arrival checks are described in the
+[navigation guide](docs/navigation.md), together with the required localization topic.
 
 Keyframes produced by the video and ROS sources are marked as managed files. Ingestion
 removes rejected or replaced managed files once no memory references them; caller-supplied
@@ -251,8 +262,8 @@ recordings. See `CHANGELOG.md`.
 Use a persistent `db_path` for restart recovery. Each collection now has a
 `<collection>.state.sqlite3` file containing authoritative memory metadata, observation
 history, ingestion jobs and cleanup intents. LanceDB supplies a derived vector index.
-Schema 2 and 3 collections import into schema 4 in bounded batches when opened. The
-original sighting history is retained during import; older clients reject schema 4.
+Schema 2, 3 and 4 collections import into schema 5 in bounded batches when opened. The
+original sighting history is retained during import; older clients reject schema 5.
 Stop writers and back up the entire database directory and keyframe directory together
 before an upgrade. Do not remove the state file when rebuilding a vector index.
 

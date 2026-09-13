@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Keep retained images, capture poses, captions and embeddings together; separate incompatible camera views and prevent place drift during repeated merges.
+- Schema 5 records image capture time and localization provenance. Legacy views need a new observation before navigation can use them.
+- Start memory weights conservatively and require separated visits for bounded confidence increases.
+- Verify destination images against the requested place and check a fresh view after reaching a memory goal.
+- Gate captures and navigation on recent localization covariance, cancel trips when localization is lost, and require a versioned map ID.
+
 - Schema 4 separates indexed observation history from current memory state and imports older collections in pages.
 - Make memory updates transactional and recover the vector projection from committed state after indexing failures.
 - Bound scalar queries, migration and maintenance memory use; add idle expiry and incremental history retention.
