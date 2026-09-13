@@ -27,11 +27,13 @@ dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 video = ["opencv-python-headless>=4.8"]
+speech = ["vosk>=0.3.45", "sounddevice>=0.4.6"]
 lancedb = ["lancedb>=0.25", "pyarrow>=15"]
 dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.6", "mypy>=1.10", "pre-commit>=3"]
 
 [project.scripts]
 placecell-ros2 = "placecell.ros2.node:main"
+placecell-listen = "placecell.ros2.speech:main"
 
 [project.urls]
 Homepage = "https://github.com/sabeeh-saad/placecell"
@@ -61,7 +63,7 @@ warn_unreachable = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy", "rclpy.*", "sensor_msgs.*", "std_msgs.*", "tf2_ros", "tf2_ros.*", "nav2_msgs.*"]
+module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy", "rclpy.*", "sensor_msgs.*", "std_msgs.*", "tf2_ros", "tf2_ros.*", "nav2_msgs.*", "vosk", "sounddevice"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

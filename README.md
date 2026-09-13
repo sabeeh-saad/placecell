@@ -7,6 +7,12 @@ drives, keeps it together with time and map position, and answers questions like
 with the robot's observation position, which can serve as a navigation viewpoint.
 That position is not a measured object location.
 
+With Nav2 enabled, spoken commands such as **"robot go to the printer"** can resolve a
+destination from a named place or visual memory and start a navigation goal. Camera
+ingestion continues throughout the trip, so revisiting a place updates its memory.
+See [spoken navigation setup](docs/navigation.md) for microphone input, existing speech
+topics, destination selection and cancellation.
+
 Inspired by NVIDIA's ReMEmbR, built from scratch around three goals the original does
 not have:
 
@@ -23,7 +29,7 @@ not have:
 ## How it works
 
 1. **Memory building** runs while the robot drives in a known map. A segmenter keeps one
-   observation every few seconds, and only when the robot has moved or turned. Each kept
+   observation every few seconds after movement or turning, plus periodic stationary refreshes. Each kept
    frame is captioned and embedded; the entry stores the caption, a keyframe reference, the
    timestamp and the robot pose in the map frame. Seeing the same thing at the same place
    again reinforces the existing memory instead of adding a row.
@@ -33,6 +39,9 @@ not have:
 3. **Forgetting** is a background curator: confidence decays with time, memories that faded
    or aged out are removed together with their evidence, superseded ones after a grace
    period, and explicit deletion by time, area or camera is one call.
+4. **Navigation** accepts explicit movement commands, resolves a map-scoped destination,
+   and sends it to Nav2. Ambiguous destinations require a choice. Stop requests cancel the
+   current trip, including a goal still waiting for acceptance. Questions remain read-only.
 
 Memories are built after mapping, not during it, because the map frame shifts while SLAM
 is still closing loops.
@@ -208,6 +217,8 @@ src/placecell/
   refinement.py    bounded evidence rechecks, caption revisions and undo
   pipeline.py      segment -> caption -> embed -> persist, batched, idempotent
   agent.py         the tool-calling reasoning loop that ends in a cited answer
+  navigation.py    movement commands, destination resolution and trip ownership
+  speech.py        final-transcript filtering and bounded offline audio recognition
   sources/         pose tracks from CSV, keyframes from video files
   ros2/            message conversion (testable without ROS) and the rclpy node
 ```
