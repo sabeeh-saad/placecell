@@ -4,7 +4,8 @@ Long-term visual memory for mobile robots, named after the hippocampal neurons t
 fire when an animal is at a particular place. The robot records what it sees while it
 drives, keeps it together with time and map position, and answers questions like
 *"where did I see the fire extinguisher?"* or *"what was near the door this morning?"*
-with a map position the navigation stack can drive to.
+with the robot's observation position, which can serve as a navigation viewpoint.
+That position is not a measured object location.
 
 Inspired by NVIDIA's ReMEmbR, built from scratch around three goals the original does
 not have:
@@ -154,9 +155,9 @@ src/placecell/
   video is not kept unless a retention setting asks for it.
 - **Deterministic ids.** A memory's id derives from robot, camera and timestamp, so retries
   and replayed recordings never create duplicates.
-- **Stages exchange batches, nothing else.** Segment, caption, embed and persist are pure
-  functions over lists. They run in one process today and can run as separate workers
-  behind queues tomorrow without changing what they do.
+- **Slow work stays outside transactions.** Sampling keeps a checkpoint per stream.
+  Captioning and embedding operate on batches; persistence and contradiction updates
+  commit together for each observation. One ingestion worker preserves their order.
 - **Filters are pushed down.** Time and position constraints belong to the store contract;
   a backend that fetches everything and filters in Python is wrong, not slow.
 - **Ready for clips.** Evidence has a kind, providers declare capabilities, and the schema
@@ -164,10 +165,65 @@ src/placecell/
 
 ## Status
 
-Pre-alpha. The library, the LanceDB backend, the agent and the ROS 2 node exist and are
-tested; no release on PyPI yet. Next: a Gemini Embedding 2 adapter for clip mode, a queue-based
-distributed runner for the pipeline stages, and consolidation of repeated memories into
-summaries. See `CHANGELOG.md`.
+Pre-alpha; no release on PyPI yet. Library and worker behavior are covered by automated
+tests, including persistent-store upgrades and failure recovery. Live ROS integration,
+hardware endurance and retrieval quality still need validation on representative robot
+recordings. See `CHANGELOG.md`.
+
+## Continuous operation
+
+Use a persistent `db_path` for restart recovery. Each collection now has a
+`<collection>.state.sqlite3` file containing authoritative memory metadata, observation
+history, ingestion jobs and cleanup intents. LanceDB supplies a derived vector index.
+Schema 2 and 3 collections import into schema 4 in bounded batches when opened. The
+original sighting history is retained during import; older clients reject schema 4.
+Stop writers and back up the entire database directory and keyframe directory together
+before an upgrade. Do not remove the state file when rebuilding a vector index.
+
+The supported deployment is one process per collection, with serialized memory updates.
+Questions and maintenance use bounded background workers, and provider calls never hold
+the memory transaction. Camera callbacks check sampling and queue capacity before JPEG
+encoding or disk writes. Defaults are a two-second minimum interval and a 60-second
+stationary refresh (`min_interval_s`, `max_interval_s`). Configure the latter to match how
+quickly stationary scene changes need to be noticed.
+
+The ingestion journal holds up to `max_queue` jobs (64 by default), including in-flight
+and failed work. Accepted jobs and their images survive restarts. Failures retry with
+bounded backoff using `ingest_attempts` (5) and `ingest_retry_delay_s` (1 second). Exhausted
+jobs retain their images for inspection and continue to count toward capacity. Inspect
+`store.jobs.failed()`, retry with `store.jobs.retry_failed()`, or explicitly discard selected
+jobs with `store.jobs.complete(ids)` and drain cleanup. Startup recovers incomplete image
+creation; cleanup rechecks both memory and job references before unlinking evidence.
+Keep each collection's managed keyframes in its own directory.
+
+Questions use `question_workers` (2) and `question_queue` (8). Overflow receives an explicit
+busy response. Maintenance runs in one background worker with one waiting slot. The node
+logs queued and failed jobs, oldest job age and dropped observations every 30 seconds.
+
+Memory records contain at most 64 recent sightings. To read older retained events, page
+through `store.sightings(memory_id, limit=64, after=(timestamp, observation_id))` until empty.
+Time filters consult the full retained history, including gaps. `store.iter_query()` pages
+memories in ID order for maintenance or migration; `query(limit=...)` orders and limits
+inside the state store. Calling `query()` without a limit explicitly requests all matches.
+
+Default retention expires memories after 90 days without a sighting, including reinforced
+memories (`RetentionPolicy.max_idle_s`). Detailed sightings older than 90 days are pruned
+in bounded passes (`history_age_s`), while retaining each memory's latest sighting. These
+settings limit history and inactivity, not bytes on disk; size them for the robot's storage
+and observation rate. Disable the idle cap explicitly with `max_idle_s=None` if required.
+Replay deduplication of merged observations is guaranteed within retained history.
+
+Consolidation processes bounded groups and retains underlying observations. Updating or
+deleting a supporting memory invalidates its summary and releases remaining members for
+reconsolidation. Retrieval groups summaries with their members and combines semantic and
+recent candidates before confidence and feedback ranking. This bounded candidate strategy
+is approximate; evaluate recall and false contradictions on your own scenes.
+
+The ROS maintenance pass calls `store.maintain()` to synchronize vectors, build an index
+once the collection reaches 1,000 rows, and compact database versions. Standalone callers
+should schedule it themselves. `store.rebuild_index()` reconstructs the vector projection
+from authoritative state after an indexing failure. Back up or operate through the store
+API rather than editing its underlying tables.
 
 ## Development
 

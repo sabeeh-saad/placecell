@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Schema 4 separates indexed observation history from current memory state and imports older collections in pages.
+- Make memory updates transactional and recover the vector projection from committed state after indexing failures.
+- Bound scalar queries, migration and maintenance memory use; add idle expiry and incremental history retention.
+- Invalidate summaries when members change and include recent candidates before retrieval reranking.
+- Persist accepted ingestion jobs, retry failures, retain failed work and recover interrupted keyframe creation.
+- Sample before encoding, refresh stationary views and bound question and maintenance workers.
+- Defer evidence deletion until memory updates commit; protect images referenced by queued jobs.
+
 - Require valid retrieved citations for grounded answers and honor the configured map in nearby queries.
 - Validate store batches before writes and give summaries identities derived from their members.
 - Schema 3 retains sighting identities and times, records supersession separately from last sighting,
