@@ -25,8 +25,8 @@ class Answer:
     text: str
     evidence: list[RankedMemory] = field(default_factory=list)
     steps: int = 0
-    grounded: bool = True
-    """False when the model replied in prose without citing memories, or ran out of steps."""
+    grounded: bool = False
+    """True only when every citation names a retrieved memory and at least one is cited."""
 
 
 TOOLS: list[dict[str, Any]] = [
@@ -111,12 +111,14 @@ class Agent:
         frame_id: str = "map",
         max_steps: int = 8,
         clock: Callable[[], float] = time.time,
+        map_id: str = "",
     ) -> None:
         if max_steps < 1:
             raise ValidationError("max_steps must be at least 1")
         self._recall = recall
         self._model = model
         self._frame_id = frame_id
+        self._map_id = map_id
         self._max_steps = max_steps
         self._clock = clock
 
@@ -139,9 +141,15 @@ class Agent:
             messages.append(ChatMessage("assistant", reply.content, reply.tool_calls))
             for call in reply.tool_calls:
                 if call.name == "answer":
-                    ids = call.arguments.get("memory_ids") or []
-                    evidence = [seen[i] for i in ids if i in seen]
-                    return Answer(str(call.arguments.get("text", "")).strip(), evidence, step, grounded=True)
+                    ids = call.arguments.get("memory_ids")
+                    citations = (
+                        list(dict.fromkeys(ids))
+                        if isinstance(ids, list) and all(isinstance(i, str) for i in ids)
+                        else []
+                    )
+                    evidence = [seen[i] for i in citations if i in seen]
+                    grounded = bool(citations) and len(evidence) == len(citations)
+                    return Answer(str(call.arguments.get("text", "")).strip(), evidence, step, grounded=grounded)
                 result, found = self._run(call)
                 for r in found:
                     seen.setdefault(r.memory.id, r)
@@ -157,7 +165,7 @@ class Agent:
             elif call.name == "memories_between":
                 found = self._recall.between(float(a["time_from"]), float(a["time_to"]), limit=int(a.get("limit", 20)))
             elif call.name == "memories_near":
-                pose = Pose(float(a["x"]), float(a["y"]), frame_id=self._frame_id)
+                pose = Pose(float(a["x"]), float(a["y"]), frame_id=self._frame_id, map_id=self._map_id)
                 found = self._recall.near(pose, float(a.get("radius_m", 2.0)), limit=int(a.get("limit", 20)))
             else:
                 return json.dumps({"error": f"unknown tool {call.name}"}), []

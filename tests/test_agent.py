@@ -6,7 +6,18 @@ from typing import Any
 
 import pytest
 
-from placecell import TOOLS, Agent, ChatMessage, ChatModel, ChatReply, InMemoryStore, Recall, ToolCall
+from placecell import (
+    TOOLS,
+    Agent,
+    ChatMessage,
+    ChatModel,
+    ChatReply,
+    CollectionInfo,
+    InMemoryStore,
+    Pose,
+    Recall,
+    ToolCall,
+)
 from placecell.errors import ProviderError, ValidationError
 from placecell.providers import HashingEmbedder, OpenAICompatibleChat
 from tests.conftest import FakeTransport, embedded
@@ -51,7 +62,7 @@ def test_agent_runs_tools_and_returns_grounded_answer(recall: Recall) -> None:
         [
             ChatReply(None, (call("search_memories", query="fire extinguisher", k=2),)),
             ChatReply(None, (call("memories_near", x=4, y=2, radius_m=1),)),
-            ChatReply(None, (call("answer", text="Near x=4, y=2.", memory_ids=["r1:front:1000000", "ghost"]),)),
+            ChatReply(None, (call("answer", text="Near x=4, y=2.", memory_ids=["r1:front:1000000"]),)),
         ]
     )
     answer = Agent(recall, chat, clock=lambda: 3000.0).ask("where is the fire extinguisher?")
@@ -71,6 +82,44 @@ def test_agent_runs_tools_and_returns_grounded_answer(recall: Recall) -> None:
     near = json.loads(third[5].content or "")
     assert [r["id"] for r in near] == ["r1:front:1000000"] and "similarity" not in near[0]
     assert third[5].tool_call_id == "call-memories_near"
+
+
+@pytest.mark.parametrize("ids", [[], ["ghost"], ["r1:front:1000000", "ghost"], "r1:front:1000000", [{}], None])
+def test_agent_rejects_missing_unknown_and_malformed_citations(recall: Recall, ids: Any) -> None:
+    chat = ScriptedChat(
+        [
+            ChatReply(None, (call("search_memories", query="fire extinguisher"),)),
+            ChatReply(None, (call("answer", text="At the door.", memory_ids=ids),)),
+        ]
+    )
+    assert not Agent(recall, chat).ask("where?").grounded
+
+
+def test_agent_deduplicates_valid_citations(recall: Recall) -> None:
+    chat = ScriptedChat(
+        [
+            ChatReply(None, (call("search_memories", query="fire extinguisher"),)),
+            ChatReply(None, (call("answer", text="At the door.", memory_ids=["r1:front:1000000"] * 2),)),
+        ]
+    )
+    answer = Agent(recall, chat).ask("where?")
+    assert answer.grounded and len(answer.evidence) == 1
+
+
+def test_agent_near_uses_the_configured_map(hashing: HashingEmbedder) -> None:
+    store = InMemoryStore(CollectionInfo("maps", hashing.model_name, hashing.dimension))
+    office = embedded(hashing, "a printer", t=100, pose=Pose(1, 2, map_id="office"))
+    store.upsert([office, embedded(hashing, "a chair", t=200, pose=Pose(1, 2, map_id="warehouse"))])
+    chat = ScriptedChat(
+        [
+            ChatReply(None, (call("memories_near", x=1, y=2, radius_m=1),)),
+            ChatReply(None, (call("answer", text="A printer.", memory_ids=[office.id]),)),
+        ]
+    )
+    answer = Agent(Recall(store, hashing), chat, map_id="office").ask("what is nearby?")
+    assert answer.grounded and [r.memory.id for r in answer.evidence] == [office.id]
+    tool_result = json.loads(chat.calls[1][-1].content or "")
+    assert [r["id"] for r in tool_result] == [office.id]
 
 
 def test_agent_reports_tool_errors_to_the_model_and_keeps_going(recall: Recall) -> None:

@@ -164,7 +164,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 from placecell.providers import OpenAICompatibleChat
 
                 chat = OpenAICompatibleChat(p["chat_model"], p["chat_base_url"], api_key)
-                self._agent = Agent(self._recall, chat, frame_id=p["map_frame"])
+                self._agent = Agent(self._recall, chat, frame_id=p["map_frame"], map_id=p["map_id"])
                 if p["consolidate_interval_s"] > 0:
                     self._consolidator = Consolidator(store, embedder, ChatSummarizer(chat))
             self._lock = threading.Lock()
