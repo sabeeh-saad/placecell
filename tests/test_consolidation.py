@@ -66,6 +66,27 @@ def test_consolidator_skips_captionless_clusters_and_validates(store: InMemorySt
         ConsolidationPolicy(min_group=1)
 
 
+def test_simultaneous_camera_clusters_keep_distinct_summaries(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+    rows = [embedded(hashing, "printer", t=t, camera="front", x=0) for t in (100, 200)] + [
+        embedded(hashing, "chair", t=t, camera="back", x=4) for t in (100, 200)
+    ]
+    store.upsert(rows)
+    consolidator = Consolidator(store, hashing, JoinSummarizer(), ConsolidationPolicy(min_group=2))
+    assert consolidator.run().summaries == 2
+    summaries = [m for m in store.query() if m.role == "summary"]
+    assert len(summaries) == 2
+    for row in rows:
+        folded = store.get(row.id)
+        assert folded is not None
+        summary = store.get(folded.consolidated_into)
+        assert summary is not None and summary.pose.x == row.pose.x and row.caption in summary.caption
+    assert consolidator.run().summaries == 0
+    # Identity depends on the members, including their original camera, regardless of order.
+    a = consolidator._summarise(rows[:2], ["printer"])
+    b = consolidator._summarise(list(reversed(rows[:2])), ["printer"])
+    assert a.id == b.id
+
+
 def test_chat_summarizer() -> None:
     class Chat:
         def __init__(self, text: str | None) -> None:

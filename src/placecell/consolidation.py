@@ -9,6 +9,8 @@ are never folded again.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import time
 from collections.abc import Callable, Sequence
@@ -19,7 +21,7 @@ import numpy as np
 
 from placecell.chat import ChatMessage, ChatModel
 from placecell.errors import ModelMismatchError, ProviderError, ValidationError
-from placecell.memory import Memory, Pose, Vector, memory_id
+from placecell.memory import Memory, Pose, Vector
 from placecell.providers.base import EmbeddingProvider
 from placecell.store.base import Filter, VectorStore
 
@@ -125,9 +127,10 @@ class Consolidator:
         ys = [m.pose.y for m in cluster]
         yaw = math.atan2(sum(math.sin(m.pose.yaw) for m in cluster), sum(math.cos(m.pose.yaw) for m in cluster))
         pose = Pose(sum(xs) / len(xs), sum(ys) / len(ys), yaw, anchor.pose.frame_id, anchor.pose.map_id)
-        newest = max(m.timestamp for m in cluster)
+        members = json.dumps(sorted(m.id for m in cluster), separators=(",", ":"))
+        summary_id = "summary:" + hashlib.sha256(members.encode()).hexdigest()
         return Memory(
-            id=memory_id(anchor.robot_id, "summary", newest),
+            id=summary_id,
             robot_id=anchor.robot_id,
             camera_id="summary",
             timestamp=min(m.timestamp for m in cluster),
