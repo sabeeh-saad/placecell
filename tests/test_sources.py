@@ -57,6 +57,7 @@ def test_video_source_yields_keyframes_with_interpolated_poses(tmp_path: Path) -
     assert [round(o.pose.x, 2) for o in observations] == [0.0, 0.5, 1.0, 1.5]
     assert all(o.evidence.kind is EvidenceKind.FRAME and Path(o.evidence.uri).is_file() for o in observations)
     assert len({o.evidence.digest for o in observations}) == 4
+    assert all(o.evidence.managed for o in observations)
     assert observations[0].evidence.uri.endswith("front_100000.jpg")
     assert all(o.robot_id == "r1" and o.camera_id == "front" for o in observations)
 

@@ -20,7 +20,7 @@ from placecell.agent import Agent
 from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.errors import PlacecellError
-from placecell.lifecycle import Curator
+from placecell.lifecycle import Curator, remove_local_file
 from placecell.memory import Pose
 from placecell.observer import Observer
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
@@ -61,7 +61,9 @@ def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[
                     "x": r.memory.pose.x,
                     "y": r.memory.pose.y,
                     "yaw": r.memory.pose.yaw,
-                    "time": r.memory.timestamp,
+                    "time": r.observed_at[0] if r.observed_at else r.memory.timestamp,
+                    "last_seen": r.memory.last_seen,
+                    "observed_at": list(r.observed_at or r.memory.sighting_times),
                     "caption": r.memory.caption,
                     "confidence": r.confidence,
                 }
@@ -81,6 +83,8 @@ class IngestWorker:
         self._queue: queue.Queue[Observation] = queue.Queue(maxsize=max_queue)
         self._log = log
         self._stop = threading.Event()
+        self._pending: dict[str, int] = {}
+        self._pending_lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, name="placecell-ingest", daemon=True)
         self.dropped = 0
 
@@ -88,31 +92,65 @@ class IngestWorker:
         self._thread.start()
 
     def stop(self) -> None:
-        self._stop.set()
+        with self._pending_lock:
+            self._stop.set()
         self._thread.join(timeout=10)
 
     def submit(self, observation: Observation) -> None:
-        try:
-            self._queue.put_nowait(observation)
-        except queue.Full:
+        uri = observation.evidence.uri
+        with self._pending_lock:
+            if not self._stop.is_set():
+                try:
+                    self._queue.put_nowait(observation)
+                except queue.Full:
+                    pass
+                else:
+                    self._pending[uri] = self._pending.get(uri, 0) + 1
+                    return
             self.dropped += 1
-            self._log.warning(f"ingest queue full, dropped {self.dropped} observations so far")
+        with self._lock, self._pending_lock:
+            if uri not in self._pending:
+                self._ingester.discard([observation])
+        self._log.warning(f"ingest queue full or stopped, dropped {self.dropped} observations so far")
+
+    def _release(self, batch: Sequence[Observation]) -> None:
+        with self._lock, self._pending_lock:
+            for observation in batch:
+                uri = observation.evidence.uri
+                self._pending[uri] -= 1
+                if self._pending[uri] == 0:
+                    del self._pending[uri]
+            self._ingester.discard(o for o in batch if o.evidence.uri not in self._pending)
 
     def _run(self) -> None:
-        while not self._stop.is_set():
-            batch = self._drain()
-            if not batch:
-                continue
-            try:
-                with self._lock:
-                    report = self._ingester.ingest(batch)
-            except PlacecellError as e:
-                self._log.error(f"ingest failed: {e}")
-                continue
-            self._log.info(
-                f"ingested {report.accepted}/{report.received}: {report.inserted} new, {report.merged} reinforced"
-                + (f", {report.unsupported} unsupported" if report.unsupported else "")
-            )
+        try:
+            while not self._stop.is_set():
+                batch = self._drain()
+                if not batch:
+                    continue
+                try:
+                    try:
+                        with self._lock:
+                            report = self._ingester.ingest(batch)
+                    finally:
+                        self._release(batch)
+                except PlacecellError as e:
+                    self._log.error(f"ingest failed: {e}")
+                    continue
+                self._log.info(
+                    f"ingested {report.accepted}/{report.received}: {report.inserted} new, {report.merged} reinforced"
+                    + (f", {report.unsupported} unsupported" if report.unsupported else "")
+                )
+        finally:
+            with self._pending_lock:
+                self._stop.set()
+            pending = []
+            while True:
+                try:
+                    pending.append(self._queue.get_nowait())
+                except queue.Empty:
+                    break
+            self._release(pending)
 
     def _drain(self) -> list[Observation]:
         batch: list[Observation] = []
@@ -169,7 +207,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     self._consolidator = Consolidator(store, embedder, ChatSummarizer(chat))
             self._lock = threading.Lock()
             self._worker = IngestWorker(ingester, self._lock, p["batch_size"], p["max_queue"], self.get_logger())
-            self._curator = Curator(store, corrections=self._corrections)
+            self._curator = Curator(store, corrections=self._corrections, remover=remove_local_file)
             writer = KeyframeWriter(Path(p["keyframe_dir"]).expanduser())
             self._builder = ObservationBuilder(p["robot_id"], p["camera_id"], writer)
             self._map_frame, self._base_frame, self._map_id = p["map_frame"], p["base_frame"], p["map_id"]

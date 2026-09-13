@@ -35,7 +35,7 @@ def iter_video_observations(
         raise PlacecellError("video sources need OpenCV: pip install placecell[video]") from e
     if every_s <= 0:
         raise ValidationError("every_s must be positive")
-    out = Path(out_dir)
+    out = Path(out_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -52,14 +52,15 @@ def iter_video_observations(
                 return
             if index % step == 0:
                 timestamp = start_time + index / fps
+                pose = track.at(timestamp)
                 ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
                 if not ok:
                     raise PlacecellError(f"cannot encode frame {index} of {video_path}")
                 data = encoded.tobytes()
                 path = out / f"{camera_id}_{round(timestamp * 1000)}.jpg"
                 path.write_bytes(data)
-                evidence = Evidence(EvidenceKind.FRAME, str(path), hashlib.sha256(data).hexdigest())
-                yield Observation(robot_id, camera_id, timestamp, track.at(timestamp), evidence)
+                evidence = Evidence(EvidenceKind.FRAME, str(path), hashlib.sha256(data).hexdigest(), managed=True)
+                yield Observation(robot_id, camera_id, timestamp, pose, evidence)
             index += 1
     finally:
         capture.release()

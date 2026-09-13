@@ -11,8 +11,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
 from placecell.errors import ModelMismatchError, ValidationError
-from placecell.lifecycle import Reinforcer
-from placecell.memory import Evidence, Memory, Pose, Vector
+from placecell.lifecycle import EvidenceRemover, Reinforcer, remove_local_file, remove_unreferenced
+from placecell.memory import Evidence, Memory, Pose, Vector, memory_id
 from placecell.observer import Observer
 from placecell.providers.base import Captioner, EmbeddingProvider
 from placecell.store.base import VectorStore
@@ -69,6 +69,13 @@ class Segmenter:
     def reset(self) -> None:
         self._last.clear()
 
+    def checkpoint(self) -> dict[tuple[str, str], Observation]:
+        """Capture stream positions before processing a batch that may need to be retried."""
+        return self._last.copy()
+
+    def restore(self, checkpoint: dict[tuple[str, str], Observation]) -> None:
+        self._last = checkpoint.copy()
+
 
 @dataclass(frozen=True, slots=True)
 class IngestReport:
@@ -95,6 +102,7 @@ class Ingester:
         reinforcer: Reinforcer | None = None,
         batch_size: int = 32,
         observer: Observer | None = None,
+        remover: EvidenceRemover | None = remove_local_file,
     ) -> None:
         if embedder.model_name != store.info.model or embedder.dimension != store.info.dimension:
             raise ModelMismatchError(
@@ -106,20 +114,38 @@ class Ingester:
         self._embedder = embedder
         self._captioner = captioner
         self._segmenter = segmenter or Segmenter()
-        self._reinforcer = reinforcer or Reinforcer(store)
+        self._reinforcer = reinforcer or Reinforcer(store, remover=remover)
         self._batch_size = batch_size
         self._observer = observer
+        self._store = store
+        self._remover = remover
 
     def ingest(self, observations: Iterable[Observation]) -> IngestReport:
         received = accepted = inserted = merged = contradicted = 0
         unsupported: list[str] = []
         batch: list[Observation] = []
+        discarded: list[Observation] = []
+        checkpoint = self._segmenter.checkpoint()
+
+        def discard_rejected() -> None:
+            pending = {o.evidence.uri for o in batch}
+            self.discard(o for o in discarded if o.evidence.uri not in pending)
+            discarded.clear()
 
         def flush() -> None:
-            nonlocal inserted, merged, contradicted
+            nonlocal inserted, merged, contradicted, checkpoint
             if not batch:
                 return
-            memories, rejected = self.embed(self.caption(batch))
+            pending = []
+            for observation in batch:
+                identity = memory_id(observation.robot_id, observation.camera_id, observation.timestamp)
+                if self._reinforcer.find_observation(identity) is None:
+                    pending.append(observation)
+                else:
+                    # A retry may follow a successful write whose old keyframe has already been replaced.
+                    merged += 1
+                    discarded.append(observation)
+            memories, rejected = self.embed(self.caption(pending)) if pending else ([], [])
             unsupported.extend(m.id for m in rejected)
             for m in memories:
                 stored, was_merged = self.persist(m)
@@ -127,18 +153,38 @@ class Ingester:
                 inserted += not was_merged
                 if self._observer is not None:
                     contradicted += self._observer.observe(m, stored.id).superseded
+            self._discard_evidence(m.evidence for m in rejected if m.evidence is not None)
             batch.clear()
+            checkpoint = self._segmenter.checkpoint()
+            discard_rejected()
 
-        for obs in observations:
-            received += 1
-            if not self.segment(obs):
-                continue
-            accepted += 1
-            batch.append(obs)
-            if len(batch) >= self._batch_size:
-                flush()
-        flush()
+        try:
+            for obs in observations:
+                received += 1
+                if not self.segment(obs):
+                    discarded.append(obs)
+                    if len(discarded) >= self._batch_size:
+                        discard_rejected()
+                    continue
+                accepted += 1
+                batch.append(obs)
+                if len(batch) >= self._batch_size:
+                    flush()
+            flush()
+            discard_rejected()
+        except Exception:
+            self._segmenter.restore(checkpoint)
+            discard_rejected()
+            raise
         return IngestReport(received, accepted, inserted, merged, len(unsupported), tuple(unsupported), contradicted)
+
+    def discard(self, observations: Iterable[Observation]) -> None:
+        """Release generated images from dropped observations, preserving any stored references."""
+        self._discard_evidence(o.evidence for o in observations)
+
+    def _discard_evidence(self, evidence: Iterable[Evidence]) -> None:
+        if self._remover is not None:
+            remove_unreferenced(self._store, (e for e in evidence if e.managed), self._remover)
 
     # The stages. Each is usable on its own by a queue-based runner.
 

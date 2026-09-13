@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from placecell import EvidenceKind, InMemoryStore, Pose
-from placecell.errors import ValidationError
+from placecell.errors import ProviderError, ValidationError
 from placecell.pipeline import Ingester
 from placecell.providers import HashingEmbedder
 from placecell.retrieval import RankedMemory
@@ -101,6 +101,7 @@ def test_ingest_worker_batches_in_the_background(tmp_path: Path, hashing: Hashin
         evidence = writer.write_jpeg("front", float(i), b"\xff\xd8")
         worker.submit(Observation("r1", "front", float(i * 5), Pose(i * 2.0, 0), evidence))
     assert worker.dropped == 1 and any(line.startswith("W ingest queue full") for line in log.lines)
+    assert not (tmp_path / "front_2000.jpg").exists()
     worker.start()
     deadline = threading.Event()
     for _ in range(50):
@@ -110,6 +111,76 @@ def test_ingest_worker_batches_in_the_background(tmp_path: Path, hashing: Hashin
     worker.stop()
     assert store.count() == 2
     assert any(line.startswith("I ingested 2/2") for line in log.lines)
+
+
+def test_worker_releases_failed_and_abandoned_frames(tmp_path: Path, hashing: HashingEmbedder) -> None:
+    from placecell import CollectionInfo
+
+    class FailedCaptioner(FakeCaptioner):
+        def caption(self, items):
+            raise ProviderError("captioning unavailable")
+
+    class SignalLog(_Log):
+        def __init__(self):
+            super().__init__()
+            self.failed = threading.Event()
+
+        def error(self, msg):
+            super().error(msg)
+            self.failed.set()
+
+    store = InMemoryStore(CollectionInfo("worker", hashing.model_name, hashing.dimension))
+    log = SignalLog()
+    worker = IngestWorker(Ingester(hashing, store, FailedCaptioner()), threading.Lock(), 1, 4, log)
+    builder = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path))
+    failed = builder.from_compressed(100, "jpeg", b"image", Pose(0, 0))
+    worker.submit(failed)
+    worker.start()
+    try:
+        assert log.failed.wait(5)
+        assert not Path(failed.evidence.uri).exists()
+    finally:
+        worker.stop()
+    assert store.count() == 0
+
+    # A worker stopped before processing a pending batch still owns its queued images.
+    abandoned = builder.from_compressed(200, "jpeg", b"image", Pose(2, 0))
+    worker = IngestWorker(Ingester(hashing, store, FakeCaptioner()), threading.Lock(), 1, 4, log)
+    worker.submit(abandoned)
+    worker._stop.set()
+    worker.start()
+    worker.stop()
+    assert not Path(abandoned.evidence.uri).exists()
+    after_stop = builder.from_compressed(300, "jpeg", b"image", Pose(4, 0))
+    worker.submit(after_stop)
+    assert not Path(after_stop.evidence.uri).exists()
+
+
+def test_dropped_duplicate_does_not_delete_a_queued_frame(tmp_path: Path, hashing: HashingEmbedder) -> None:
+    from placecell import CollectionInfo
+
+    class ReadingCaptioner(FakeCaptioner):
+        def caption(self, items):
+            assert all(Path(item.uri).read_bytes() == b"image" for item in items)
+            return super().caption(items)
+
+    store = InMemoryStore(CollectionInfo("queued", hashing.model_name, hashing.dimension))
+    worker = IngestWorker(Ingester(hashing, store, ReadingCaptioner("printer")), threading.Lock(), 1, 1, _Log())
+    observation = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path)).from_compressed(
+        100, "jpeg", b"image", Pose(0, 0)
+    )
+    worker.submit(observation)
+    worker.submit(observation)
+    assert worker.dropped == 1 and Path(observation.evidence.uri).exists()
+    worker.start()
+    try:
+        for _ in range(50):
+            if store.count():
+                break
+            threading.Event().wait(0.1)
+        assert store.count() == 1 and Path(observation.evidence.uri).exists()
+    finally:
+        worker.stop()
 
 
 def test_answer_payload_and_factories(hashing: HashingEmbedder, tmp_path: Path) -> None:
@@ -122,6 +193,8 @@ def test_answer_payload_and_factories(hashing: HashingEmbedder, tmp_path: Path) 
         "y": 2.0,
         "yaw": 0.0,
         "time": 5.0,
+        "last_seen": 5.0,
+        "observed_at": [5.0],
         "caption": "a door",
         "confidence": 0.5,
     }

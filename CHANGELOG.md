@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Require valid retrieved citations for grounded answers and honor the configured map in nearby queries.
+- Validate store batches before writes and give summaries identities derived from their members.
+- Schema 3 retains sighting identities and times, records supersession separately from last sighting,
+  and upgrades existing schema 2 collections on open.
+- Clear misses when observations reinforce a memory and keep shared evidence until its final reference is removed.
+- Clean up generated keyframes rejected by segmentation, dropped by the worker, or replaced by reinforcement.
+- Restore uncommitted segmentation state after ingestion failures and skip completed observations before captioning retries.
+
 - Data model: `Pose`, `Evidence`, `Memory` with deterministic ids, decayed confidence and a schema version.
 - Provider contract with capabilities per media kind; `HashingEmbedder` for offline use; `OpenAICompatibleEmbedder` with batching, retries and an injectable transport.
 - Store contract with push-down filters; `InMemoryStore` as the reference backend.

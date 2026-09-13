@@ -37,7 +37,7 @@ class KeyframeWriter:
     def __init__(self, out_dir: str | Path, jpeg_quality: int = 85) -> None:
         if not (1 <= jpeg_quality <= 100):
             raise ValidationError("jpeg_quality must be within 1..100")
-        self._dir = Path(out_dir)
+        self._dir = Path(out_dir).resolve()
         self._dir.mkdir(parents=True, exist_ok=True)
         self._quality = jpeg_quality
 
@@ -46,7 +46,7 @@ class KeyframeWriter:
             raise ValidationError("empty image data")
         path = self._dir / f"{camera_id}_{round(timestamp * 1000)}.jpg"
         path.write_bytes(data)
-        return Evidence(EvidenceKind.FRAME, str(path), hashlib.sha256(data).hexdigest())
+        return Evidence(EvidenceKind.FRAME, str(path), hashlib.sha256(data).hexdigest(), managed=True)
 
     def write_raw(
         self, camera_id: str, timestamp: float, height: int, width: int, encoding: str, step: int, data: bytes

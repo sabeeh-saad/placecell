@@ -1,21 +1,29 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from placecell import (
     CollectionInfo,
+    Curator,
     Evidence,
     EvidenceKind,
+    Filter,
     Ingester,
     InMemoryStore,
     Observation,
     Pose,
     Recall,
+    ReinforcementPolicy,
+    Reinforcer,
     SegmentationPolicy,
     Segmenter,
 )
-from placecell.errors import ModelMismatchError, ValidationError
+from placecell.errors import ModelMismatchError, ProviderError, ValidationError
+from placecell.lifecycle import remove_local_file
 from placecell.providers import HashingEmbedder
+from placecell.ros2.bridge import KeyframeWriter, ObservationBuilder
 from tests.conftest import DIM, FakeCaptioner, FakeMediaEmbedder, frame
 
 
@@ -97,3 +105,160 @@ def test_ingester_validates_its_parts(store: InMemoryStore, hashing: HashingEmbe
 
     with pytest.raises(ValidationError):
         Ingester(hashing, store, captioner=BadCaptioner()).ingest([obs(0)])
+
+
+def test_caption_failure_can_be_retried_on_the_same_ingester(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+    class FailOnce(FakeCaptioner):
+        def caption(self, items):
+            if not self.calls:
+                self.calls.append(list(items))
+                raise ProviderError("temporary failure")
+            return super().caption(items)
+
+    ingester = Ingester(hashing, store, FailOnce("printer"))
+    observations = [obs(100), obs(200, x=0.4)]
+    with pytest.raises(ProviderError):
+        ingester.ingest(observations)
+    report = ingester.ingest(observations)
+    assert report.accepted == 2 and report.inserted == 1 and report.merged == 1
+    assert store.query()[0].observations == 2
+
+
+def test_retry_preserves_completed_batches_and_deduplicates_partial_writes(
+    store: InMemoryStore,
+    hashing: HashingEmbedder,
+) -> None:
+    class FailThird(Reinforcer):
+        calls = 0
+
+        def reinforce_or_insert(self, memory):
+            result = super().reinforce_or_insert(memory)
+            self.calls += 1
+            if self.calls == 3:
+                raise ProviderError("write succeeded before the connection failed")
+            return result
+
+    ingester = Ingester(hashing, store, FakeCaptioner("printer"), reinforcer=FailThird(store), batch_size=2)
+    observations = [obs(100), obs(200, x=0.4), obs(300), obs(400, x=0.4)]
+    with pytest.raises(ProviderError):
+        ingester.ingest(observations)
+    assert store.query()[0].observations == 3
+    ingester.ingest(observations)
+    assert store.query()[0].observations == 4
+    assert store.query()[0].sighting_times == (100, 200, 300, 400)
+
+
+def test_source_failure_does_not_advance_unflushed_segmentation(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+    def source():
+        yield obs(100)
+        raise ProviderError("source interrupted")
+
+    ingester = Ingester(hashing, store, FakeCaptioner("printer"))
+    with pytest.raises(ProviderError):
+        ingester.ingest(source())
+    assert ingester.ingest([obs(100)]).inserted == 1
+
+
+def test_rejected_generated_frames_are_removed_but_pending_frames_survive(
+    store: InMemoryStore,
+    hashing: HashingEmbedder,
+    tmp_path: Path,
+) -> None:
+    builder = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path))
+    observations = [builder.from_compressed(t, "jpeg", b"image", Pose(0, 0)) for t in range(10)]
+    ingester = Ingester(hashing, store, FakeCaptioner("printer"), batch_size=2)
+    report = ingester.ingest([observations[0], observations[0], *observations[1:]])
+    assert report.accepted == 1 and len(list(tmp_path.glob("*.jpg"))) == 1
+    stored = store.query()[0]
+    assert stored.evidence is not None and Path(stored.evidence.uri).exists()
+    Curator(store, remover=remove_local_file).forget(Filter())
+    assert not list(tmp_path.glob("*.jpg"))
+
+
+def test_unsupported_generated_frames_are_cleaned_without_removing_caller_files(
+    store: InMemoryStore,
+    hashing: HashingEmbedder,
+    tmp_path: Path,
+) -> None:
+    builder = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path))
+    managed = builder.from_compressed(100, "jpeg", b"generated", Pose(0, 0))
+    original = tmp_path / "original.jpg"
+    original.write_bytes(b"original")
+    external = obs(200, x=4, uri=str(original))
+    report = Ingester(hashing, store).ingest([managed, external])
+    assert report.unsupported == 2
+    assert not Path(managed.evidence.uri).exists() and original.read_bytes() == b"original"
+
+
+@pytest.mark.parametrize("keep_newest", [False, True])
+def test_reinforcement_removes_only_replaced_generated_keyframes(
+    store: InMemoryStore,
+    hashing: HashingEmbedder,
+    tmp_path: Path,
+    keep_newest: bool,
+) -> None:
+    builder = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path))
+    first = builder.from_compressed(100, "jpeg", b"first", Pose(0, 0))
+    repeat = builder.from_compressed(200, "jpeg", b"repeat", Pose(0.4, 0))
+    reinforcer = Reinforcer(store, ReinforcementPolicy(keep_newest_evidence=keep_newest))
+    Ingester(hashing, store, FakeCaptioner("printer"), reinforcer=reinforcer).ingest([first, repeat])
+    kept, removed = (repeat, first) if keep_newest else (first, repeat)
+    assert Path(kept.evidence.uri).exists() and not Path(removed.evidence.uri).exists()
+    assert len(list(tmp_path.glob("*.jpg"))) == 1
+
+
+def test_failed_ingestion_keeps_generated_evidence_for_retry(
+    store: InMemoryStore, hashing: HashingEmbedder, tmp_path: Path
+) -> None:
+    class FailOnce(FakeCaptioner):
+        failed = False
+
+        def caption(self, items):
+            if not self.failed:
+                self.failed = True
+                raise ProviderError("temporary failure")
+            assert all(Path(item.uri).exists() for item in items)
+            return super().caption(items)
+
+    observation = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path)).from_compressed(
+        100, "jpeg", b"image", Pose(0, 0)
+    )
+    ingester = Ingester(hashing, store, FailOnce("printer"))
+    with pytest.raises(ProviderError):
+        ingester.ingest([observation])
+    assert Path(observation.evidence.uri).exists()
+    assert ingester.ingest([observation]).inserted == 1
+
+
+def test_partial_retry_does_not_read_keyframes_already_replaced(
+    store: InMemoryStore,
+    hashing: HashingEmbedder,
+    tmp_path: Path,
+) -> None:
+    class ReadingCaptioner(FakeCaptioner):
+        def caption(self, items):
+            for item in items:
+                assert Path(item.uri).read_bytes() == b"image"
+            return super().caption(items)
+
+    class FailSecond(Reinforcer):
+        calls = 0
+
+        def reinforce_or_insert(self, memory):
+            result = super().reinforce_or_insert(memory)
+            self.calls += 1
+            if self.calls == 2:
+                raise ProviderError("write succeeded before response failed")
+            return result
+
+    builder = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path))
+    observations = [builder.from_compressed(100 + i * 100, "jpeg", b"image", Pose((i % 2) * 0.4, 0)) for i in range(3)]
+    captioner = ReadingCaptioner("printer")
+    ingester = Ingester(hashing, store, captioner, reinforcer=FailSecond(store), batch_size=3)
+    with pytest.raises(ProviderError):
+        ingester.ingest(observations)
+    assert not Path(observations[0].evidence.uri).exists()
+    assert ingester.ingest(observations).merged == 3
+    assert [len(items) for items in captioner.calls] == [3, 1]
+    assert store.query()[0].observations == 3
+    assert len(list(tmp_path.glob("*.jpg"))) == 1

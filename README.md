@@ -39,7 +39,9 @@ is still closing loops.
 ## A memory that maintains itself
 
 - **Reinforcement.** Seeing the same thing at the same place again strengthens the existing
-  memory instead of adding one. A superseded memory revives if the object comes back.
+  memory instead of adding one. Sighting ids and timestamps are retained for replay detection
+  and time queries, even when the newest keyframe replaces the previous one. A superseded
+  memory revives with its misses cleared if the object comes back.
 - **Contradiction.** When the robot looks at a place from the same spot and heading and no
   longer sees what memory expects, that is a miss. Misses on separate visits add up, and after
   enough of them the memory is superseded. One person blocking the view does not count.
@@ -95,8 +97,8 @@ print(answer.text, [m.memory.pose for m in answer.evidence])
 ```
 
 The model gets three tools, similarity, time range and position radius, and must finish by
-citing the memory ids it used. `answer.grounded` is False when it answered in prose without
-citing anything, so a caller can refuse ungrounded answers.
+citing the memory ids it used. `answer.grounded` is True only for a nonempty set of citations
+that all name retrieved memories. Prose, empty citations and unknown ids return False.
 
 ## ROS 2
 
@@ -112,6 +114,22 @@ looks up `map -> base_footprint` at each image stamp, writes keyframes, and inge
 background thread. Publish a `std_msgs/String` question on `/placecell/ask` and read the JSON
 answer, with the cited memories and their map positions, on `/placecell/answer`. All settings
 are ROS parameters; the API key comes only from the environment.
+
+Time queries match actual sighting timestamps, not the interval between the first and last
+visit. Results expose matching times through `RankedMemory.observed_at`; agent tool results
+and ROS answers include `observed_at` and `last_seen`. Nearby agent queries honor `map_id`.
+
+Existing schema 2 collections are upgraded to schema 3 when opened. The upgrade retains
+stored rows, captions, evidence and lifecycle counts. It can preserve the recorded first
+and last times, but cannot reconstruct intermediate sightings or observation ids that the
+older schema discarded. Replay detection for merged observations is complete for sightings
+ingested after the upgrade.
+
+Keyframes produced by the video and ROS sources are marked as managed files. Ingestion
+removes rejected or replaced managed files once no memory references them; caller-supplied
+evidence is unmanaged by default. The ROS curator removes evidence after deleting its final
+memory reference. Failed library ingestion keeps pending keyframes and rolls back segmentation
+so the same observations can be retried; completed writes are recognized before captioning.
 
 ## Layout
 
