@@ -29,6 +29,14 @@ def remove_local_file(evidence: Evidence) -> None:
     Path(uri).unlink(missing_ok=True)
 
 
+def remove_unreferenced(store: VectorStore, evidence: Iterable[Evidence], remover: EvidenceRemover) -> None:
+    """Remove evidence only after the final reference, including superseded memories, is gone."""
+    unique = {e.uri.removeprefix("file://"): e for e in evidence}
+    for uri, item in unique.items():
+        if not store.count(Filter(evidence_uri=uri, include_superseded=True)):
+            remover(item)
+
+
 @dataclass(frozen=True, slots=True)
 class ReinforcementPolicy:
     radius_m: float = 0.75
@@ -47,9 +55,15 @@ class ReinforcementPolicy:
 class Reinforcer:
     """Writes memories into a store, merging repeats instead of duplicating them."""
 
-    def __init__(self, store: VectorStore, policy: ReinforcementPolicy | None = None) -> None:
+    def __init__(
+        self,
+        store: VectorStore,
+        policy: ReinforcementPolicy | None = None,
+        remover: EvidenceRemover | None = remove_local_file,
+    ) -> None:
         self._store = store
         self._policy = policy or ReinforcementPolicy()
+        self._remover = remover
 
     def reinforce_or_insert(self, memory: Memory) -> tuple[Memory, bool]:
         """Store the memory. Returns the memory as stored and whether it merged into an existing one.
@@ -60,17 +74,35 @@ class Reinforcer:
         """
         if memory.embedding is None:
             raise ValidationError("only embedded memories can be stored")
-        existing = self._store.get(memory.id)
+        existing = self.find_observation(memory.id)
         if existing is not None:
+            self._discard_evidence([memory])
             return existing, True
         where = Filter(near=memory.pose, radius=self._policy.radius_m, include_superseded=True)
         hits = self._store.search(memory.embedding, 1, where)
         if hits and hits[0].score >= self._policy.min_similarity:
             merged = self._merge(hits[0].memory, memory)
             self._store.upsert([merged])
+            self._discard_evidence([hits[0].memory, memory])
             return merged, True
         self._store.upsert([memory])
         return memory, False
+
+    def find_observation(self, observation_id: str) -> Memory | None:
+        """Find an observation even when it was folded into another memory."""
+        existing = self._store.get(observation_id)
+        if existing is not None:
+            return existing
+        matches = self._store.query(Filter(observation_id=observation_id, include_superseded=True), limit=1)
+        return matches[0] if matches else None
+
+    def _discard_evidence(self, memories: Iterable[Memory]) -> None:
+        if self._remover is not None:
+            remove_unreferenced(
+                self._store,
+                (m.evidence for m in memories if m.evidence is not None and m.evidence.managed),
+                self._remover,
+            )
 
     def _merge(self, existing: Memory, repeat: Memory) -> Memory:
         p = self._policy
@@ -79,11 +111,16 @@ class Reinforcer:
         return replace(
             existing,
             observations=existing.observations + 1,
+            timestamp=min(existing.timestamp, repeat.timestamp),
+            sightings=tuple(dict.fromkeys((*existing.sightings, *repeat.sightings))),
             confidence=min(1.0, confidence),
             last_seen=max(existing.last_seen, repeat.timestamp),
             evidence=repeat.evidence if (p.keep_newest_evidence and newest and repeat.evidence) else existing.evidence,
             caption=existing.caption or repeat.caption,
             superseded=False,
+            superseded_at=None,
+            misses=0,
+            last_miss=0.0,
         )
 
 
@@ -157,7 +194,7 @@ class Curator:
             if not m.superseded:
                 alive.append(m)
             if m.superseded:
-                if now - m.last_seen >= p.drop_superseded_after_s:
+                if m.superseded_at is not None and now - m.superseded_at >= p.drop_superseded_after_s:
                     dropped.append(m)
             elif p.max_age_s is not None and now - m.timestamp > p.max_age_s:
                 aged.append(m)
@@ -175,7 +212,7 @@ class Curator:
             return 0
         verdicts = self._corrections.verdicts(m.id for m in alive)
         doomed = [
-            replace(m, superseded=True, last_seen=max(m.last_seen, now))
+            replace(m, superseded=True, superseded_at=now)
             for m in alive
             if m.id in verdicts
             and verdicts[m.id].wrong - verdicts[m.id].right >= self._policy.wrong_verdicts_to_supersede
@@ -190,7 +227,7 @@ class Curator:
         if m is None:
             return None
         now = self._clock() if now is None else now
-        updated = replace(m, superseded=True, last_seen=max(m.last_seen, now))
+        updated = replace(m, superseded=True, superseded_at=m.superseded_at if m.superseded else now)
         self._store.upsert([updated])
         return updated
 
@@ -206,6 +243,4 @@ class Curator:
             return
         self._store.delete(m.id for m in batch)
         if self._remover is not None:
-            for m in batch:
-                if m.evidence is not None:
-                    self._remover(m.evidence)
+            remove_unreferenced(self._store, (m.evidence for m in batch if m.evidence is not None), self._remover)

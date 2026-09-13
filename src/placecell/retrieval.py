@@ -26,6 +26,8 @@ class RankedMemory:
     """Effective confidence at query time, decay applied."""
     similarity: float | None = None
     """Cosine similarity to the query for similarity searches, None for time and place lookups."""
+    observed_at: tuple[float, ...] = ()
+    """Sighting times inside a requested time window, oldest first."""
 
     @property
     def score(self) -> float:
@@ -95,4 +97,16 @@ class Recall:
     def _plain(self, where: Filter, limit: int | None) -> list[RankedMemory]:
         now = self._clock()
         rows = self._store.query(where, limit)
-        return [RankedMemory(m, m.effective_confidence(now, self._half_life_s)) for m in rows]
+        return [
+            RankedMemory(
+                m,
+                m.effective_confidence(now, self._half_life_s),
+                observed_at=tuple(
+                    t
+                    for t in m.sighting_times
+                    if (where.time_from is None or t >= where.time_from)
+                    and (where.time_to is None or t < where.time_to)
+                ),
+            )
+            for m in rows
+        ]

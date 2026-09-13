@@ -178,7 +178,11 @@ def _describe(r: RankedMemory) -> dict[str, Any]:
     m = r.memory
     out: dict[str, Any] = {
         "id": m.id,
-        "time": datetime.fromtimestamp(m.timestamp, tz=timezone.utc).isoformat(timespec="seconds"),
+        "time": datetime.fromtimestamp(r.observed_at[0] if r.observed_at else m.timestamp, tz=timezone.utc).isoformat(
+            timespec="seconds"
+        ),
+        "last_seen": m.last_seen,
+        "observed_at": list(r.observed_at or m.sighting_times),
         "x": round(m.pose.x, 2),
         "y": round(m.pose.y, 2),
         "yaw": round(m.pose.yaw, 2),

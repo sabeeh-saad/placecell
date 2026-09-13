@@ -31,6 +31,7 @@ def test_reembed_copies_everything_it_can_and_keeps_lifecycle_fields(
         2,
         3.0,
     )
+    assert moved.sightings == old[0].sightings and moved.superseded_at == old[0].superseded_at
     media = FakeMediaEmbedder()
     target2 = InMemoryStore(CollectionInfo("v3", media.model_name, media.dimension))
     report = reembed(store, target2, media)

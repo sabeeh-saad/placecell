@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from placecell.errors import ModelMismatchError, PlacecellError, ValidationError
-from placecell.memory import Evidence, EvidenceKind, Memory, Pose
+from placecell.memory import SCHEMA_VERSION, Evidence, EvidenceKind, Memory, Pose, Sighting
 from placecell.store.base import CollectionInfo, Filter, Hit
 
 _MAX_IN_LIST = 500
@@ -28,6 +28,8 @@ _MAX_IN_LIST = 500
 
 class LanceDBStore:
     def __init__(self, path: str | Path, info: CollectionInfo) -> None:
+        if info.schema_version != SCHEMA_VERSION:
+            raise ValidationError(f"this code expects schema version {SCHEMA_VERSION}, got {info.schema_version}")
         try:
             import lancedb
             import pyarrow as pa
@@ -44,12 +46,15 @@ class LanceDBStore:
                     f"collection {info.name!r} at {self._path} is bound to {stored.model!r}/{stored.dimension}, "
                     f"not {info.model!r}/{info.dimension}"
                 )
-            if stored.schema_version != info.schema_version:
+            self._table = self._db.open_table(info.name)
+            if stored.schema_version == 2 and info.schema_version == SCHEMA_VERSION:
+                self._upgrade_sightings()
+                self._write_info(info)
+            elif stored.schema_version != info.schema_version:
                 raise ValidationError(
                     f"collection {info.name!r} has schema version {stored.schema_version}, "
                     f"this code expects {info.schema_version}"
                 )
-            self._table = self._db.open_table(info.name)
         else:
             schema = pa.schema(
                 [
@@ -78,11 +83,20 @@ class LanceDBStore:
                     pa.field("role", pa.string()),
                     pa.field("consolidated_into", pa.string()),
                     pa.field("schema_version", pa.int64()),
+                    pa.field("sighting_ids", pa.list_(pa.string())),
+                    pa.field("sighting_times", pa.list_(pa.float64())),
+                    pa.field("superseded_at", pa.float64()),
+                    pa.field("evidence_managed", pa.bool_()),
                 ]
             )
             self._table = self._db.create_table(info.name, schema=schema)
-            self._meta_path.write_text(json.dumps(asdict(info), indent=2))
+            self._write_info(info)
         self._info = info
+
+    def _write_info(self, info: CollectionInfo) -> None:
+        pending = self._meta_path.with_suffix(".json.tmp")
+        pending.write_text(json.dumps(asdict(info), indent=2))
+        pending.replace(self._meta_path)
 
     @classmethod
     def open(cls, path: str | Path, name: str) -> LanceDBStore:
@@ -90,7 +104,24 @@ class LanceDBStore:
         meta = Path(path) / f"{name}.collection.json"
         if not meta.exists():
             raise ValidationError(f"no collection {name!r} at {path}")
-        return cls(path, CollectionInfo(**json.loads(meta.read_text())))
+        info = CollectionInfo(**json.loads(meta.read_text()))
+        return cls(path, replace(info, schema_version=SCHEMA_VERSION))
+
+    def _upgrade_sightings(self) -> None:
+        """Upgrade version 2 in place, resuming safely if only the metadata write was interrupted."""
+        expressions = {
+            "sighting_ids": "make_array(id, '')",
+            "sighting_times": "make_array(timestamp, last_seen)",
+            "superseded_at": "CAST(NULL AS DOUBLE)",
+            "evidence_managed": "false",
+        }
+        missing = {name: expr for name, expr in expressions.items() if name not in self._table.schema.names}
+        if missing:
+            self._table.add_columns(missing)
+        self._table.update(
+            where="superseded = true AND superseded_at IS NULL", values_sql={"superseded_at": "last_seen"}
+        )
+        self._table.update(values={"schema_version": SCHEMA_VERSION})
 
     @property
     def info(self) -> CollectionInfo:
@@ -135,7 +166,7 @@ class LanceDBStore:
         if expr:
             query = query.where(expr)
         rows = [_from_row(r) for r in query.limit(None).to_list()]
-        rows.sort(key=lambda m: (m.timestamp, m.id))
+        rows.sort(key=(where or Filter()).sort_key)
         return rows[:limit] if limit is not None else rows
 
     def search(self, vector: ArrayLike, k: int, where: Filter | None = None) -> list[Hit]:
@@ -193,10 +224,22 @@ def _sql(where: Filter) -> str | None:
         clauses.append(f"robot_id = {_quote(where.robot_id)}")
     if where.camera_id is not None:
         clauses.append(f"camera_id = {_quote(where.camera_id)}")
-    if where.time_from is not None:
-        clauses.append(f"timestamp >= {where.time_from!r}")
-    if where.time_to is not None:
-        clauses.append(f"timestamp < {where.time_to!r}")
+    if where.observation_id is not None:
+        clauses.append(f"array_has(sighting_ids, {_quote(where.observation_id)})")
+    if where.evidence_uri is not None:
+        uri = where.evidence_uri.removeprefix("file://")
+        clauses.append(f"evidence_uri IN ({_quote(uri)}, {_quote('file://' + uri)})")
+    if where.time_from is not None and where.time_to is not None:
+        # Inserting a bound into the sorted times gives its lower-bound position.
+        # Different positions mean at least one sighting lies in [from, to), including gaps correctly.
+        def position(bound: float) -> str:
+            return f"array_position(array_sort(array_append(sighting_times, {float(bound)!r})), {float(bound)!r})"
+
+        clauses.append(f"{position(where.time_to)} > {position(where.time_from)}")
+    elif where.time_from is not None:
+        clauses.append(f"array_max(sighting_times) >= {float(where.time_from)!r}")
+    elif where.time_to is not None:
+        clauses.append(f"array_min(sighting_times) < {float(where.time_to)!r}")
     if where.near is not None and where.radius is not None:
         p = where.near
         clauses.append(f"frame_id = {_quote(p.frame_id)}")
@@ -233,12 +276,22 @@ def _to_row(m: Memory) -> dict[str, Any]:
         "role": m.role,
         "consolidated_into": m.consolidated_into,
         "schema_version": m.schema_version,
+        "sighting_ids": [s.id for s in m.sightings],
+        "sighting_times": [s.timestamp for s in m.sightings],
+        "superseded_at": m.superseded_at,
+        "evidence_managed": e.managed if e else False,
     }
 
 
 def _from_row(r: dict[str, Any]) -> Memory:
     evidence = (
-        Evidence(EvidenceKind(r["evidence_kind"]), r["evidence_uri"], r["evidence_digest"], r["evidence_duration"])
+        Evidence(
+            EvidenceKind(r["evidence_kind"]),
+            r["evidence_uri"],
+            r["evidence_digest"],
+            r["evidence_duration"],
+            managed=r["evidence_managed"],
+        )
         if r["evidence_kind"]
         else None
     )
@@ -261,4 +314,6 @@ def _from_row(r: dict[str, Any]) -> Memory:
         role=r["role"],
         consolidated_into=r["consolidated_into"],
         schema_version=int(r["schema_version"]),
+        sightings=tuple(Sighting(i, t) for i, t in zip(r["sighting_ids"], r["sighting_times"], strict=True)),
+        superseded_at=r["superseded_at"],
     )

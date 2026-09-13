@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
-from placecell import CollectionInfo, Filter, Pose
+from placecell import SCHEMA_VERSION, CollectionInfo, Filter, Pose, Reinforcer
 from placecell.errors import ModelMismatchError, ValidationError
 from placecell.providers import HashingEmbedder
 from placecell.store.base import EVERYTHING
@@ -65,6 +66,48 @@ def test_sql_translation() -> None:
         robot_id="r'1", camera_id="c", time_from=1.5, time_to=2.0, near=Pose(1, -2, 0, "map", "m"), radius=0.5
     )
     assert _sql(where) == (
-        "superseded = false AND robot_id = 'r''1' AND camera_id = 'c' AND timestamp >= 1.5 AND timestamp < 2.0 "
+        "superseded = false AND robot_id = 'r''1' AND camera_id = 'c' AND "
+        "array_position(array_sort(array_append(sighting_times, 2.0)), 2.0) > "
+        "array_position(array_sort(array_append(sighting_times, 1.5)), 1.5) "
         "AND frame_id = 'map' AND map_id = 'm' AND ((x - 1) * (x - 1) + (y - -2) * (y - -2)) <= 0.25"
     )
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_version_two_collections_upgrade_without_losing_memories(
+    tmp_path: Path, hashing: HashingEmbedder, interrupted: bool
+) -> None:
+    import lancedb
+
+    info = CollectionInfo("legacy", hashing.model_name, DIM)
+    store = LanceDBStore(tmp_path, info)
+    first = embedded(hashing, "printer", t=100, last_seen=200, observations=2)
+    gone = embedded(hashing, "chair", t=10, last_seen=300, superseded=True)
+    store.upsert([first, gone])
+    store.close()
+    table = lancedb.connect(str(tmp_path)).open_table(info.name)
+    if not interrupted:
+        table.drop_columns(["sighting_ids", "sighting_times", "superseded_at", "evidence_managed"])
+    table.update(values={"schema_version": 2})
+    meta = tmp_path / "legacy.collection.json"
+    metadata = json.loads(meta.read_text())
+    metadata["schema_version"] = 2
+    meta.write_text(json.dumps(metadata))
+
+    upgraded = LanceDBStore.open(tmp_path, info.name)
+    assert upgraded.info.schema_version == SCHEMA_VERSION
+    assert upgraded.count(EVERYTHING) == 2
+    remembered = upgraded.get(first.id)
+    assert remembered is not None and remembered.sighting_times == (100, 200) and remembered.observations == 2
+    assert upgraded.count(Filter(time_from=190, time_to=210)) == 1
+    superseded = upgraded.get(gone.id)
+    assert superseded is not None and superseded.superseded_at == 300 and superseded.last_seen == 300
+    repeat = embedded(hashing, "printer", t=400, camera="back")
+    Reinforcer(upgraded).reinforce_or_insert(repeat)
+    upgraded.close()
+    reopened = LanceDBStore.open(tmp_path, info.name)
+    again, _ = Reinforcer(reopened).reinforce_or_insert(repeat)
+    assert again.observations == 3 and again.sighting_times == (100, 200, 400)
+    assert reopened.count(Filter(observation_id=repeat.id)) == 1
+    assert json.loads(meta.read_text())["schema_version"] == SCHEMA_VERSION
+    reopened.close()

@@ -143,6 +143,7 @@ class Consolidator:
             observations=sum(m.observations for m in cluster),
             last_seen=max(m.last_seen for m in cluster),
             role="summary",
+            sightings=tuple(dict.fromkeys(s for m in cluster for s in m.sightings)),
         )
 
 

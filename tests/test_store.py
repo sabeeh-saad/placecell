@@ -63,6 +63,10 @@ def test_filter_semantics(store: VectorStore, hashing: HashingEmbedder) -> None:
     with pytest.raises(ValidationError):
         Filter(time_from=2, time_to=1)
     with pytest.raises(ValidationError):
+        Filter(time_from=float("nan"))
+    with pytest.raises(ValidationError):
+        Filter(time_to=float("inf"))
+    with pytest.raises(ValidationError):
         store.query(limit=-1)
 
 

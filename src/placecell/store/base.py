@@ -48,6 +48,9 @@ class Filter:
     near: Pose | None = None
     radius: float | None = None
     include_superseded: bool = False
+    observation_id: str | None = None
+    """Match a retained observation identity, including one merged under a different memory id."""
+    evidence_uri: str | None = None
 
     def __post_init__(self) -> None:
         if (self.near is None) != (self.radius is None):
@@ -56,6 +59,9 @@ class Filter:
             raise ValidationError("radius must be a positive, finite distance")
         if self.time_from is not None and self.time_to is not None and self.time_from > self.time_to:
             raise ValidationError("time_from must not exceed time_to")
+        for bound in (self.time_from, self.time_to):
+            if bound is not None and not math.isfinite(bound):
+                raise ValidationError("time bounds must be finite")
 
     def matches(self, memory: Memory) -> bool:
         """Reference semantics of the filter, used by in-process stores and by tests of others."""
@@ -65,9 +71,17 @@ class Filter:
             return False
         if self.camera_id is not None and memory.camera_id != self.camera_id:
             return False
-        if self.time_from is not None and memory.timestamp < self.time_from:
+        if self.evidence_uri is not None and (
+            memory.evidence is None
+            or memory.evidence.uri.removeprefix("file://") != self.evidence_uri.removeprefix("file://")
+        ):
             return False
-        if self.time_to is not None and memory.timestamp >= self.time_to:
+        if self.observation_id is not None and not any(s.id == self.observation_id for s in memory.sightings):
+            return False
+        if not any(
+            (self.time_from is None or t >= self.time_from) and (self.time_to is None or t < self.time_to)
+            for t in memory.sighting_times
+        ):
             return False
         if self.near is not None and self.radius is not None:
             if not memory.pose.same_frame(self.near):
@@ -75,6 +89,15 @@ class Filter:
             if memory.pose.distance_to(self.near) > self.radius:
                 return False
         return True
+
+    def sort_key(self, memory: Memory) -> tuple[float, str]:
+        """Order a matching memory by its earliest sighting inside the requested window."""
+        times = (
+            t
+            for t in memory.sighting_times
+            if (self.time_from is None or t >= self.time_from) and (self.time_to is None or t < self.time_to)
+        )
+        return min(times), memory.id
 
 
 EVERYTHING = Filter(include_superseded=True)

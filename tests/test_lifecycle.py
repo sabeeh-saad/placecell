@@ -1,25 +1,32 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from placecell import (
+    ContradictionPolicy,
     Curator,
     Evidence,
     EvidenceKind,
     Filter,
+    Ingester,
     InMemoryStore,
+    Observation,
+    Observer,
     Pose,
+    Recall,
     ReinforcementPolicy,
     Reinforcer,
     RetentionPolicy,
+    Sighting,
 )
 from placecell.errors import ValidationError
 from placecell.lifecycle import remove_local_file
 from placecell.providers import HashingEmbedder
 from placecell.store.base import EVERYTHING
-from tests.conftest import embedded
+from tests.conftest import FakeCaptioner, embedded, frame
 
 
 def test_reinforcer_merges_same_thing_at_same_place(store: InMemoryStore, hashing: HashingEmbedder) -> None:
@@ -66,6 +73,94 @@ def test_reinforcing_a_superseded_memory_revives_it(store: InMemoryStore, hashin
     stored, merged = r.reinforce_or_insert(embedded(hashing, "a chair", t=2, x=0.1))
     assert merged and not stored.superseded and stored.observations == 2
     assert store.count() == 1 and store.count(EVERYTHING) == 1
+
+
+def test_merged_sightings_remain_idempotent_after_restart(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+    first = embedded(hashing, "printer", t=100)
+    repeat = embedded(hashing, "printer", t=200, camera="back")
+    reinforcer = Reinforcer(store)
+    reinforcer.reinforce_or_insert(first)
+    stored, _ = reinforcer.reinforce_or_insert(repeat)
+    again, _ = Reinforcer(store).reinforce_or_insert(repeat)
+    assert again == stored and again.observations == 2
+    assert again.sightings == (Sighting(first.id, 100), Sighting(repeat.id, 200))
+    assert store.query(Filter(observation_id=repeat.id)) == [again]
+    assert store.count() == 1
+
+
+def test_reinforced_times_are_queryable_without_filling_the_gaps(
+    store: InMemoryStore, hashing: HashingEmbedder
+) -> None:
+    reinforcer = Reinforcer(store)
+    for timestamp in (100.25, 200.5, 300.75):
+        reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=timestamp))
+    recall = Recall(store, hashing, clock=lambda: 301)
+    assert recall.between(200.5, 300.75)[0].observed_at == (200.5,)
+    assert recall.between(100.25, 300.75)[0].observed_at == (100.25, 200.5)
+    assert recall.between(150, 190) == []
+    assert recall.between(200.5, 200.5) == []
+    assert store.count(Filter(time_from=301)) == 0
+    assert store.count(Filter(time_to=100.25)) == 0
+    assert store.count(Filter(time_from=300.75)) == 1
+    assert store.count(Filter(time_to=100.26)) == 1
+    # A different camera may see the same thing at exactly the same time.
+    reinforcer.reinforce_or_insert(embedded(hashing, "printer", t=200.5, camera="back"))
+    assert recall.between(200.5, 200.6)[0].observed_at == (200.5,)
+    store.upsert([embedded(hashing, "chair", t=250, x=4)])
+    # Limits apply after ordering sightings inside the window, not by the original timestamp.
+    assert recall.between(210, 400, limit=1)[0].memory.caption == "chair"
+
+
+def test_confirmed_and_revived_memories_start_with_no_misses(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+    old = embedded(hashing, "printer", t=100, misses=2, last_miss=150)
+    store.upsert([old])
+    policy = ContradictionPolicy(visit_gap_s=10)
+    ingester = Ingester(hashing, store, FakeCaptioner("printer"), observer=Observer(store, policy))
+    ingester.ingest([Observation("r1", "front", 200, Pose(0, 0), frame())])
+    confirmed = store.get(old.id)
+    assert confirmed is not None and confirmed.misses == 0 and confirmed.last_miss == 0
+    store.upsert([replace(confirmed, superseded=True, superseded_at=250, misses=3, last_miss=250)])
+    revived, _ = Reinforcer(store).reinforce_or_insert(embedded(hashing, "printer", t=300))
+    assert not revived.superseded and revived.superseded_at is None and revived.misses == 0
+    result = Observer(store, policy).observe(embedded(hashing, "blank wall", t=400))
+    assert result.missed == 1 and result.superseded == 0
+
+
+def test_contradiction_grace_starts_when_the_memory_is_superseded(
+    store: InMemoryStore, hashing: HashingEmbedder
+) -> None:
+    old = embedded(hashing, "printer", t=100)
+    store.upsert([old])
+    now = 3 * 86400.0
+    Observer(store, ContradictionPolicy(misses_to_supersede=1)).observe(embedded(hashing, "blank wall", t=now))
+    gone = store.get(old.id)
+    assert gone is not None and gone.last_seen == 100 and gone.superseded_at == now
+    curator = Curator(store, RetentionPolicy(drop_superseded_after_s=86400))
+    assert curator.run(now=now).removed == 0
+    assert curator.run(now=now + 86399).removed == 0
+    assert curator.run(now=now + 86400).superseded_dropped == 1
+
+
+def test_shared_evidence_survives_until_its_final_reference(
+    store: InMemoryStore, hashing: HashingEmbedder, tmp_path: Path
+) -> None:
+    path = tmp_path / "shared.jpg"
+    path.write_bytes(b"image")
+    a = embedded(hashing, "printer", t=100, evidence=Evidence(EvidenceKind.FRAME, str(path)))
+    b = embedded(
+        hashing,
+        "printer",
+        t=200,
+        role="summary",
+        superseded=True,
+        evidence=Evidence(EvidenceKind.FRAME, f"file://{path}"),
+    )
+    store.upsert([a, b])
+    curator = Curator(store, remover=remove_local_file)
+    assert curator.forget(Filter(time_from=100, time_to=101)) == 1
+    assert path.exists() and store.get(b.id) is not None
+    assert curator.forget(EVERYTHING) == 1
+    assert not path.exists()
 
 
 def test_curator_expires_ages_and_drops_superseded(
@@ -115,7 +210,8 @@ def test_curator_scope_supersede_and_forget(store: InMemoryStore, hashing: Hashi
     assert store.count() == 1
     b = store.query()[0]
     marked = curator.supersede(b.id, now=200.0)
-    assert marked is not None and marked.superseded and marked.last_seen == 200.0
+    assert marked is not None and marked.superseded and marked.last_seen == 0.0 and marked.superseded_at == 200.0
+    assert curator.supersede(b.id, now=250.0) == marked  # repeated calls do not restart the grace period
     assert curator.supersede("missing") is None
     assert store.count() == 0 and store.count(EVERYTHING) == 1
     assert curator.forget(Filter(near=Pose(0, 0), radius=1, include_superseded=True)) == 1

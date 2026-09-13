@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from placecell import ChatMessage, ChatReply, InMemoryStore, Recall
+from placecell import ChatMessage, ChatReply, Curator, Evidence, EvidenceKind, Filter, InMemoryStore, Recall
 from placecell.consolidation import ChatSummarizer, ConsolidationPolicy, Consolidator, Summarizer
 from placecell.errors import ModelMismatchError, ProviderError, ValidationError
+from placecell.lifecycle import remove_local_file
 from placecell.providers import HashingEmbedder
 from placecell.store.base import EVERYTHING
 from tests.conftest import DIM, embedded
@@ -85,6 +87,23 @@ def test_simultaneous_camera_clusters_keep_distinct_summaries(store: InMemorySto
     a = consolidator._summarise(rows[:2], ["printer"])
     b = consolidator._summarise(list(reversed(rows[:2])), ["printer"])
     assert a.id == b.id
+
+
+def test_summary_keeps_its_image_after_members_are_deleted(
+    store: InMemoryStore,
+    hashing: HashingEmbedder,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "anchor.jpg"
+    path.write_bytes(b"image")
+    rows = [embedded(hashing, "printer", t=t, evidence=Evidence(EvidenceKind.FRAME, str(path))) for t in (100, 200)]
+    store.upsert(rows)
+    Consolidator(store, hashing, JoinSummarizer(), ConsolidationPolicy(min_group=2)).run()
+    curator = Curator(store, remover=remove_local_file)
+    assert curator.forget(Filter(camera_id="front")) == 2
+    assert path.exists() and store.query()[0].role == "summary"
+    assert curator.forget(Filter(camera_id="summary")) == 1
+    assert not path.exists()
 
 
 def test_chat_summarizer() -> None:

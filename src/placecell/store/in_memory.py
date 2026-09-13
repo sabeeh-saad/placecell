@@ -61,7 +61,7 @@ class InMemoryStore:
             raise ValidationError("limit must not be negative")
         with self._lock:
             rows = [m for m in self._rows.values() if (where or Filter()).matches(m)]
-        rows.sort(key=lambda m: (m.timestamp, m.id))
+        rows.sort(key=(where or Filter()).sort_key)
         return rows[:limit] if limit is not None else rows
 
     def search(self, vector: ArrayLike, k: int, where: Filter | None = None) -> list[Hit]:

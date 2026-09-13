@@ -85,7 +85,15 @@ class Observer:
             misses = m.misses + 1
             gone = misses >= p.misses_to_supersede
             superseded += gone
-            updates.append(replace(m, misses=misses, last_miss=fresh.timestamp, superseded=m.superseded or gone))
+            updates.append(
+                replace(
+                    m,
+                    misses=misses,
+                    last_miss=fresh.timestamp,
+                    superseded=m.superseded or gone,
+                    superseded_at=fresh.timestamp if gone else m.superseded_at,
+                )
+            )
         if updates:
             self._store.upsert(updates)
         return ObserverReport(len(in_view), confirmed, missed, superseded)

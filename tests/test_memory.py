@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from placecell import Evidence, EvidenceKind, Memory, Pose, memory_id
+from placecell import Evidence, EvidenceKind, Memory, Pose, Sighting, memory_id
 from placecell.errors import FrameMismatchError, ValidationError
 
 
@@ -84,3 +84,11 @@ def test_memories_compare_without_looking_at_vectors() -> None:
     a = Memory.create("r", "c", 1.0, Pose(0, 0)).with_embedding(np.ones(3), "m")
     b = Memory.create("r", "c", 1.0, Pose(0, 0)).with_embedding(np.zeros(3), "m")
     assert a == b
+
+
+def test_sightings_and_supersession_timestamps_are_validated() -> None:
+    for bad in (-1.0, float("nan"), float("inf")):
+        with pytest.raises(ValidationError):
+            Sighting("r:c:1", bad)
+        with pytest.raises(ValidationError):
+            Memory("id", "r", "c", 1.0, Pose(0, 0), superseded_at=bad)

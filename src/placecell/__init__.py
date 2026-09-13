@@ -5,7 +5,7 @@ from placecell.chat import ChatMessage, ChatModel, ChatReply, ToolCall
 from placecell.consolidation import ChatSummarizer, ConsolidationPolicy, ConsolidationReport, Consolidator
 from placecell.corrections import Correction, CorrectionLog, InMemoryCorrectionLog, JsonlCorrectionLog
 from placecell.lifecycle import Curator, CuratorReport, ReinforcementPolicy, Reinforcer, RetentionPolicy
-from placecell.memory import SCHEMA_VERSION, Evidence, EvidenceKind, Memory, Pose, memory_id
+from placecell.memory import SCHEMA_VERSION, Evidence, EvidenceKind, Memory, Pose, Sighting, memory_id
 from placecell.migrate import MigrationReport, reembed
 from placecell.observer import ContradictionPolicy, Observer, ObserverReport
 from placecell.pipeline import Ingester, IngestReport, Observation, SegmentationPolicy, Segmenter
@@ -54,6 +54,7 @@ __all__ = [
     "RetentionPolicy",
     "SegmentationPolicy",
     "Segmenter",
+    "Sighting",
     "ToolCall",
     "VectorStore",
     "__version__",
