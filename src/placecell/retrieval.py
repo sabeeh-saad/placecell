@@ -61,6 +61,13 @@ class Recall:
         self._oversample = oversample
         self._corrections = corrections
 
+    def confidence(self, memory: Memory) -> float:
+        """Current decayed confidence, including operator verdicts, for a stored memory."""
+        verdicts = self._corrections.verdicts([memory.id]) if self._corrections else {}
+        return (
+            memory.effective_confidence(self._clock(), self._half_life_s) * verdicts.get(memory.id, Verdicts()).weight
+        )
+
     def similar(self, text: str, k: int = 10, where: Filter | None = None) -> list[RankedMemory]:
         """Memories whose content resembles the text, best first."""
         if not text.strip():

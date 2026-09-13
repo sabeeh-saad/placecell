@@ -7,6 +7,17 @@ from placecell.corrections import Correction, CorrectionLog, InMemoryCorrectionL
 from placecell.lifecycle import Curator, CuratorReport, ReinforcementPolicy, Reinforcer, RetentionPolicy
 from placecell.memory import SCHEMA_VERSION, Evidence, EvidenceKind, Memory, Pose, Sighting, memory_id
 from placecell.migrate import MigrationReport, reembed
+from placecell.navigation import (
+    Destination,
+    DestinationResolver,
+    MovementCommand,
+    NavigationCommands,
+    NavigationEvent,
+    NavigationPolicy,
+    NavigationUpdate,
+    load_named_places,
+    parse_movement,
+)
 from placecell.observer import ContradictionPolicy, Observer, ObserverReport
 from placecell.pipeline import Ingester, IngestReport, Observation, SegmentationPolicy, Segmenter
 from placecell.refinement import MemoryRefiner, RefinementPolicy, RefinementReport
@@ -34,6 +45,8 @@ __all__ = [
     "CorrectionLog",
     "Curator",
     "CuratorReport",
+    "Destination",
+    "DestinationResolver",
     "Evidence",
     "EvidenceKind",
     "Filter",
@@ -47,6 +60,11 @@ __all__ = [
     "MemoryRefiner",
     "MemoryRevision",
     "MigrationReport",
+    "MovementCommand",
+    "NavigationCommands",
+    "NavigationEvent",
+    "NavigationPolicy",
+    "NavigationUpdate",
     "Observation",
     "Observer",
     "ObserverReport",
@@ -64,6 +82,8 @@ __all__ = [
     "ToolCall",
     "VectorStore",
     "__version__",
+    "load_named_places",
     "memory_id",
+    "parse_movement",
     "reembed",
 ]

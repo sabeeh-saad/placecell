@@ -12,6 +12,7 @@ import json
 import os
 import queue
 import threading
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -22,12 +23,21 @@ from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.errors import PlacecellError, ValidationError
 from placecell.lifecycle import Curator, remove_local_file
 from placecell.memory import Pose
+from placecell.navigation import (
+    Destination,
+    DestinationResolver,
+    NavigationCommands,
+    NavigationPolicy,
+    NavigationUpdate,
+    load_named_places,
+)
 from placecell.observer import Observer
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
 from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
 from placecell.refinement import REFINEMENT_PROMPT, MemoryRefiner, RefinementPolicy
 from placecell.retrieval import Recall
 from placecell.ros2.bridge import KeyframeWriter, ObservationBuilder, pose_from_transform, stamp_to_seconds
+from placecell.ros2.navigation import Nav2Navigator, create_navigator
 from placecell.store import CollectionInfo, VectorStore
 
 
@@ -70,6 +80,32 @@ def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[
                 }
                 for r in evidence
             ],
+        }
+    )
+
+
+def navigation_payload(update: NavigationUpdate) -> str:
+    def describe(destination: Destination) -> dict[str, Any]:
+        p = destination.pose
+        return {
+            "label": destination.label,
+            "source": destination.source,
+            "memory_id": destination.memory.id if destination.memory else None,
+            "x": p.x,
+            "y": p.y,
+            "yaw": p.yaw,
+            "frame_id": p.frame_id,
+            "map_id": p.map_id,
+        }
+
+    return json.dumps(
+        {
+            "request_id": update.request_id,
+            "state": update.state,
+            "message": update.message,
+            "destination": describe(update.destination) if update.destination else None,
+            "choices": [{"option": i, **describe(d)} for i, d in enumerate(update.choices, 1)],
+            "distance_remaining": update.distance_remaining,
         }
     )
 
@@ -235,7 +271,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             observer = Observer(store) if p["contradiction"] else None
             ingester = Ingester(embedder, store, captioner, segmenter, batch_size=p["batch_size"], observer=observer)
             self._corrections = JsonlCorrectionLog(Path(p["corrections_path"]).expanduser())
-            self._recall = Recall(store, embedder, corrections=self._corrections)
+            self._recall = Recall(store, embedder, corrections=self._corrections, clock=self._memory_time)
             self._agent: Agent | None = None
             self._consolidator: Consolidator | None = None
             self._refiner: MemoryRefiner | None = None
@@ -257,7 +293,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 from placecell.providers import OpenAICompatibleChat
 
                 chat = OpenAICompatibleChat(p["chat_model"], p["chat_base_url"], api_key)
-                self._agent = Agent(self._recall, chat, frame_id=p["map_frame"], map_id=p["map_id"])
+                self._agent = Agent(
+                    self._recall, chat, frame_id=p["map_frame"], map_id=p["map_id"], clock=self._memory_time
+                )
                 if p["consolidate_interval_s"] > 0:
                     self._consolidator = Consolidator(store, embedder, ChatSummarizer(chat))
             self._worker = IngestWorker(
@@ -271,7 +309,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             )
             self._questions = BoundedTasks(p["question_workers"], p["question_queue"], self.get_logger())
             self._maintenance = BoundedTasks(1, 1, self.get_logger())
-            self._curator = Curator(store, corrections=self._corrections, remover=remove_local_file)
+            self._curator = Curator(
+                store, corrections=self._corrections, remover=remove_local_file, clock=self._memory_time
+            )
             writer = KeyframeWriter(Path(p["keyframe_dir"]).expanduser())
             writer.recover_pending(store)
             store.drain_cleanup(remove_local_file)
@@ -291,6 +331,41 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self.create_subscription(String, "~/correct", self._on_correct, 10)
             self.create_subscription(String, "~/refine", self._on_refine, 10)
             self._answers = self.create_publisher(String, "~/answer", 10)
+            self._navigation_status = self.create_publisher(String, "~/navigation_status", 10)
+            self._commands: NavigationCommands | None = None
+            self._navigator: Nav2Navigator | None = None
+            self._command_tasks: BoundedTasks | None = None
+            if p["navigation_enabled"]:
+                places = load_named_places(p["places_file"]) if p["places_file"] else {}
+                resolver = DestinationResolver(
+                    store,
+                    self._recall,
+                    robot_id=p["robot_id"],
+                    frame_id=p["map_frame"],
+                    map_id=p["map_id"],
+                    clock=self._memory_time,
+                    places=places,
+                    policy=NavigationPolicy(
+                        min_similarity=p["navigation_min_similarity"],
+                        min_confidence=p["navigation_min_confidence"],
+                        max_age_s=p["navigation_max_memory_age_s"],
+                        ambiguity_margin=p["navigation_ambiguity_margin"],
+                    ),
+                )
+                self._navigator = create_navigator(
+                    self, p["nav2_action"], p["navigation_response_timeout_s"], p["navigation_timeout_s"]
+                )
+                self._command_tasks = BoundedTasks(1, 1, self.get_logger())
+                self._commands = NavigationCommands(
+                    resolver,
+                    self._navigator,
+                    self._submit_command,
+                    self._publish_navigation,
+                    request_timeout_s=p["navigation_lookup_timeout_s"],
+                )
+                self.create_timer(0.5, self._navigator.poll)
+            # Volatile, depth-one commands are never replayed from durable ingestion work.
+            self.create_subscription(String, "~/command", self._on_command, 1)
             if p["curator_interval_s"] > 0:
                 self.create_timer(p["curator_interval_s"], self._curate)
             if self._consolidator is not None:
@@ -343,8 +418,21 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "refine_interval_s": 3600.0,
                 "refine_batch_size": 8,
                 "refine_model": "",
+                "navigation_enabled": False,
+                "nav2_action": "navigate_to_pose",
+                "places_file": "",
+                "navigation_min_similarity": 0.5,
+                "navigation_min_confidence": 0.2,
+                "navigation_max_memory_age_s": 604800.0,
+                "navigation_ambiguity_margin": 0.1,
+                "navigation_response_timeout_s": 10.0,
+                "navigation_lookup_timeout_s": 30.0,
+                "navigation_timeout_s": 600.0,
             }
             return {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
+
+        def _memory_time(self) -> float:
+            return float(self.get_clock().now().nanoseconds) / 1e9
 
         def _pose_at(self, sec: int, nanosec: int) -> Pose | None:
             from rclpy.duration import Duration
@@ -406,6 +494,27 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
         def _on_ask(self, msg: Any) -> None:
             if not self._questions.submit(self._answer, msg.data):
                 self._answers.publish(String(data=json.dumps({"question": msg.data, "error": "question queue full"})))
+
+        def _submit_command(self, function: Callable[[], None]) -> bool:
+            return self._command_tasks is not None and self._command_tasks.submit(function)
+
+        def _publish_navigation(self, update: NavigationUpdate) -> None:
+            self._navigation_status.publish(String(data=navigation_payload(update)))
+
+        def _on_command(self, msg: Any) -> None:
+            if self._commands is None:
+                self._publish_navigation(
+                    NavigationUpdate("", "disabled", "Set navigation_enabled to use movement commands.")
+                )
+            else:
+                self._commands.handle(msg.data)
+
+        def stop_navigation(self) -> None:
+            if self._commands is not None:
+                self._commands.close()
+
+        def navigation_busy(self) -> bool:
+            return self._commands is not None and self._commands.busy
 
         def _answer(self, question: str) -> None:
             try:
@@ -491,10 +600,12 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self.get_logger().info(f"ingestion: {stats}, dropped={self._worker.dropped}")
 
         def destroy_node(self) -> bool:
+            self.stop_navigation()
+            commands_done = self._command_tasks is None or self._command_tasks.stop()
             ingested = self._worker.stop()
             answered = self._questions.stop()
             maintained = self._maintenance.stop()
-            if ingested and answered and maintained:
+            if ingested and answered and maintained and commands_done:
                 self._store.close()
             return bool(super().destroy_node())
 
@@ -513,6 +624,12 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
         while not stop.is_set() and rclpy.ok():
             rclpy.spin_once(node, timeout_sec=0.2)
     finally:
+        node.stop_navigation()
+        deadline = time.monotonic() + 2.0
+        while node.navigation_busy() and rclpy.ok() and time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.1)
+        if node.navigation_busy():
+            node.get_logger().warning("Shutdown could not confirm navigation cancellation; check Nav2 status.")
         node.destroy_node()
         rclpy.try_shutdown()
 
