@@ -71,7 +71,10 @@ class Reinforcer:
         thing at the same place is revived: the object came back.
         """
         with self._store.transaction():
-            return self._reinforce(memory)
+            result = self._reinforce(memory)
+        if self._remover is not None:
+            self._store.drain_cleanup(self._remover)
+        return result
 
     def _reinforce(self, memory: Memory) -> tuple[Memory, bool]:
         if memory.embedding is None:
@@ -134,7 +137,7 @@ class RetentionPolicy:
     protected_observations: int = 5
     """Memories seen at least this often survive confidence expiry, but not max_age."""
     max_age_s: float | None = None
-    """Hard cap on the age of the first observation. None keeps reinforced memories forever."""
+    """Cap on age since the first observation. None disables this cap; max_idle_s still applies."""
     drop_superseded_after_s: float = 24 * 3600.0
     max_idle_s: float | None = 90 * 24 * 3600.0
     """Expire even reinforced memories after this long without a sighting. None disables it."""
@@ -220,7 +223,7 @@ class Curator:
                 expired_count += len(expired)
                 aged_count += len(aged)
                 dropped_count += len(dropped)
-        self._store.prune_history(now - p.history_age_s)
+        self._store.prune_history(now - p.history_age_s, where=scope)
         if self._remover is not None:
             self._store.drain_cleanup(self._remover)
         return CuratorReport(scanned, expired_count, aged_count, dropped_count, discredited)
@@ -256,6 +259,8 @@ class Curator:
             with self._store.transaction():
                 self._remove(doomed)
                 removed += len(doomed)
+            if self._remover is not None:
+                self._store.drain_cleanup(self._remover)
         return removed
 
     def _remove(self, memories: Iterable[Memory]) -> None:

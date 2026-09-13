@@ -63,3 +63,12 @@ def test_ingester_runs_the_observer(store: InMemoryStore, hashing: HashingEmbedd
     report = ingester.ingest([Observation("r1", "front", 100.0, Pose(0.1, 0), frame("f.jpg"))])
     assert report.inserted == 1 and report.contradicted == 1
     assert store.count() == 1 and store.count(EVERYTHING) == 2
+
+
+def test_retry_of_an_old_job_does_not_contradict_newer_evidence(store, hashing) -> None:
+    remembered = embedded(hashing, "printer", t=200)
+    store.upsert([remembered])
+    observer = Observer(store, ContradictionPolicy(misses_to_supersede=1))
+    assert observer.observe(embedded(hashing, "empty wall", t=100)).in_view == 0
+    assert store.get(remembered.id) == remembered
+    assert observer.observe(embedded(hashing, "empty wall", t=300)).superseded == 1

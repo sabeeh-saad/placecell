@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 from pathlib import Path
 from typing import Any
 
 from placecell.errors import PlacecellError, ValidationError
 from placecell.memory import Evidence, EvidenceKind, Pose
 from placecell.pipeline import Observation
+from placecell.store.base import VectorStore
 
 _JPEG_FORMATS = ("jpeg", "jpg")
 _CHANNELS = {"mono8": 1, "8UC1": 1, "rgb8": 3, "bgr8": 3, "8UC3": 3, "rgba8": 4, "bgra8": 4, "8UC4": 4}
@@ -44,9 +46,45 @@ class KeyframeWriter:
     def write_jpeg(self, camera_id: str, timestamp: float, data: bytes) -> Evidence:
         if not data:
             raise ValidationError("empty image data")
+        if not camera_id or Path(camera_id).name != camera_id or camera_id in (".", ".."):
+            raise ValidationError("camera_id must be a filename component")
         path = self._dir / f"{camera_id}_{round(timestamp * 1000)}.jpg"
-        path.write_bytes(data)
+        if path.exists() and path.read_bytes() != data:
+            raise ValidationError("an image with this camera and timestamp already contains different data")
+        pending = path.with_suffix(".jpg.pending")
+        with pending.open("wb") as marker:
+            marker.flush()
+            os.fsync(marker.fileno())
+        self._sync_directory()
+        temporary = path.with_suffix(".jpg.tmp")
+        with temporary.open("wb") as image:
+            image.write(data)
+            image.flush()
+            os.fsync(image.fileno())
+        temporary.replace(path)
+        self._sync_directory()
         return Evidence(EvidenceKind.FRAME, str(path), hashlib.sha256(data).hexdigest(), managed=True)
+
+    def _sync_directory(self) -> None:
+        descriptor = os.open(self._dir, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def confirm(self, evidence: Evidence) -> None:
+        """Clear the creation marker once a job or cleanup intent durably owns the image."""
+        path = Path(evidence.uri)
+        if path.parent == self._dir:
+            path.with_suffix(".jpg.pending").unlink(missing_ok=True)
+
+    def recover_pending(self, store: VectorStore) -> None:
+        """Run before starting camera callbacks; only recover files carrying our creation marker."""
+        for marker in self._dir.glob("*.jpg.pending"):
+            path = marker.with_suffix("")
+            store.enqueue_cleanup([Evidence(EvidenceKind.FRAME, str(path), managed=True)])
+            path.with_suffix(".jpg.tmp").unlink(missing_ok=True)
+            marker.unlink(missing_ok=True)
 
     def write_raw(
         self, camera_id: str, timestamp: float, height: int, width: int, encoding: str, step: int, data: bytes

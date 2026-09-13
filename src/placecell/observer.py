@@ -72,6 +72,7 @@ class Observer:
             for m in candidates
             if m.id not in (fresh.id, stored_as)
             and m.role == "episodic"
+            and m.last_seen <= fresh.timestamp
             and m.pose.heading_difference(fresh.pose) <= p.same_heading_rad
         ]
         confirmed = missed = superseded = 0

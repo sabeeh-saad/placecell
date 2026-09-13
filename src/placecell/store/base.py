@@ -18,6 +18,7 @@ from numpy.typing import ArrayLike
 
 from placecell.errors import ValidationError
 from placecell.memory import SCHEMA_VERSION, Evidence, Memory, Pose, Sighting
+from placecell.store.jobs import WorkJournal
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +130,8 @@ class Hit:
 class VectorStore(Protocol):
     """Contract every store backend fulfils."""
 
+    jobs: WorkJournal
+
     @property
     def info(self) -> CollectionInfo: ...
 
@@ -172,7 +175,7 @@ class VectorStore(Protocol):
 
     def append_sightings(self, memory_id: str, sightings: Iterable[Sighting]) -> None: ...
 
-    def prune_history(self, before: float) -> int: ...
+    def prune_history(self, before: float, *, where: Filter | None = None, limit: int = 4096) -> int: ...
 
     def enqueue_cleanup(self, evidence: Iterable[Evidence]) -> None: ...
 

@@ -113,7 +113,7 @@ def test_ingest_worker_batches_in_the_background(tmp_path: Path, hashing: Hashin
     assert any(line.startswith("I ingested 2/2") for line in log.lines)
 
 
-def test_worker_releases_failed_and_abandoned_frames(tmp_path: Path, hashing: HashingEmbedder) -> None:
+def test_worker_retains_failed_and_abandoned_jobs(tmp_path: Path, hashing: HashingEmbedder) -> None:
     from placecell import CollectionInfo
 
     class FailedCaptioner(FakeCaptioner):
@@ -131,14 +131,15 @@ def test_worker_releases_failed_and_abandoned_frames(tmp_path: Path, hashing: Ha
 
     store = InMemoryStore(CollectionInfo("worker", hashing.model_name, hashing.dimension))
     log = SignalLog()
-    worker = IngestWorker(Ingester(hashing, store, FailedCaptioner()), threading.Lock(), 1, 4, log)
+    worker = IngestWorker(Ingester(hashing, store, FailedCaptioner()), threading.Lock(), 1, 4, log, max_attempts=1)
     builder = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path))
     failed = builder.from_compressed(100, "jpeg", b"image", Pose(0, 0))
     worker.submit(failed)
     worker.start()
     try:
         assert log.failed.wait(5)
-        assert not Path(failed.evidence.uri).exists()
+        assert Path(failed.evidence.uri).exists()
+        assert len(store.jobs.failed()) == 1
     finally:
         worker.stop()
     assert store.count() == 0
@@ -150,7 +151,8 @@ def test_worker_releases_failed_and_abandoned_frames(tmp_path: Path, hashing: Ha
     worker._stop.set()
     worker.start()
     worker.stop()
-    assert not Path(abandoned.evidence.uri).exists()
+    assert Path(abandoned.evidence.uri).exists()
+    assert store.jobs.stats()["queued"] == 2
     after_stop = builder.from_compressed(300, "jpeg", b"image", Pose(4, 0))
     worker.submit(after_stop)
     assert not Path(after_stop.evidence.uri).exists()
@@ -171,7 +173,7 @@ def test_dropped_duplicate_does_not_delete_a_queued_frame(tmp_path: Path, hashin
     )
     worker.submit(observation)
     worker.submit(observation)
-    assert worker.dropped == 1 and Path(observation.evidence.uri).exists()
+    assert worker.dropped == 0 and Path(observation.evidence.uri).exists()
     worker.start()
     try:
         for _ in range(50):

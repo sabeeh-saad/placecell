@@ -142,7 +142,7 @@ def test_retry_preserves_completed_batches_and_deduplicates_partial_writes(
     observations = [obs(100), obs(200, x=0.4), obs(300), obs(400, x=0.4)]
     with pytest.raises(ProviderError):
         ingester.ingest(observations)
-    assert store.query()[0].observations == 3
+    assert store.query()[0].observations == 2  # failed observation and contradiction updates roll back together
     ingester.ingest(observations)
     assert store.query()[0].observations == 4
     assert store.query()[0].sighting_times == (100, 200, 300, 400)
@@ -257,8 +257,8 @@ def test_partial_retry_does_not_read_keyframes_already_replaced(
     ingester = Ingester(hashing, store, captioner, reinforcer=FailSecond(store), batch_size=3)
     with pytest.raises(ProviderError):
         ingester.ingest(observations)
-    assert not Path(observations[0].evidence.uri).exists()
+    assert Path(observations[0].evidence.uri).exists()  # rollback keeps the previously committed evidence alive
     assert ingester.ingest(observations).merged == 3
-    assert [len(items) for items in captioner.calls] == [3, 1]
+    assert [len(items) for items in captioner.calls] == [3, 2]
     assert store.query()[0].observations == 3
     assert len(list(tmp_path.glob("*.jpg"))) == 1

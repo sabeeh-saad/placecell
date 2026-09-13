@@ -36,7 +36,7 @@ class LanceDBStore(StateStore):
             import pyarrow as pa
         except ImportError as e:  # pragma: no cover - exercised only without the extra
             raise PlacecellError("LanceDBStore needs lancedb: pip install placecell[lancedb]") from e
-        self._path = Path(path)
+        self._path = Path(path).expanduser().resolve()
         self._path.mkdir(parents=True, exist_ok=True)
         self._db = lancedb.connect(str(self._path))
         self._meta_path = self._path / f"{info.name}.collection.json"
@@ -48,9 +48,11 @@ class LanceDBStore(StateStore):
                     f"not {info.model!r}/{info.dimension}"
                 )
             self._table = self._db.open_table(info.name)
-            if stored.schema_version == 2 and info.schema_version == SCHEMA_VERSION:
-                self._upgrade_sightings()
-                self._write_info(info)
+            if stored.schema_version in (2, 3) and info.schema_version == SCHEMA_VERSION:
+                if stored.schema_version == 2:
+                    self._upgrade_sightings()
+                else:
+                    self._table.update(values={"schema_version": SCHEMA_VERSION})
             elif stored.schema_version != info.schema_version:
                 raise ValidationError(
                     f"collection {info.name!r} has schema version {stored.schema_version}, "
@@ -103,6 +105,7 @@ class LanceDBStore(StateStore):
             from lancedb.index import BTree
 
             self._table.create_index("id", config=BTree())
+        self._write_info(info)
 
     def _write_info(self, info: CollectionInfo) -> None:
         pending = self._meta_path.with_suffix(".json.tmp")
@@ -207,8 +210,22 @@ class LanceDBStore(StateStore):
             ):
                 from lancedb.index import IvfFlat
 
-                self._table.create_index("vector", config=IvfFlat(distance_type="cosine"))
+                self._table.create_index(
+                    "vector",
+                    config=IvfFlat(distance_type="cosine", num_partitions=max(1, self._table.count_rows() // 4096)),
+                )
             self._table.optimize()
+
+    def rebuild_index(self) -> None:
+        """Rebuild the derived vector table without changing authoritative memories or jobs."""
+        with self._projection_lock:
+            self._table.delete("id IS NOT NULL")
+            with self.transaction():
+                self._conn.execute(
+                    "INSERT INTO dirty_vectors SELECT id,1 FROM memories WHERE 1 "
+                    "ON CONFLICT(id) DO UPDATE SET generation=generation+1"
+                )
+            self._sync_index()
 
     def close(self) -> None:
         self._sync_index()

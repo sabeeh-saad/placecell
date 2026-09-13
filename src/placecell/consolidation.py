@@ -119,12 +119,22 @@ class Consolidator:
                     summary = self._summarise(cluster, captions)
                     # Slow model work happens above; commit only if the source memories stayed unchanged.
                     with self._store.transaction():
-                        if any(self._store.get(m.id) != m for m in cluster):
+                        if any(not self._unchanged(m) for m in cluster):
                             continue
                         self._store.upsert([summary, *(replace(m, consolidated_into=summary.id) for m in cluster)])
                     summaries += 1
                     folded += len(cluster)
         return ConsolidationReport(scanned, clusters, summaries, folded)
+
+    def _unchanged(self, memory: Memory) -> bool:
+        current = self._store.get(memory.id)
+        return (
+            current == memory
+            and current is not None
+            and current.embedding is not None
+            and memory.embedding is not None
+            and np.array_equal(current.embedding, memory.embedding)
+        )
 
     def _summarise(self, cluster: Sequence[Memory], captions: Sequence[str]) -> Memory:
         text = self._summarizer.summarize(captions)

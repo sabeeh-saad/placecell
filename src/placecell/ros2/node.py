@@ -12,14 +12,14 @@ import json
 import os
 import queue
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 from placecell.agent import Agent
 from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
-from placecell.errors import PlacecellError
+from placecell.errors import PlacecellError, ValidationError
 from placecell.lifecycle import Curator, remove_local_file
 from placecell.memory import Pose
 from placecell.observer import Observer
@@ -74,96 +74,131 @@ def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[
 
 
 class IngestWorker:
-    """Batches observations from a queue into the ingester on its own thread."""
+    """One ordered writer consuming durable jobs. Provider calls never hold a shared lock."""
 
-    def __init__(self, ingester: Ingester, lock: threading.Lock, batch_size: int, max_queue: int, log: Any) -> None:
-        self._ingester = ingester
-        self._lock = lock
-        self._batch_size = batch_size
-        self._queue: queue.Queue[Observation] = queue.Queue(maxsize=max_queue)
-        self._log = log
+    def __init__(
+        self,
+        ingester: Ingester,
+        lock: threading.Lock | None,
+        batch_size: int,
+        max_queue: int,
+        log: Any,
+        *,
+        max_attempts: int = 5,
+        retry_delay_s: float = 1,
+    ) -> None:
+        if min(batch_size, max_queue, max_attempts) < 1 or retry_delay_s < 0:
+            raise ValidationError("invalid worker limits")
+        self._ingester, self._batch_size, self._max_queue = ingester, batch_size, max_queue
+        self._log, self._max_attempts, self._retry_delay_s = log, max_attempts, retry_delay_s
         self._stop = threading.Event()
-        self._pending: dict[str, int] = {}
-        self._pending_lock = threading.Lock()
+        self._wake = threading.Event()
         self._thread = threading.Thread(target=self._run, name="placecell-ingest", daemon=True)
+        self._submit_lock = threading.Lock()
         self.dropped = 0
 
     def start(self) -> None:
         self._thread.start()
 
-    def stop(self) -> None:
-        with self._pending_lock:
+    def stop(self, timeout: float = 10) -> bool:
+        with self._submit_lock:
             self._stop.set()
-        self._thread.join(timeout=10)
+        self._wake.set()
+        if self._thread.ident is not None:
+            self._thread.join(timeout=timeout)
+        return not self._thread.is_alive()
 
-    def submit(self, observation: Observation) -> None:
-        uri = observation.evidence.uri
-        with self._pending_lock:
-            if not self._stop.is_set():
-                try:
-                    self._queue.put_nowait(observation)
-                except queue.Full:
-                    pass
-                else:
-                    self._pending[uri] = self._pending.get(uri, 0) + 1
-                    return
+    def has_capacity(self) -> bool:
+        return not self._stop.is_set() and self._ingester.jobs.stats()["queued"] < self._max_queue
+
+    def submit(self, observation: Observation) -> bool:
+        with self._submit_lock:
+            if not self._stop.is_set() and self._ingester.jobs.enqueue(observation, self._max_queue):
+                self._wake.set()
+                return True
             self.dropped += 1
-        with self._lock, self._pending_lock:
-            if uri not in self._pending:
-                self._ingester.discard([observation])
+        # The journal pins all accepted evidence, including failed jobs and duplicate submissions.
+        self._ingester.discard([observation])
         self._log.warning(f"ingest queue full or stopped, dropped {self.dropped} observations so far")
-
-    def _release(self, batch: Sequence[Observation]) -> None:
-        with self._lock, self._pending_lock:
-            for observation in batch:
-                uri = observation.evidence.uri
-                self._pending[uri] -= 1
-                if self._pending[uri] == 0:
-                    del self._pending[uri]
-            self._ingester.discard(o for o in batch if o.evidence.uri not in self._pending)
+        return False
 
     def _run(self) -> None:
         try:
-            while not self._stop.is_set():
-                batch = self._drain()
-                if not batch:
-                    continue
-                try:
-                    try:
-                        with self._lock:
-                            report = self._ingester.ingest(batch)
-                    finally:
-                        self._release(batch)
-                except PlacecellError as e:
-                    self._log.error(f"ingest failed: {e}")
-                    continue
+            self._work_loop()
+        except Exception as e:
+            self._log.error(f"ingest worker stopped; queued work retained: {e}")
+        finally:
+            self._stop.set()
+
+    def _work_loop(self) -> None:
+        while not self._stop.is_set():
+            jobs = self._ingester.jobs.pending(self._batch_size)
+            if not jobs:
+                self._wake.wait(0.25)
+                self._wake.clear()
+                continue
+            try:
+                report = self._ingester.ingest([job.observation for job in jobs], preselected=True)
+            except Exception as e:
+                completed = [job.id for job in jobs if self._ingester.persisted(job.observation)]
+                self._ingester.jobs.complete(completed)
+                self._ingester.jobs.fail(
+                    (job.id for job in jobs if job.id not in completed),
+                    str(e),
+                    max_attempts=self._max_attempts,
+                    retry_delay_s=self._retry_delay_s,
+                )
+                self._log.error(f"ingest failed; work retained for retry: {e}")
+            else:
+                self._ingester.jobs.complete(job.id for job in jobs)
                 self._log.info(
                     f"ingested {report.accepted}/{report.received}: {report.inserted} new, {report.merged} reinforced"
                     + (f", {report.unsupported} unsupported" if report.unsupported else "")
                 )
-        finally:
-            with self._pending_lock:
-                self._stop.set()
-            pending = []
-            while True:
-                try:
-                    pending.append(self._queue.get_nowait())
-                except queue.Empty:
-                    break
-            self._release(pending)
-
-    def _drain(self) -> list[Observation]:
-        batch: list[Observation] = []
-        try:
-            batch.append(self._queue.get(timeout=0.5))
-        except queue.Empty:
-            return batch
-        while len(batch) < self._batch_size:
             try:
-                batch.append(self._queue.get_nowait())
+                self._ingester.discard([])  # drain cleanup intents after job ownership is released
+            except OSError as e:
+                self._log.error(f"evidence cleanup deferred: {e}")
+
+
+class BoundedTasks:
+    """Fixed daemon workers and a bounded waiting queue for questions or maintenance."""
+
+    def __init__(self, workers: int, capacity: int, log: Any) -> None:
+        if min(workers, capacity) < 1:
+            raise ValidationError("task limits must be positive")
+        self._queue: queue.Queue[tuple[Callable[..., None], tuple[Any, ...]]] = queue.Queue(maxsize=capacity)
+        self._stop = threading.Event()
+        self._log = log
+        self._threads = [threading.Thread(target=self._run, daemon=True) for _ in range(workers)]
+        for thread in self._threads:
+            thread.start()
+
+    def submit(self, function: Callable[..., None], *args: Any) -> bool:
+        if self._stop.is_set():
+            return False
+        try:
+            self._queue.put_nowait((function, args))
+        except queue.Full:
+            return False
+        return True
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                function, args = self._queue.get(timeout=0.25)
             except queue.Empty:
-                break
-        return batch
+                continue
+            try:
+                function(*args)
+            except Exception as e:
+                self._log.error(f"background task failed: {e}")
+
+    def stop(self, timeout: float = 10) -> bool:
+        self._stop.set()
+        for thread in self._threads:
+            thread.join(timeout=timeout / len(self._threads))
+        return all(not thread.is_alive() for thread in self._threads)
 
 
 def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a ROS 2 environment
@@ -191,7 +226,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     "no caption_model and the embedder takes text only: frames cannot be stored. "
                     "Set caption_model, or use an embedding model that accepts images."
                 )
-            segmenter = Segmenter(SegmentationPolicy(p["min_interval_s"], p["min_travel_m"], p["min_turn_rad"]))
+            policy = SegmentationPolicy(p["min_interval_s"], p["min_travel_m"], p["min_turn_rad"], p["max_interval_s"])
+            segmenter = Segmenter(policy)
+            self._admission = Segmenter(policy)
+            self._robot_id, self._camera_id = p["robot_id"], p["camera_id"]
+            self._store = store
             observer = Observer(store) if p["contradiction"] else None
             ingester = Ingester(embedder, store, captioner, segmenter, batch_size=p["batch_size"], observer=observer)
             self._corrections = JsonlCorrectionLog(Path(p["corrections_path"]).expanduser())
@@ -205,10 +244,22 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self._agent = Agent(self._recall, chat, frame_id=p["map_frame"], map_id=p["map_id"])
                 if p["consolidate_interval_s"] > 0:
                     self._consolidator = Consolidator(store, embedder, ChatSummarizer(chat))
-            self._lock = threading.Lock()
-            self._worker = IngestWorker(ingester, self._lock, p["batch_size"], p["max_queue"], self.get_logger())
+            self._worker = IngestWorker(
+                ingester,
+                None,
+                p["batch_size"],
+                p["max_queue"],
+                self.get_logger(),
+                max_attempts=p["ingest_attempts"],
+                retry_delay_s=p["ingest_retry_delay_s"],
+            )
+            self._questions = BoundedTasks(p["question_workers"], p["question_queue"], self.get_logger())
+            self._maintenance = BoundedTasks(1, 1, self.get_logger())
             self._curator = Curator(store, corrections=self._corrections, remover=remove_local_file)
             writer = KeyframeWriter(Path(p["keyframe_dir"]).expanduser())
+            writer.recover_pending(store)
+            store.drain_cleanup(remove_local_file)
+            self._writer = writer
             self._builder = ObservationBuilder(p["robot_id"], p["camera_id"], writer)
             self._map_frame, self._base_frame, self._map_id = p["map_frame"], p["base_frame"], p["map_id"]
             self._tf_timeout = p["tf_timeout_s"]
@@ -227,6 +278,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self.create_timer(p["curator_interval_s"], self._curate)
             if self._consolidator is not None:
                 self.create_timer(p["consolidate_interval_s"], self._consolidate)
+            self.create_timer(30.0, self._diagnostics)
             self._worker.start()
             where = f"lancedb {p['db_path']}" if p["db_path"] else "memory"
             self.get_logger().info(
@@ -255,6 +307,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "chat_model": "",
                 "api_key_env": "PLACECELL_API_KEY",
                 "min_interval_s": 2.0,
+                "max_interval_s": 60.0,
+                "ingest_attempts": 5,
+                "ingest_retry_delay_s": 1.0,
+                "question_workers": 2,
+                "question_queue": 8,
                 "min_travel_m": 0.3,
                 "min_turn_rad": 0.35,
                 "batch_size": 8,
@@ -289,6 +346,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             if pose is None:
                 return
             stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
+            if not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
+                return
+            if not self._worker.has_capacity():
+                self._worker.dropped += 1
+                return
             try:
                 obs = self._builder.from_raw(
                     stamp, msg.height, msg.width, msg.encoding, msg.step, bytes(msg.data), pose
@@ -296,33 +358,42 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
-            self._worker.submit(obs)
+            if self._worker.submit(obs):
+                self._admission.accept(obs)
+            self._writer.confirm(obs.evidence)
 
         def _on_compressed(self, msg: Any) -> None:
             pose = self._pose_at(msg.header.stamp.sec, msg.header.stamp.nanosec)
             if pose is None:
                 return
             stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
+            if not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
+                return
+            if not self._worker.has_capacity():
+                self._worker.dropped += 1
+                return
             try:
                 obs = self._builder.from_compressed(stamp, msg.format, bytes(msg.data), pose)
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
-            self._worker.submit(obs)
+            if self._worker.submit(obs):
+                self._admission.accept(obs)
+            self._writer.confirm(obs.evidence)
 
         def _on_ask(self, msg: Any) -> None:
-            threading.Thread(target=self._answer, args=(msg.data,), daemon=True).start()
+            if not self._questions.submit(self._answer, msg.data):
+                self._answers.publish(String(data=json.dumps({"question": msg.data, "error": "question queue full"})))
 
         def _answer(self, question: str) -> None:
             try:
-                with self._lock:
-                    if self._agent is not None:
-                        result = self._agent.ask(question)
-                        payload = answer_payload(question, result.text, result.grounded, result.evidence)
-                    else:
-                        hits = self._recall.similar(question, k=5)
-                        text = hits[0].memory.caption if hits else "No matching memory."
-                        payload = answer_payload(question, text, bool(hits), hits)
+                if self._agent is not None:
+                    result = self._agent.ask(question)
+                    payload = answer_payload(question, result.text, result.grounded, result.evidence)
+                else:
+                    hits = self._recall.similar(question, k=5)
+                    text = hits[0].memory.caption if hits else "No matching memory."
+                    payload = answer_payload(question, text, bool(hits), hits)
             except PlacecellError as e:
                 payload = json.dumps({"question": question, "error": str(e)})
             self._answers.publish(String(data=payload))
@@ -343,25 +414,40 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._corrections.record(correction)
 
         def _curate(self) -> None:
-            with self._lock:
-                report = self._curator.run()
+            self._maintenance.submit(self._run_curator)
+
+        def _run_curator(self) -> None:
+            report = self._curator.run()
+            maintain = getattr(self._store, "maintain", None)
+            if maintain is not None:
+                maintain()
             if report.removed or report.discredited:
                 self.get_logger().info(f"curator removed {report.removed} memories, discredited {report.discredited}")
 
         def _consolidate(self) -> None:
+            self._maintenance.submit(self._run_consolidator)
+
+        def _run_consolidator(self) -> None:
             if self._consolidator is None:  # pragma: no cover - timer only exists with a consolidator
                 return
             try:
-                with self._lock:
-                    report = self._consolidator.run()
+                report = self._consolidator.run()
             except PlacecellError as e:
                 self.get_logger().error(f"consolidation failed: {e}")
                 return
             if report.summaries:
                 self.get_logger().info(f"consolidated {report.folded} memories into {report.summaries} summaries")
 
+        def _diagnostics(self) -> None:
+            stats = self._store.jobs.stats()
+            self.get_logger().info(f"ingestion: {stats}, dropped={self._worker.dropped}")
+
         def destroy_node(self) -> bool:
-            self._worker.stop()
+            ingested = self._worker.stop()
+            answered = self._questions.stop()
+            maintained = self._maintenance.stop()
+            if ingested and answered and maintained:
+                self._store.close()
             return bool(super().destroy_node())
 
     import signal

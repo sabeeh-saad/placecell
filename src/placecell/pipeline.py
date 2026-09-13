@@ -1,12 +1,12 @@
 """Ingestion: observations in, memories out.
 
-Four stages, each a pure function over a batch: segment, caption, embed, persist. The
-`Ingester` composes them in one process. Because the stages only exchange lists, the same
-four can later run as separate workers behind queues without changing what they do.
+Sampling keeps a small checkpoint per stream. Provider work runs outside state transactions;
+persistence and contradiction updates commit together for each observation.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
@@ -16,6 +16,7 @@ from placecell.memory import Evidence, Memory, Pose, Vector, memory_id
 from placecell.observer import Observer
 from placecell.providers.base import Captioner, EmbeddingProvider
 from placecell.store.base import VectorStore
+from placecell.store.jobs import WorkJournal
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,16 +35,21 @@ class SegmentationPolicy:
     min_interval_s: float = 2.0
     min_travel_m: float = 0.3
     min_turn_rad: float = 0.35
+    max_interval_s: float = 60.0
+    """Refresh a stationary view at least this often."""
 
     def __post_init__(self) -> None:
-        if min(self.min_interval_s, self.min_travel_m, self.min_turn_rad) < 0:
+        values = (self.min_interval_s, self.min_travel_m, self.min_turn_rad, self.max_interval_s)
+        if not all(math.isfinite(v) for v in values) or min(values) < 0:
+            raise ValidationError("segmentation thresholds must be finite and non-negative")
+        if self.max_interval_s <= 0 or self.max_interval_s < self.min_interval_s:
             raise ValidationError("segmentation thresholds must not be negative")
 
 
 class Segmenter:
     """Keeps an observation only if enough time passed and the robot moved or turned.
 
-    A robot standing still produces one memory, not one per frame. State is kept per
+    Stationary scenes refresh at the maximum interval. State is kept per
     robot and camera, so streams can be interleaved.
     """
 
@@ -51,19 +57,25 @@ class Segmenter:
         self._policy = policy or SegmentationPolicy()
         self._last: dict[tuple[str, str], Observation] = {}
 
+    def eligible(self, robot_id: str, camera_id: str, timestamp: float, pose: Pose) -> bool:
+        """Cheap admission check before encoding or writing an image; does not advance state."""
+        last = self._last.get((robot_id, camera_id))
+        if last is None or not last.pose.same_frame(pose):
+            return True
+        p = self._policy
+        elapsed = timestamp - last.timestamp
+        if elapsed < p.min_interval_s:
+            return False
+        return (
+            elapsed >= p.max_interval_s
+            or pose.distance_to(last.pose) >= p.min_travel_m
+            or pose.heading_difference(last.pose) >= p.min_turn_rad
+        )
+
     def accept(self, observation: Observation) -> bool:
-        key = (observation.robot_id, observation.camera_id)
-        last = self._last.get(key)
-        if last is not None:
-            p = self._policy
-            elapsed = observation.timestamp - last.timestamp
-            if elapsed < p.min_interval_s:
-                return False
-            moved = observation.pose.distance_to(last.pose) >= p.min_travel_m
-            turned = observation.pose.heading_difference(last.pose) >= p.min_turn_rad
-            if not (moved or turned):
-                return False
-        self._last[key] = observation
+        if not self.eligible(observation.robot_id, observation.camera_id, observation.timestamp, observation.pose):
+            return False
+        self._last[(observation.robot_id, observation.camera_id)] = observation
         return True
 
     def reset(self) -> None:
@@ -120,7 +132,15 @@ class Ingester:
         self._store = store
         self._remover = remover
 
-    def ingest(self, observations: Iterable[Observation]) -> IngestReport:
+    @property
+    def jobs(self) -> WorkJournal:
+        return self._store.jobs
+
+    def persisted(self, observation: Observation) -> bool:
+        identity = memory_id(observation.robot_id, observation.camera_id, observation.timestamp)
+        return self._reinforcer.find_observation(identity) is not None
+
+    def ingest(self, observations: Iterable[Observation], *, preselected: bool = False) -> IngestReport:
         received = accepted = inserted = merged = contradicted = 0
         unsupported: list[str] = []
         batch: list[Observation] = []
@@ -148,11 +168,16 @@ class Ingester:
             memories, rejected = self.embed(self.caption(pending)) if pending else ([], [])
             unsupported.extend(m.id for m in rejected)
             for m in memories:
-                stored, was_merged = self.persist(m)
-                merged += was_merged
-                inserted += not was_merged
-                if self._observer is not None:
-                    contradicted += self._observer.observe(m, stored.id).superseded
+                with self._store.transaction():
+                    if self._reinforcer.find_observation(m.id) is not None:
+                        merged += 1
+                        self._discard_evidence([m.evidence] if m.evidence else [])
+                        continue
+                    stored, was_merged = self.persist(m)
+                    merged += was_merged
+                    inserted += not was_merged
+                    if self._observer is not None:
+                        contradicted += self._observer.observe(m, stored.id).superseded
             self._discard_evidence(m.evidence for m in rejected if m.evidence is not None)
             batch.clear()
             checkpoint = self._segmenter.checkpoint()
@@ -161,7 +186,7 @@ class Ingester:
         try:
             for obs in observations:
                 received += 1
-                if not self.segment(obs):
+                if not preselected and not self.segment(obs):
                     discarded.append(obs)
                     if len(discarded) >= self._batch_size:
                         discard_rejected()

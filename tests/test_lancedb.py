@@ -65,12 +65,64 @@ def test_sql_translation() -> None:
     where = Filter(
         robot_id="r'1", camera_id="c", time_from=1.5, time_to=2.0, near=Pose(1, -2, 0, "map", "m"), radius=0.5
     )
+
     assert _sql(where) == (
         "superseded = false AND robot_id = 'r''1' AND camera_id = 'c' AND "
         "array_position(array_sort(array_append(sighting_times, 2.0)), 2.0) > "
         "array_position(array_sort(array_append(sighting_times, 1.5)), 1.5) "
         "AND frame_id = 'map' AND map_id = 'm' AND ((x - 1) * (x - 1) + (y - -2) * (y - -2)) <= 0.25"
     )
+
+
+def test_vector_projection_recovers_and_can_be_rebuilt(tmp_path: Path, hashing: HashingEmbedder) -> None:
+    from unittest.mock import patch
+
+    store = LanceDBStore(tmp_path, CollectionInfo("projection", hashing.model_name, DIM))
+    rows = [embedded(hashing, f"printer {i}", t=i) for i in range(40)]
+    store.upsert(rows)
+    with (
+        patch.object(store._table, "merge_insert", side_effect=RuntimeError("index write interrupted")),
+        pytest.raises(RuntimeError),
+    ):
+        store.search(hashing.embed_text(["printer"])[0], 1)
+    assert store.count() == 40 and store.query(limit=1) == [rows[0]]
+    store.maintain(vector_index_min_rows=32)
+    assert any("vector" in index.columns for index in store._table.list_indices())
+    store.rebuild_index()
+    assert store.search(hashing.embed_text(["printer"])[0], 1)
+    store.close()
+    assert LanceDBStore.open(tmp_path, "projection").count() == 40
+
+
+def test_legacy_history_is_imported_without_a_state_sidecar(tmp_path: Path, hashing: HashingEmbedder) -> None:
+    from dataclasses import replace
+
+    import lancedb
+
+    from placecell import Sighting
+    from placecell.store.codec import to_row
+
+    info = CollectionInfo("legacy_history", hashing.model_name, DIM)
+    store = LanceDBStore(tmp_path, info)
+    store.close()
+    (tmp_path / "legacy_history.state.sqlite3").unlink()
+    memory = replace(
+        embedded(hashing, "printer", t=0),
+        last_seen=149,
+        observations=150,
+        schema_version=3,
+        sightings=tuple(Sighting(f"old-{i}", i) for i in range(150)),
+    )
+    table = lancedb.connect(str(tmp_path)).open_table(info.name)
+    table.add([to_row(memory)])
+    metadata = tmp_path / "legacy_history.collection.json"
+    metadata.write_text(json.dumps({"name": info.name, "model": info.model, "dimension": DIM, "schema_version": 3}))
+    upgraded = LanceDBStore.open(tmp_path, info.name)
+    assert len(upgraded.get(memory.id).sightings) == 64
+    assert len(upgraded.sightings(memory.id, limit=200)) == 150
+    assert upgraded.count(Filter(observation_id="old-1")) == 1
+    assert json.loads(metadata.read_text())["schema_version"] == SCHEMA_VERSION
+    upgraded.close()
 
 
 @pytest.mark.parametrize("interrupted", [False, True])

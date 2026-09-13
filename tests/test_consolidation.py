@@ -127,3 +127,31 @@ def test_chat_summarizer() -> None:
         ChatSummarizer(chat).summarize([])
     with pytest.raises(ValidationError):
         ChatSummarizer(chat, prompt=" ")
+
+
+def test_contradictions_invalidate_the_summary_and_clear_all_member_links(store, hashing) -> None:
+    from placecell import Observer
+
+    rows = [embedded(hashing, "printer", t=t) for t in range(5)]
+    store.upsert(rows)
+    Consolidator(store, hashing, JoinSummarizer()).run()
+    for t in (1000, 2000, 3000):
+        Observer(store).observe(embedded(hashing, "empty wall", t=t))
+    assert store.query() == []
+    assert all(not store.get(m.id).consolidated_into for m in rows)
+    assert all(m.superseded for m in store.query(EVERYTHING))
+
+
+def test_summary_is_not_committed_if_members_change_during_provider_work(store, hashing) -> None:
+    from dataclasses import replace
+
+    rows = [embedded(hashing, "printer", t=t) for t in range(5)]
+    store.upsert(rows)
+
+    class ChangingSummarizer(JoinSummarizer):
+        def summarize(self, captions):
+            store.upsert([replace(rows[0], embedding=hashing.embed_text(["wall"])[0])])
+            return super().summarize(captions)
+
+    assert Consolidator(store, hashing, ChangingSummarizer()).run().summaries == 0
+    assert all(not m.consolidated_into for m in store.query())

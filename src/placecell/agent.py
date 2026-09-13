@@ -18,6 +18,7 @@ from placecell.chat import ChatMessage, ChatModel, ToolCall
 from placecell.errors import ValidationError
 from placecell.memory import Pose
 from placecell.retrieval import RankedMemory, Recall
+from placecell.store.base import Filter
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +97,8 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 SYSTEM_PROMPT = """You answer questions about what a mobile robot has seen, using its memory.
-Each memory has an id, a time, a map position (x, y in metres, yaw in radians) and a caption.
+Each memory has an id, a time, a robot viewpoint (x, y in metres, yaw in radians) and a caption.
+The viewpoint is where the robot observed the scene, not the object's measured coordinates.
 Use the tools to look things up; do not guess. Convert relative times ("this morning") using the
 current time given below. When you have enough, call `answer` with a short reply and the ids of
 the memories it rests on. If nothing relevant exists, say so in `answer` with an empty id list.
@@ -135,6 +137,8 @@ class Agent:
         seen: dict[str, RankedMemory] = {}
         for step in range(1, self._max_steps + 1):
             reply = self._model.complete(messages, TOOLS)
+            if len(reply.tool_calls) > 8:
+                return Answer("The request exceeded the tool-call budget.", [], step, False)
             if not reply.tool_calls:
                 text = (reply.content or "").strip()
                 return Answer(text or "No answer.", [], step, grounded=False)
@@ -159,14 +163,18 @@ class Agent:
     def _run(self, call: ToolCall) -> tuple[str, list[RankedMemory]]:
         """Execute one tool call. Errors go back to the model as text, never up the stack."""
         a = call.arguments
+        scope = Filter(frame_id=self._frame_id, map_id=self._map_id)
         try:
+            k, limit = int(a.get("k", 5)), int(a.get("limit", 20))
+            if not 1 <= k <= 50 or not 1 <= limit <= 100:
+                raise ValidationError("k must be within 1..50 and limit within 1..100")
             if call.name == "search_memories":
-                found = self._recall.similar(str(a["query"]), k=int(a.get("k", 5)))
+                found = self._recall.similar(str(a["query"]), k=k, where=scope)
             elif call.name == "memories_between":
-                found = self._recall.between(float(a["time_from"]), float(a["time_to"]), limit=int(a.get("limit", 20)))
+                found = self._recall.between(float(a["time_from"]), float(a["time_to"]), limit=limit, where=scope)
             elif call.name == "memories_near":
                 pose = Pose(float(a["x"]), float(a["y"]), frame_id=self._frame_id, map_id=self._map_id)
-                found = self._recall.near(pose, float(a.get("radius_m", 2.0)), limit=int(a.get("limit", 20)))
+                found = self._recall.near(pose, float(a.get("radius_m", 2.0)), limit=limit)
             else:
                 return json.dumps({"error": f"unknown tool {call.name}"}), []
         except (KeyError, TypeError, ValueError) as e:
@@ -182,11 +190,14 @@ def _describe(r: RankedMemory) -> dict[str, Any]:
             timespec="seconds"
         ),
         "last_seen": m.last_seen,
-        "observed_at": list(r.observed_at or m.sighting_times),
+        "observed_at": list(r.observed_at or m.sighting_times)[:64],
         "x": round(m.pose.x, 2),
         "y": round(m.pose.y, 2),
         "yaw": round(m.pose.yaw, 2),
-        "caption": m.caption,
+        "caption": m.caption[:2000],
+        "position_kind": "viewpoint",
+        "frame_id": m.pose.frame_id,
+        "map_id": m.pose.map_id,
         "confidence": round(r.confidence, 3),
         "seen": m.observations,
     }

@@ -45,6 +45,15 @@ def call(name: str, **arguments: Any) -> ToolCall:
     return ToolCall(f"call-{name}", name, arguments)
 
 
+def test_agent_enforces_tool_and_result_limits(recall) -> None:
+    agent = Agent(recall, ScriptedChat([]))
+    text, found = agent._run(call("search_memories", query="printer", k=10000))
+    assert "error" in json.loads(text) and found == []
+    excessive = ChatReply(None, tuple(call("search_memories", query="printer") for _ in range(9)))
+    answer = Agent(recall, ScriptedChat([excessive])).ask("printer?")
+    assert not answer.grounded and "budget" in answer.text
+
+
 @pytest.fixture
 def recall(hashing: HashingEmbedder) -> Recall:
     store = InMemoryStore(__import__("placecell").CollectionInfo("t", hashing.model_name, hashing.dimension))

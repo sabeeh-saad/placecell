@@ -27,6 +27,7 @@ from placecell.errors import ModelMismatchError, ValidationError
 from placecell.memory import Evidence, EvidenceKind, Memory, Sighting
 from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row, to_row
+from placecell.store.jobs import WorkJournal
 
 HISTORY_PREVIEW = 64
 
@@ -64,6 +65,8 @@ class StateStore:
             CREATE TABLE IF NOT EXISTS dirty_vectors (id TEXT PRIMARY KEY, generation INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS cleanup (uri TEXT PRIMARY KEY, payload TEXT NOT NULL);
         """)
+
+        self.jobs = WorkJournal(self._conn, self.transaction)
 
     @property
     def info(self) -> CollectionInfo:
@@ -104,10 +107,18 @@ class StateStore:
                 previous = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory.id,)).fetchone()
                 if previous and previous["consolidated_into"]:
                     old = json.loads(previous["payload"])
-                    if any(old[k] != getattr(memory, k) for k in ("caption", "last_seen", "superseded")):
+                    if any(old[k] != getattr(memory, k) for k in ("caption", "last_seen", "superseded")) or (
+                        memory.embedding is not None and previous["vector"] != memory.embedding.tobytes()
+                    ):
                         self._invalidate_summary(
                             previous["consolidated_into"], memory.superseded_at or memory.last_seen
                         )
+                        memory = replace(memory, consolidated_into="")
+                if memory.consolidated_into:
+                    parent = self._conn.execute(
+                        "SELECT superseded FROM memories WHERE id=?", (memory.consolidated_into,)
+                    ).fetchone()
+                    if parent is not None and parent[0]:
                         memory = replace(memory, consolidated_into="")
                 self._save(memory, previous)
         return len(batch)
@@ -228,12 +239,17 @@ class StateStore:
             ).fetchall()
             return tuple(Sighting(r[0], r[1]) for r in rows)
 
-    def prune_history(self, before: float) -> int:
+    def prune_history(self, before: float, *, where: Filter | None = None, limit: int = 4096) -> int:
+        if limit < 1:
+            raise ValidationError("history pruning limit must be positive")
+        expr, params = self._predicate(where or Filter(include_superseded=True))
         with self.transaction():
             return self._conn.execute(
-                "DELETE FROM sightings WHERE timestamp<? AND timestamp < "
-                "(SELECT last_seen FROM memories WHERE id=memory_id)",
-                (before,),
+                "DELETE FROM sightings WHERE rowid IN (SELECT s.rowid FROM sightings s "
+                "JOIN memories m ON m.id=s.memory_id WHERE s.timestamp<? AND s.timestamp<m.last_seen AND "
+                + expr
+                + " ORDER BY s.timestamp LIMIT ?)",
+                [before, *params, limit],
             ).rowcount
 
     def _predicate(self, where: Filter) -> tuple[str, list[Any]]:
@@ -264,7 +280,7 @@ class StateStore:
             params.extend([p.frame_id, p.map_id, p.x - r, p.x + r, p.y - r, p.y + r, p.x, p.x, p.y, p.y, r * r])
         events, event_params = self._event_predicate(where)
         if events:
-            clauses.append("EXISTS (SELECT 1 FROM sightings s WHERE s.memory_id=m.id AND " + events + ")")
+            clauses.append("m.id IN (SELECT s.memory_id FROM sightings s WHERE " + events + ")")
             params.extend(event_params)
         return " AND ".join(clauses) or "1", params
 
@@ -357,6 +373,8 @@ class StateStore:
                     continue
                 if memory.consolidated_into:
                     self._invalidate_summary(memory.consolidated_into, memory.last_seen)
+                if memory.role == "summary":
+                    self._invalidate_summary(memory.id, memory.last_seen)
                 if memory.evidence is not None and memory.evidence.managed:
                     self.enqueue_cleanup([memory.evidence])
                 removed += self._conn.execute("DELETE FROM memories WHERE id=?", (identity,)).rowcount
@@ -391,8 +409,14 @@ class StateStore:
 
     def drain_cleanup(self, remover: Callable[[Evidence], None], limit: int = 256) -> int:
         removed = 0
+        with self._lock:
+            # File deletion cannot roll back. Wait until the enclosing memory transaction commits.
+            if self._depth:
+                return 0
         with self.transaction():
-            rows = self._conn.execute("SELECT * FROM cleanup LIMIT ?", (limit,)).fetchall()
+            rows = self._conn.execute(
+                "SELECT * FROM cleanup c WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.uri=c.uri) LIMIT ?", (limit,)
+            ).fetchall()
             for row in rows:
                 referenced = self._conn.execute(
                     "SELECT 1 FROM memories WHERE evidence_uri=? LIMIT 1", (row["uri"],)
