@@ -56,6 +56,70 @@ is still closing loops.
   count. Members stay, marked with the summary's id, for time questions and evidence.
 - **Re-embedding.** `reembed(source, target, embedder)` rebuilds a collection under a new
   embedding model from the stored captions and keyframes, lifecycle fields intact.
+- **Refinement.** When a retained keyframe changes, a background recheck can refresh the
+  memory's caption and embedding from that evidence. Captionless memories and explicit
+  recheck requests also enter the queue. Refinement preserves confidence, sighting counts,
+  misses and operator verdicts; a rewrite never counts as another observation.
+
+## Improving stored memories
+
+The feedback loop is observation → refinement → consolidation → retrieval → feedback.
+For example, a memory first described as "a cabinet" can be rechecked against a later,
+clearer frame and described as "a red fire equipment cabinet". The description and its
+embedding change together. Summaries based on a changed memory are invalidated and become
+eligible for rebuilding on the next consolidation pass.
+
+```python
+from placecell import MemoryRefiner, RefinementPolicy
+
+refiner = MemoryRefiner(
+    store,
+    embedder,
+    careful_captioner,
+    RefinementPolicy(max_memories=8, max_attempts=3, keep_revisions=3),
+    producer="vision-model-version",
+)
+report = refiner.run()  # process a bounded set of queued memories
+
+# Revisit an existing memory, including after changing the captioning model.
+store.refinements.request(memory_id, "operator correction")
+report = refiner.run()
+revisions = store.refinements.history(memory_id)
+undone = refiner.rollback(memory_id)
+```
+
+Use a captioner that examines the source image carefully; it receives the evidence alone,
+without previous captions, summaries or correction notes. Text embeddings are rebuilt from
+the new caption; a provider with media support embeds the image, matching ingestion. This
+is evidence-driven maintenance, not model training, and a different caption is not proof of
+better accuracy. Evaluate the descriptions against actual robot scenes. Operator verdicts
+remain in force until later operator feedback changes their effect.
+
+The queue and revision history persist with a disk-backed store. Requests for one memory
+coalesce, attempts are reserved before model calls, and failures wait at least five minutes
+before retrying. After three attempts, a request stays available for inspection through
+`store.refinements.pending()`; another explicit request or changed image resets its budget.
+Completed work is not repeated automatically. Equal nonempty image digests suppress rechecks
+when a new filename contains the same pixels; without a digest, evidence identity is based
+on its URI and metadata. Caller-owned files should be immutable or carry updated digests.
+
+Each successful change retains its previous caption and vector, source evidence reference,
+producer and reason. The default keeps three revisions per memory, deleted with that memory.
+Undo applies to the latest refinement only, provided its caption, vector and evidence are
+still current. It preserves subsequent lifecycle updates and cancels pending rechecks.
+Revision history does not retain old image files. A concurrent sighting, deletion or other
+memory update prevents an outdated refinement from committing.
+
+In ROS, refinement runs hourly when a caption model is configured, processing at most eight
+requests per pass on the bounded maintenance worker. `refine_model` optionally selects a
+different vision model at `caption_base_url`; otherwise it uses `caption_model` with a
+careful-description prompt and high image detail. Set `refine_interval_s:=0.0` to disable
+execution, or adjust `refine_interval_s` and `refine_batch_size` to budget provider work.
+A wrong verdict on `/placecell/correct` requests an evidence recheck for that episodic memory.
+You can also publish `{"memory_id":"...","action":"recheck"}` or
+`{"memory_id":"...","action":"rollback"}` on `/placecell/refine`. Rechecks run on the next
+maintenance pass; rollback requires refinement to be enabled. Summary rebuilding remains
+controlled separately by `consolidate_interval_s` and requires a chat model.
 
 ## Quickstart, offline
 
@@ -120,7 +184,7 @@ Time queries match actual sighting timestamps, not the interval between the firs
 visit. Results expose matching times through `RankedMemory.observed_at`; agent tool results
 and ROS answers include `observed_at` and `last_seen`. Nearby agent queries honor `map_id`.
 
-Existing schema 2 collections are upgraded to schema 3 when opened. The upgrade retains
+Existing schema 2 and 3 collections are upgraded to schema 4 when opened. The upgrade retains
 stored rows, captions, evidence and lifecycle counts. It can preserve the recorded first
 and last times, but cannot reconstruct intermediate sightings or observation ids that the
 older schema discarded. Replay detection for merged observations is complete for sightings
@@ -141,6 +205,7 @@ src/placecell/
   store/           store contract with push-down filters; in-memory reference backend; LanceDB backend
   retrieval.py     the three query tools and their ranking
   lifecycle.py     reinforcement, decay, retention curator, supersede, forget
+  refinement.py    bounded evidence rechecks, caption revisions and undo
   pipeline.py      segment -> caption -> embed -> persist, batched, idempotent
   agent.py         the tool-calling reasoning loop that ends in a cited answer
   sources/         pose tracks from CSV, keyframes from video files

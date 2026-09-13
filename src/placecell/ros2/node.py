@@ -25,6 +25,7 @@ from placecell.memory import Pose
 from placecell.observer import Observer
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
 from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
+from placecell.refinement import REFINEMENT_PROMPT, MemoryRefiner, RefinementPolicy
 from placecell.retrieval import Recall
 from placecell.ros2.bridge import KeyframeWriter, ObservationBuilder, pose_from_transform, stamp_to_seconds
 from placecell.store import CollectionInfo, VectorStore
@@ -237,6 +238,21 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._recall = Recall(store, embedder, corrections=self._corrections)
             self._agent: Agent | None = None
             self._consolidator: Consolidator | None = None
+            self._refiner: MemoryRefiner | None = None
+            refinement_model = p["refine_model"] or p["caption_model"]
+            if p["refine_interval_s"] > 0 and refinement_model:
+                from placecell.providers import OpenAICompatibleCaptioner
+
+                reviewer = OpenAICompatibleCaptioner(
+                    refinement_model, p["caption_base_url"], api_key, prompt=REFINEMENT_PROMPT, detail="high"
+                )
+                self._refiner = MemoryRefiner(
+                    store,
+                    embedder,
+                    reviewer,
+                    RefinementPolicy(max_memories=p["refine_batch_size"]),
+                    producer=refinement_model,
+                )
             if p["chat_model"]:
                 from placecell.providers import OpenAICompatibleChat
 
@@ -273,11 +289,14 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self.create_subscription(Image, p["image_topic"], self._on_image, qos_profile_sensor_data)
             self.create_subscription(String, "~/ask", self._on_ask, 10)
             self.create_subscription(String, "~/correct", self._on_correct, 10)
+            self.create_subscription(String, "~/refine", self._on_refine, 10)
             self._answers = self.create_publisher(String, "~/answer", 10)
             if p["curator_interval_s"] > 0:
                 self.create_timer(p["curator_interval_s"], self._curate)
             if self._consolidator is not None:
                 self.create_timer(p["consolidate_interval_s"], self._consolidate)
+            if self._refiner is not None:
+                self.create_timer(p["refine_interval_s"], self._refine)
             self.create_timer(30.0, self._diagnostics)
             self._worker.start()
             where = f"lancedb {p['db_path']}" if p["db_path"] else "memory"
@@ -321,6 +340,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "contradiction": True,
                 "corrections_path": "~/.placecell/corrections.jsonl",
                 "consolidate_interval_s": 0.0,
+                "refine_interval_s": 3600.0,
+                "refine_batch_size": 8,
+                "refine_model": "",
             }
             return {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
 
@@ -412,6 +434,32 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self.get_logger().warning(f"ignored correction: {e}")
                 return
             self._corrections.record(correction)
+            if correction.verdict == "wrong":
+                self._store.refinements.request(correction.memory_id, "operator correction")
+
+        def _on_refine(self, msg: Any) -> None:
+            """JSON: {"memory_id": ..., "action": "recheck"|"rollback"}."""
+            try:
+                data = json.loads(msg.data)
+                identity, action = str(data["memory_id"]), data.get("action", "recheck")
+                if action == "recheck":
+                    accepted = self._store.refinements.request(identity)
+                elif action == "rollback" and self._refiner is not None:
+                    accepted = self._refiner.rollback(identity)
+                else:
+                    raise ValidationError("unknown refinement action or refinement is disabled")
+                self.get_logger().info(f"refinement {action} for {identity}: {'accepted' if accepted else 'skipped'}")
+            except (ValueError, KeyError, TypeError, PlacecellError) as e:
+                self.get_logger().warning(f"ignored refinement request: {e}")
+
+        def _refine(self) -> None:
+            self._maintenance.submit(self._run_refiner)
+
+        def _run_refiner(self) -> None:
+            if self._refiner is not None:
+                report = self._refiner.run()
+                if report.attempted:
+                    self.get_logger().info(f"memory refinement: {report}")
 
         def _curate(self) -> None:
             self._maintenance.submit(self._run_curator)
