@@ -3,123 +3,130 @@
   <desc id="description">Camera frames, capture times and localized robot poses are sampled, queued, described and embedded into visual memory. Optional RGB-D object tracking adds crops, identities and estimated object locations. A spoken or text movement command retrieves and visually verifies candidates, then selects a recorded viewpoint or an optional checked object approach. Nav2 navigates and a fresh image verifies the visible destination. Observations continue during navigation and revisits, updating memory. Refinement and retention maintain stored evidence. Object tracking and approach planning are optional.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#647887"/>
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#6366f1"/>
     </marker>
     <marker id="loop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#0f766e"/>
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#ea580c"/>
     </marker>
     <style>
       text { font-family: "DejaVu Sans", Arial, sans-serif; }
-      .title { font-size: 32px; font-weight: 700; fill: #142b34; }
-      .subtitle { font-size: 17px; fill: #526572; }
-      .section { font-size: 13px; font-weight: 700; letter-spacing: 1.7px; fill: #0f766e; }
-      .card { fill: #ffffff; stroke: #cbd5df; stroke-width: 1.5; }
-      .accent-card { fill: #edf7f4; stroke: #81b8ae; stroke-width: 1.5; }
-      .heading { font-size: 20px; font-weight: 700; fill: #142b34; }
-      .body { font-size: 16px; fill: #425764; }
-      .small { font-size: 13px; fill: #526572; }
-      .tag { font-size: 12px; font-weight: 700; fill: #0f766e; letter-spacing: .3px; }
-      .wire { fill: none; stroke: #647887; stroke-width: 2; stroke-linejoin: round; marker-end: url(#arrow); }
-      .loop { fill: none; stroke: #0f766e; stroke-width: 2; stroke-dasharray: 7 6; stroke-linejoin: round; marker-end: url(#loop-arrow); }
+      .title { font-size: 32px; font-weight: 700; fill: #172554; }
+      .subtitle { font-size: 17px; fill: #475569; }
+      .section { font-size: 13px; font-weight: 700; letter-spacing: 1.7px; fill: #1d4ed8; }
+      .card { stroke-width: 1.5; }
+      .blue-card { fill: #dbeafe; stroke: #60a5fa; }
+      .amber-card { fill: #fef3c7; stroke: #fbbf24; }
+      .violet-card { fill: #ede9fe; stroke: #a78bfa; }
+      .green-card { fill: #d1fae5; stroke: #34d399; }
+      .heading { font-size: 20px; font-weight: 700; }
+      .body { font-size: 16px; fill: #334155; }
+      .small { font-size: 13px; fill: #475569; }
+      .tag { font-size: 12px; font-weight: 700; letter-spacing: .3px; }
+      .blue-text { fill: #1e40af; }
+      .amber-text { fill: #92400e; }
+      .violet-text { fill: #5b21b6; }
+      .green-text { fill: #065f46; }
+      .wire { fill: none; stroke: #6366f1; stroke-width: 2; stroke-linejoin: round; marker-end: url(#arrow); }
+      .loop { fill: none; stroke: #ea580c; stroke-width: 2; stroke-dasharray: 7 6; stroke-linejoin: round; marker-end: url(#loop-arrow); }
     </style>
   </defs>
 
-  <rect width="1160" height="890" rx="18" fill="#f8fafc"/>
+  <rect width="1160" height="890" rx="18" fill="#fffdf8"/>
   <text class="title" x="44" y="56">Visual memory → robot navigation</text>
   <text class="subtitle" x="44" y="88">placecell · One robot, continuous observations, ROS 2 Nav2</text>
-  <path d="M 44 111 H 1116" stroke="#dbe3e9" stroke-width="1"/>
+  <path d="M 44 111 H 1116" stroke="#c7d2fe" stroke-width="1"/>
 
   <text class="section" x="44" y="143">01  RECORD AND UPDATE</text>
 
   <!-- Continuous observation flow. Images remain paired with their capture pose and time. -->
-  <rect class="card" x="44" y="164" width="232" height="202" rx="12"/>
-  <text class="heading" x="62" y="200">Camera + pose</text>
+  <rect class="card blue-card" x="44" y="164" width="232" height="202" rx="12"/>
+  <text class="heading blue-text" x="62" y="200">Camera + pose</text>
   <text class="body" x="62" y="236">RGB or aligned RGB-D</text>
   <text class="body" x="62" y="260">Timestamp + map pose</text>
   <text class="body" x="62" y="284">Localization checked</text>
-  <path d="M 62 310 H 258" stroke="#e2e8ee"/>
-  <text class="tag" x="62" y="340">LIVE OBSERVATIONS</text>
+  <path d="M 62 310 H 258" stroke="#93c5fd"/>
+  <text class="tag blue-text" x="62" y="340">LIVE OBSERVATIONS</text>
 
   <path class="wire" d="M 278 265 H 319"/>
 
-  <rect class="card" x="324" y="164" width="232" height="202" rx="12"/>
-  <text class="heading" x="342" y="200">Sample &amp; queue</text>
+  <rect class="card amber-card" x="324" y="164" width="232" height="202" rx="12"/>
+  <text class="heading amber-text" x="342" y="200">Sample &amp; queue</text>
   <text class="body" x="342" y="236">Movement, turns and</text>
   <text class="body" x="342" y="260">periodic refreshes</text>
   <text class="body" x="342" y="284">Bounded work queue</text>
-  <path d="M 342 310 H 538" stroke="#e2e8ee"/>
-  <text class="tag" x="342" y="340">RETAIN RELEVANT FRAMES</text>
+  <path d="M 342 310 H 538" stroke="#fcd34d"/>
+  <text class="tag amber-text" x="342" y="340">RETAIN RELEVANT FRAMES</text>
 
   <path class="wire" d="M 558 265 H 599"/>
 
-  <rect class="card" x="604" y="164" width="232" height="202" rx="12"/>
-  <text class="heading" x="622" y="200">Caption &amp; embed</text>
+  <rect class="card violet-card" x="604" y="164" width="232" height="202" rx="12"/>
+  <text class="heading violet-text" x="622" y="200">Caption &amp; embed</text>
   <text class="body" x="622" y="236">Image / text vectors</text>
   <text class="body" x="622" y="260">Object detection*</text>
   <text class="body" x="622" y="284">Crops + depth tracking*</text>
-  <path d="M 622 310 H 818" stroke="#e2e8ee"/>
-  <text class="tag" x="622" y="340">REPLACEABLE PROVIDERS</text>
+  <path d="M 622 310 H 818" stroke="#c4b5fd"/>
+  <text class="tag violet-text" x="622" y="340">REPLACEABLE PROVIDERS</text>
 
   <path class="wire" d="M 838 265 H 879"/>
 
-  <rect class="accent-card" x="884" y="164" width="232" height="202" rx="12"/>
-  <text class="heading" x="902" y="200">Visual memory</text>
+  <rect class="card green-card" x="884" y="164" width="232" height="202" rx="12"/>
+  <text class="heading green-text" x="902" y="200">Visual memory</text>
   <text class="body" x="902" y="236">Frames + captions</text>
   <text class="body" x="902" y="260">Vectors, poses + times</text>
   <text class="body" x="902" y="284">Object IDs + locations*</text>
-  <path d="M 902 310 H 1098" stroke="#c9e1d9"/>
-  <text class="tag" x="902" y="340">SIGHTINGS + HISTORY</text>
+  <path d="M 902 310 H 1098" stroke="#6ee7b7"/>
+  <text class="tag green-text" x="902" y="340">SIGHTINGS + HISTORY</text>
 
   <!-- Retained evidence feeds retrieval, not a direct unverified navigation goal. -->
   <path class="wire" d="M 1000 368 V 416 H 440 V 479"/>
   <text class="small" x="690" y="403" text-anchor="middle">Search retained evidence</text>
 
-  <text class="section" x="44" y="460">02  NAVIGATE FROM MEMORY</text>
+  <text class="section violet-text" x="44" y="460">02  NAVIGATE FROM MEMORY</text>
 
-  <rect class="card" x="44" y="484" width="232" height="218" rx="12"/>
-  <text class="heading" x="62" y="520">Spoken request</text>
-  <text x="62" y="558" font-size="18" font-weight="700" fill="#0f766e">“Go to the printer”</text>
+  <rect class="card blue-card" x="44" y="484" width="232" height="218" rx="12"/>
+  <text class="heading blue-text" x="62" y="520">Spoken request</text>
+  <text x="62" y="558" font-size="18" font-weight="700" fill="#1e40af">“Go to the printer”</text>
   <text class="body" x="62" y="591">Speech-to-text or</text>
   <text class="body" x="62" y="615">text command topic</text>
-  <path d="M 62 646 H 258" stroke="#e2e8ee"/>
-  <text class="tag" x="62" y="677">MOVEMENT REQUEST</text>
+  <path d="M 62 646 H 258" stroke="#93c5fd"/>
+  <text class="tag blue-text" x="62" y="677">MOVEMENT REQUEST</text>
 
   <path class="wire" d="M 278 594 H 319"/>
 
-  <rect class="card" x="324" y="484" width="232" height="218" rx="12"/>
-  <text class="heading" x="342" y="520">Retrieve &amp; verify</text>
+  <rect class="card violet-card" x="324" y="484" width="232" height="218" rx="12"/>
+  <text class="heading violet-text" x="342" y="520">Retrieve &amp; verify</text>
   <text class="body" x="342" y="556">Search image + text</text>
   <text class="body" x="342" y="580">Filter robot, map + age</text>
   <text class="body" x="342" y="604">Verify candidate images</text>
-  <path d="M 342 646 H 538" stroke="#e2e8ee"/>
-  <text class="tag" x="342" y="677">ASK WHEN AMBIGUOUS</text>
+  <path d="M 342 646 H 538" stroke="#c4b5fd"/>
+  <text class="tag violet-text" x="342" y="677">ASK WHEN AMBIGUOUS</text>
 
   <path class="wire" d="M 558 594 H 599"/>
 
-  <rect class="card" x="604" y="484" width="232" height="218" rx="12"/>
-  <text class="heading" x="622" y="520">Choose a pose</text>
+  <rect class="card amber-card" x="604" y="484" width="232" height="218" rx="12"/>
+  <text class="heading amber-text" x="622" y="520">Choose a pose</text>
   <text class="body" x="622" y="556">Robot observation pose</text>
   <text class="body" x="622" y="580">or a checked approach*</text>
   <text class="body" x="622" y="604">near the target object</text>
-  <path d="M 622 646 H 818" stroke="#e2e8ee"/>
-  <text class="tag" x="622" y="677">RECHECK BEFORE SENDING</text>
+  <path d="M 622 646 H 818" stroke="#fcd34d"/>
+  <text class="tag amber-text" x="622" y="677">RECHECK BEFORE SENDING</text>
 
   <path class="wire" d="M 838 594 H 879"/>
 
-  <rect class="accent-card" x="884" y="484" width="232" height="218" rx="12"/>
-  <text class="heading" x="902" y="520">Nav2 + arrival</text>
+  <rect class="card green-card" x="884" y="484" width="232" height="218" rx="12"/>
+  <text class="heading green-text" x="902" y="520">Nav2 + arrival</text>
   <text class="body" x="902" y="556">Navigate / cancel</text>
   <text class="body" x="902" y="580">Capture a fresh view</text>
   <text class="body" x="902" y="604">Verify the destination</text>
-  <path d="M 902 646 H 1098" stroke="#c9e1d9"/>
-  <text class="tag" x="902" y="677">REPORT THE OUTCOME</text>
+  <path d="M 902 646 H 1098" stroke="#6ee7b7"/>
+  <text class="tag green-text" x="902" y="677">REPORT THE OUTCOME</text>
 
   <!-- Motion produces observations; memory ingestion also runs independently of commands. -->
   <path class="loop" d="M 1118 650 H 1138 V 754 H 22 V 265 H 40"/>
-  <rect x="302" y="737" width="556" height="34" rx="17" fill="#e5f2ed"/>
-  <text x="580" y="759" text-anchor="middle" font-size="15" font-weight="700" fill="#0f766e">Navigation and revisits produce new observations</text>
+  <rect x="302" y="737" width="556" height="34" rx="17" fill="#ffedd5"/>
+  <text x="580" y="759" text-anchor="middle" font-size="15" font-weight="700" fill="#9a3412">Navigation and revisits produce new observations</text>
 
-  <text class="section" x="44" y="809">MEMORY MAINTENANCE</text>
+  <text class="section amber-text" x="44" y="809">MEMORY MAINTENANCE</text>
   <text class="body" x="265" y="809">Revisit reinforcement · Evidence rechecks · Decay &amp; retention</text>
   <text class="small" x="44" y="842">Storage: local image files + SQLite state; optional LanceDB index for scene retrieval.</text>
   <text class="small" x="44" y="866">* Optional object tracking and approach planning. Approaches check the costmap, footprint and Nav2 path.</text>
