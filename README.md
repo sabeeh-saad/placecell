@@ -7,7 +7,8 @@ drives, keeps it together with time and map position, and answers questions like
 with the robot's observation position, which can serve as a navigation viewpoint.
 Optional [RGB-D object memory](docs/objects.md) also estimates object surface locations,
 tracks identities and changes, and retains cropped views. Navigation uses the robot's
-recorded observation pose.
+recorded observation pose or an optional [checked approach pose](docs/approach.md) near
+a localized object.
 
 With Nav2 enabled, spoken commands such as **"robot go to the printer"** can resolve a
 destination from a named place or visual memory and start a navigation goal. Camera
@@ -29,6 +30,13 @@ not have:
   not a dependency of the core.
 
 ## How it works
+
+![Placecell architecture: camera observations become visual memory; spoken commands retrieve and verify a destination before Nav2 navigation, while new observations continue updating memory.](docs/assets/architecture.svg)
+
+The diagram shows memory-based navigation. Named places and explicit coordinates can
+also supply a goal. Arrival checks confirm that the requested destination is visible;
+they do not yet prove a physical object identity match.
+Download the diagram as [SVG](docs/assets/architecture.svg) or [PNG](docs/assets/architecture.png).
 
 1. **Memory building** runs while the robot drives in a known map. A segmenter keeps one
    observation every few seconds after movement or turning, plus periodic stationary refreshes. Each kept
