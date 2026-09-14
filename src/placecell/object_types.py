@@ -51,6 +51,7 @@ class ObjectRecord:
     misses: int = 0
     last_miss: float = 0
     revision: int = 1
+    position_timestamp: float | None = None
 
     def __post_init__(self) -> None:
         if not all((self.id, self.robot_id, self.camera_id, self.frame_id, self.label)):
@@ -61,6 +62,12 @@ class ObjectRecord:
             raise ValidationError("invalid object timestamps")
         if self.last_seen < self.first_seen:
             raise ValidationError("object last_seen precedes first_seen")
+        if self.position_timestamp is not None and (
+            self.position is None
+            or not math.isfinite(self.position_timestamp)
+            or not 0 <= self.position_timestamp <= self.last_seen
+        ):
+            raise ValidationError("invalid object position timestamp")
 
 
 @dataclass(frozen=True)

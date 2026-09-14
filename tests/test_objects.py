@@ -129,6 +129,24 @@ def test_unique_move_requires_empty_old_location(setup, tmp_path):
     assert [e.kind for e in store.objects.history(after.id)] == ["created", "moved"]
 
 
+def test_rgb_refresh_preserves_depth_age_and_reembedding_handles_rgb_first_history(setup, tmp_path):
+    from placecell import reembed
+
+    store, embedder, _, tracker = setup
+    first = ingest(tracker, observation(tmp_path, depth=False))[0]
+    assert first.position_timestamp is None
+    depth = ingest(tracker, observation(tmp_path, 2000))[0]
+    assert depth.id == first.id and depth.position_timestamp == 2000
+    rgb = ingest(tracker, observation(tmp_path, 3000, depth=False))[0]
+    assert rgb.last_seen == 3000 and rgb.position_timestamp == 2000
+    assert rgb.position == depth.position
+    target = StateStore(CollectionInfo("new", embedder.model_name, 3))
+    reembed(store, target, embedder)
+    assert target.objects.get(first.id) == rgb
+    assert target.objects.history(first.id)[0].position is None
+    target.close()
+
+
 def test_occlusion_does_not_prove_move(setup, tmp_path):
     _, _, detector, tracker = setup
     before = ingest(tracker, observation(tmp_path))[0]
@@ -415,7 +433,8 @@ def test_explicit_forget_removes_object_crops_and_releases_shared_frames(setup, 
     assert removed == [obs.evidence]
 
 
-def test_schema_six_upgrade_preserves_vectors_and_adds_object_ownership(tmp_path):
+@pytest.mark.parametrize("version", [6, 7])
+def test_schema_upgrade_preserves_vectors_and_adds_object_ownership(tmp_path, version):
     import json
 
     from placecell import SCHEMA_VERSION
@@ -426,14 +445,24 @@ def test_schema_six_upgrade_preserves_vectors_and_adds_object_ownership(tmp_path
     store = LanceDBStore(tmp_path / "db", info)
     Ingester(embedder, store).ingest([observation(tmp_path)], preselected=True)
     before = store.query()[0]
+    old_object = None
+    if version == 7:
+        old_object = ingest(ObjectTracker(store, embedder, Detector()), observation(tmp_path, 2000))[0]
+        row = store._conn.execute("SELECT payload FROM objects WHERE id=?", (old_object.id,)).fetchone()
+        payload = json.loads(row[0])
+        payload.pop("position_timestamp")
+        store._conn.execute("UPDATE objects SET payload=? WHERE id=?", (json.dumps(payload), old_object.id))
     store.close()
     metadata = tmp_path / "db" / "old.collection.json"
     data = json.loads(metadata.read_text())
-    data["schema_version"] = 6
+    data["schema_version"] = version
     metadata.write_text(json.dumps(data))
     upgraded = LanceDBStore(tmp_path / "db", info)
-    assert upgraded.info.schema_version == SCHEMA_VERSION == 7
+    assert upgraded.info.schema_version == SCHEMA_VERSION == 8
     assert upgraded.get(before.id).same_embeddings(before)
+    if old_object is not None:
+        assert upgraded.objects.get(old_object.id).position == old_object.position
+        assert upgraded.objects.get(old_object.id).position_timestamp is None
     tracker = ObjectTracker(upgraded, embedder, Detector())
     ingest(tracker, observation(tmp_path, 2000))
     upgraded.rebuild_index()

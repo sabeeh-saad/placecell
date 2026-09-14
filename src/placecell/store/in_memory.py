@@ -7,4 +7,6 @@ from placecell.store.state import StateStore
 class InMemoryStore(StateStore):
     def close(self) -> None:
         """Clear the reference store; it remains usable as an empty store."""
-        self.delete_where(EVERYTHING)
+        with self.transaction():
+            self.delete_where(EVERYTHING)
+            self.objects.clear()

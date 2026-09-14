@@ -9,10 +9,11 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal, Protocol
 
+from placecell.approach import ApproachPlan, ApproachPlanner
 from placecell.errors import ValidationError
 from placecell.memory import Memory, Pose
 from placecell.objects import ObjectRecall
@@ -97,6 +98,7 @@ class Destination:
     target: str = ""
     object_id: str = ""
     object_revision: int = 0
+    approach: ApproachPlan | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +141,7 @@ class DestinationResolver:
         policy: NavigationPolicy | None = None,
         verifier: SceneVerifier | None = None,
         objects: ObjectRecall | None = None,
+        approach: ApproachPlanner | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         if not robot_id:
@@ -152,6 +155,17 @@ class DestinationResolver:
         self._policy, self._clock = policy or NavigationPolicy(), clock
         self._verifier = verifier
         self._objects = objects
+        self._approach = approach
+
+    def prepare_destination(self, destination: Destination, canceled: Callable[[], bool]) -> Destination:
+        if self._approach is None or not destination.object_id:
+            return destination
+        record = self._store.objects.get(destination.object_id)
+        views = self._store.objects.views(destination.object_id, include_crops=False, limit=1)
+        if record is None or not views or not self.current(destination):
+            raise ValidationError("object changed before approach planning")
+        plan = self._approach.plan(record, views[0], canceled)
+        return replace(destination, pose=plan.pose, approach=plan) if plan else destination
 
     def resolve(self, command: MovementCommand) -> Resolution:
         if command.kind != "go":
@@ -289,6 +303,7 @@ class DestinationResolver:
         if destination.object_id:
             record = self._store.objects.get(destination.object_id)
             views = self._store.objects.views(destination.object_id, include_crops=False, limit=1)
+            plan = destination.approach
             return bool(
                 record is not None
                 and record.revision == destination.object_revision
@@ -303,7 +318,8 @@ class DestinationResolver:
                 and views[0].memory.id == destination.memory.id
                 and views[0].memory == destination.memory
                 and views[0].memory.same_embeddings(destination.memory)
-                and views[0].memory.pose == destination.pose
+                and views[0].memory.pose == (plan.viewpoint if plan else destination.pose)
+                and (plan is None or (plan.object == record and plan.pose == destination.pose))
                 and views[0].memory.localization_checked
                 and self._recall.confidence(views[0].memory) >= self._policy.min_confidence
             )
@@ -450,8 +466,31 @@ class NavigationCommands:
                 if chosen
                 else self._resolver.resolve(command)
             )
-            if result.state == "resolved" and not self._resolver.current(result.choices[0]):
-                result = Resolution("not_found", "That memory changed or expired. Please give the destination again.")
+            if result.state == "resolved":
+                if not self._resolver.current(result.choices[0]):
+                    result = Resolution(
+                        "not_found", "That memory changed or expired. Please give the destination again."
+                    )
+                else:
+
+                    def canceled() -> bool:
+                        with self._lock:
+                            return (
+                                request_id != self._active
+                                or self._clock() - self._requested_at > self._timeout
+                                or not self._localization_ready()
+                            )
+
+                    destination = self._resolver.prepare_destination(result.choices[0], canceled)
+                    if not self._resolver.current(destination):
+                        result = Resolution("not_found", "That object changed during approach planning.")
+                    else:
+                        message = (
+                            "Navigating to a checked stopping pose near the object."
+                            if destination.approach
+                            else result.message
+                        )
+                        result = Resolution("resolved", message, (destination,))
         except Exception as e:
             result = Resolution("not_found", f"Destination lookup failed: {e}")
         with self._lock:

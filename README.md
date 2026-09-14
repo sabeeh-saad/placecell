@@ -211,7 +211,7 @@ Time queries match actual sighting timestamps, not the interval between the firs
 visit. Results expose matching times through `RankedMemory.observed_at`; agent tool results
 and ROS answers include `observed_at` and `last_seen`. Nearby agent queries honor `map_id`.
 
-Existing schema 2–6 collections are upgraded to schema 7 when opened. The upgrade retains
+Existing schema 2–7 collections are upgraded to schema 8 when opened. The upgrade retains
 stored rows, captions, evidence and lifecycle counts. It can preserve the recorded first
 and last times, but cannot reconstruct intermediate sightings or observation ids that the
 older schema discarded. Replay detection for merged observations is complete for sightings
@@ -225,6 +225,12 @@ those memories need a new checked observation before navigation can use them.
 Schema 6 adds vector modality and independent caption vectors. Older vectors remain
 searchable through the primary channel; re-embed saved frames and captions to populate
 both channels. The upgrade does not infer vector modality from stored image references.
+
+Schema 8 records the age of measured object positions separately from RGB sightings.
+Older object positions keep an unknown measurement time until a new depth observation.
+Optional [Nav2 approach planning](docs/approach.md) checks a stopping pose near a localized
+object against the costmap and planner. The [RGB-D recording evaluator](docs/object-evaluation.md)
+measures tracking against human labels without changing the robot's live collection.
 
 New memories start with an evidence weight of 0.5. Repeat frames from the same visit do not
 increase it; a revisit after a gap of at least ten minutes can increase it toward a ceiling
@@ -284,8 +290,8 @@ recordings. See `CHANGELOG.md`.
 Use a persistent `db_path` for restart recovery. Each collection now has a
 `<collection>.state.sqlite3` file containing authoritative memory metadata, observation
 history, ingestion jobs and cleanup intents. LanceDB supplies a derived vector index.
-Schema 2–6 collections import into schema 7 in bounded batches when opened. The
-original sighting history is retained during import; older clients reject schema 7.
+Schema 2–7 collections import into schema 8 in bounded batches when opened. The
+original sighting history is retained during import; older clients reject schema 8.
 Stop writers and back up the entire database directory and keyframe directory together
 before an upgrade. Do not remove the state file when rebuilding a vector index.
 

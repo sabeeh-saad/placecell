@@ -114,7 +114,9 @@ them. A places file contains navigation poses measured in the current map, for e
 Replace these example coordinates with your robot's measured poses. The file is loaded
 at startup. Other destinations are retrieved from episodic visual memories for the same
 robot and map. Summary averages are excluded from navigation. The goal is the robot's
-recorded observation pose and heading, not a measured object coordinate.
+recorded observation pose and heading by default. Optional [object approach planning](approach.md)
+uses fresh RGB-D object geometry, the costmap and Nav2 path queries to select a stopping
+pose near an object. It requires object memory to be enabled.
 
 Default gates require similarity of at least 0.5, effective confidence of at least 0.2,
 and a retained image captured within seven days with checked localization and a known
@@ -153,8 +155,8 @@ Named places and coordinate goals report Nav2's result without claiming visual i
 Schema 5 records retained-image capture time and localization provenance. Earlier memories
 remain searchable for questions but cannot become navigation goals until a new checked
 observation establishes their pairing. Updating captions alone cannot repair an unknown
-capture pose. The robot returns to a recorded viewpoint; object coordinates, approach
-poses and manipulation are outside this interface.
+capture pose. Whole-scene memories return the robot to a recorded viewpoint. Object
+approach poses require a fresh measured position; manipulation remains outside this interface.
 
 Supported commands include:
 

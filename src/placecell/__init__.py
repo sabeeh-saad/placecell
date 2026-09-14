@@ -1,6 +1,14 @@
 """placecell: long-term visual memory for mobile robots."""
 
 from placecell.agent import TOOLS, Agent, Answer
+from placecell.approach import (
+    ApproachPlan,
+    ApproachPlanner,
+    ApproachPolicy,
+    Costmap,
+    PlanningEnvironment,
+    PlanningSnapshot,
+)
 from placecell.chat import ChatMessage, ChatModel, ChatReply, ToolCall
 from placecell.consolidation import ChatSummarizer, ConsolidationPolicy, ConsolidationReport, Consolidator
 from placecell.corrections import Correction, CorrectionLog, InMemoryCorrectionLog, JsonlCorrectionLog
@@ -24,6 +32,7 @@ from placecell.object_types import Detection, ObjectDetector, ObjectEvent, Objec
 from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
 from placecell.observer import ContradictionPolicy, Observer, ObserverReport
 from placecell.pipeline import Ingester, IngestReport, Observation, SegmentationPolicy, Segmenter
+from placecell.recordings import RecordingWriter, read_recording
 from placecell.refinement import MemoryRefiner, RefinementPolicy, RefinementReport
 from placecell.retrieval import RankedMemory, Recall
 from placecell.store import CollectionInfo, Filter, Hit, InMemoryStore, VectorStore
@@ -37,6 +46,9 @@ __all__ = [
     "TOOLS",
     "Agent",
     "Answer",
+    "ApproachPlan",
+    "ApproachPlanner",
+    "ApproachPolicy",
     "Box",
     "ChatMessage",
     "ChatModel",
@@ -49,6 +61,7 @@ __all__ = [
     "ContradictionPolicy",
     "Correction",
     "CorrectionLog",
+    "Costmap",
     "Curator",
     "CuratorReport",
     "DepthSnapshot",
@@ -87,9 +100,12 @@ __all__ = [
     "Observation",
     "Observer",
     "ObserverReport",
+    "PlanningEnvironment",
+    "PlanningSnapshot",
     "Pose",
     "RankedMemory",
     "Recall",
+    "RecordingWriter",
     "RefinementPolicy",
     "RefinementReport",
     "ReinforcementPolicy",
@@ -107,5 +123,6 @@ __all__ = [
     "load_named_places",
     "memory_id",
     "parse_movement",
+    "read_recording",
     "reembed",
 ]

@@ -91,3 +91,18 @@ def test_delayed_localization_does_not_replace_a_newer_estimate():
     assert gate.update(100, pose, covariance())
     assert not gate.update(99, pose, covariance(x=100))
     assert gate.ready()
+
+
+def test_capture_uncertainty_uses_measured_covariance_and_expires():
+    now = [100.0]
+    gate = LocalizationGate("map", "office", clock=lambda: now[0])
+    pose = Pose(0, 0, map_id="office")
+    assert gate.uncertainty_at(100) is None
+    assert gate.update(100, pose, covariance(x=0.0025, y=0.01, yaw=0.0004))
+    assert gate.uncertainty_at(100) == pytest.approx((0.1, 0.02))
+    assert gate.uncertainty_at(101) is None
+    assert gate.uncertainty_at(float("nan")) is None
+    now[0] = 106
+    assert gate.uncertainty_at(106) is None
+    assert not gate.update(106, pose, covariance(yaw=100))
+    assert gate.uncertainty_at(106) is None

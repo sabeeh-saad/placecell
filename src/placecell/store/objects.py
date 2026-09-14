@@ -65,6 +65,14 @@ class ObjectJournal:
             row = self._conn.execute("SELECT value FROM settings WHERE key=?", ("object_scan:" + scope,)).fetchone()
             return float(row[0]) if row else None
 
+    def clear(self) -> None:
+        """Remove identities, their dependent evidence, and replay scan state."""
+        with self._transaction():
+            for record in self.iter_records():
+                self.delete(record.id)
+            self._conn.execute("DELETE FROM settings WHERE key LIKE 'object_scan:%'")
+            self._changed()
+
     def record_scan(self, scope: str, timestamp: float) -> None:
         with self._transaction():
             self._conn.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", ("object_scan:" + scope, str(timestamp)))

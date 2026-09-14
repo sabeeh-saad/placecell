@@ -47,6 +47,7 @@ class LocalizationGate:
         self._policy, self._clock, self._monotonic = policy or LocalizationPolicy(), clock, monotonic
         self._lock = threading.Lock()
         self._sample: tuple[float, float, Pose] | None = None
+        self._std = (0.0, 0.0)
         self._last_stamp = -math.inf
 
     def update(self, timestamp: float, pose: Pose, covariance: Sequence[float]) -> bool:
@@ -75,6 +76,7 @@ class LocalizationGate:
             ):
                 return False
             self._sample = timestamp, self._monotonic(), pose
+            self._std = (float(np.sqrt(np.linalg.eigvalsh(matrix[:2, :2]).max())), math.sqrt(matrix[2, 2]))
             return True
 
     def invalidate(self) -> None:
@@ -84,6 +86,17 @@ class LocalizationGate:
     def ready(self) -> bool:
         with self._lock:
             return self._ready()
+
+    def uncertainty_at(self, timestamp: float) -> tuple[float, float] | None:
+        """Accepted planar position/yaw standard deviations for a recent capture."""
+        with self._lock:
+            if not self._ready() or self._sample is None or not math.isfinite(timestamp):
+                return None
+            if not 0 <= self._clock() - timestamp <= self._policy.max_age_s:
+                return None
+            if abs(timestamp - self._sample[0]) > self._policy.max_age_s:
+                return None
+            return self._std
 
     def _ready(self) -> bool:
         if self._sample is None:

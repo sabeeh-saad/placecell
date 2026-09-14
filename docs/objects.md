@@ -10,6 +10,8 @@ Gemini vision endpoint, and crops use the collection's multimodal embedder, incl
 
 Each object has an ID, category, robot/camera/map scope, first/last sighting times, state,
 and an optional map-space surface position with a heuristic uncertainty and extent.
+`position_timestamp` records the last valid depth estimate separately from `last_seen`;
+an RGB-only revisit cannot make old geometry appear fresh.
 Each retained view contains a PNG crop, bounding box, separate image and description
 vectors, capture time, localization flag and the robot's observation pose. Full-frame
 files remain referenced until both scene memory and object memory release them.
@@ -20,7 +22,7 @@ contain compressed depth and the original camera transform, so retries cannot ac
 pair an old RGB image with new depth or a new pose. Both built-in stores support these
 records; LanceDB remains the derived index for scene memories. Object retrieval scans
 bounded pages of SQLite vectors without loading all crop images into memory.
-Collections upgrade to schema 7, so older clients reject them instead of deleting shared
+Collections upgrade to schema 8, so older clients reject them instead of deleting shared
 keyframes without accounting for object references. Back up the collection before upgrading.
 
 Defaults allow 1,000 objects, four recent views and 32 change events per object. The ROS
@@ -102,10 +104,13 @@ that supports image bounding boxes and structured JSON. The vision model is sepa
 -p object_retention_s:=2592000.0
 ```
 
-The ROS depth error floor is the larger of `object_position_error_m` (default 0.1 m)
-and `localization_max_position_std_m`. It also includes a distance-dependent contribution
-from `localization_max_yaw_std_rad`. Loose localization limits can therefore prevent
-association or disappearance decisions; use measured limits appropriate to your robot.
+The ROS depth position error is the larger of `object_position_error_m` (default 0.1 m)
+and twice the accepted localization position standard deviation. Its distance-dependent
+angular contribution uses the larger of `object_angular_error_rad` (default 0.05 rad)
+and twice the accepted yaw standard deviation. The localization quality gate still applies;
+its maximum allowed thresholds are not substituted for measured covariance. These floors
+must account for camera calibration and mounting errors as well as localization. This is
+a heuristic engineering margin, not a formal confidence bound.
 Keep `localization_required:=true` and set a versioned `map_id`. Existing scene captioning
 and navigation verification parameters still apply; `object_model` does not configure
 the arrival verifier. See [navigation setup](navigation.md) and [multimodal setup](multimodal.md).
@@ -171,9 +176,9 @@ unverified candidates cannot authorize movement. The selected object revision is
 again before dispatch. Memory goals retain the existing Nav2 cancellation, localization
 and fresh-image arrival verification flow.
 
-This milestone **does not generate a new stopping pose beside an object's estimated
-coordinates**. Nav2 receives the previously observed robot pose. Costmap-aware approach
-planning, active searches for moved objects, cross-camera re-identification, manual
+Enable [approach planning](approach.md) to select a checked stopping pose near a fresh,
+localized object position. Otherwise Nav2 receives the previously observed robot pose.
+Active searches for moved objects, cross-camera re-identification, manual
 resolution of identity hypotheses and physical-instance verification at arrival remain
 future work. Arrival verification currently checks the requested visible destination,
 not a guaranteed physical identity match against the stored crop. Crop-only lookup can
@@ -184,3 +189,5 @@ responses and a mocked Nav2 client. They cover motion, identical instances, occl
 invalid depth, replay, rollback, durable history, cleanup, migration and stale-goal guards.
 No model weights are downloaded by these tests. Live Gemini accuracy, your ROS topic
 alignment, latency and real robot behavior still need commissioning with recordings.
+The [recording evaluator](object-evaluation.md) compares tracking against human labels
+and reports identity errors, visibility decisions, surface position error and API usage.

@@ -85,7 +85,11 @@ def reembed(
             for event in object_history:
                 # Event positions belong to that historical revision, not necessarily the current one.
                 target.objects.save(
-                    replace(record, position=event.position),
+                    replace(
+                        record,
+                        position=event.position,
+                        position_timestamp=record.position_timestamp if event.position is not None else None,
+                    ),
                     event=event.kind,
                     event_time=event.timestamp,
                     max_events=max(1, len(object_history)),

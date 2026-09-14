@@ -220,6 +220,7 @@ class ObjectTracker:
                     observation.timestamp,
                     positions[i],
                     "ambiguous" if ambiguous else "present",
+                    position_timestamp=observation.timestamp if positions[i] is not None else None,
                 )
                 event = "ambiguous" if ambiguous else "created"
                 count += 1
@@ -235,6 +236,7 @@ class ObjectTracker:
                     last_miss=0,
                     revision=before.revision + 1,
                     status="ambiguous" if before.status == "ambiguous" else "present",
+                    position_timestamp=observation.timestamp if positions[i] is not None else before.position_timestamp,
                 )
             updates.append((record, replace(view, object_id=identity), event))
         for record in records:

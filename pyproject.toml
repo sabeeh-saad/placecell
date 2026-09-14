@@ -37,6 +37,7 @@ dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.6", "mypy>=1.10", "pre-commit>=3",
 placecell-ros2 = "placecell.ros2.node:main"
 placecell-listen = "placecell.ros2.speech:main"
 placecell-evaluate = "placecell.evaluation:main"
+placecell-evaluate-objects = "placecell.object_evaluation:main"
 
 [project.urls]
 Homepage = "https://github.com/sabeeh-saad/placecell"

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from placecell.agent import Agent
+from placecell.approach import ApproachPlanner, ApproachPolicy
 from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.depth import DepthSnapshot
@@ -39,6 +40,7 @@ from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
 from placecell.observer import Observer
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
 from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
+from placecell.recordings import RecordingWriter
 from placecell.refinement import REFINEMENT_PROMPT, MemoryRefiner, RefinementPolicy
 from placecell.retrieval import Recall
 from placecell.ros2.bridge import (
@@ -147,6 +149,8 @@ def navigation_payload(update: NavigationUpdate) -> str:
             "label": destination.label,
             "source": destination.source,
             "memory_id": destination.memory.id if destination.memory else None,
+            "object_id": destination.object_id,
+            "goal_kind": "object_approach" if destination.approach else "destination",
             "target": destination.target,
             "x": p.x,
             "y": p.y,
@@ -413,6 +417,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             store.drain_cleanup(remove_local_file)
             self._writer = writer
             self._builder = ObservationBuilder(p["robot_id"], p["camera_id"], writer)
+            self._recording = RecordingWriter(p["recording_dir"]) if p["recording_dir"] else None
             self._map_frame, self._base_frame, self._map_id = p["map_frame"], p["base_frame"], p["map_id"]
             self._localization_required = p["localization_required"]
             self._localization = LocalizationGate(
@@ -434,8 +439,8 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._depth_frames: deque[Any] = deque(maxlen=8)
             self._camera_infos: deque[Any] = deque(maxlen=8)
             self._depth_skew = p["object_depth_max_skew_s"]
-            self._depth_error = max(p["object_position_error_m"], p["localization_max_position_std_m"])
-            self._depth_angular_error = p["localization_max_yaw_std_rad"]
+            self._depth_error = p["object_position_error_m"]
+            self._depth_angular_error = p["object_angular_error_rad"]
             if p["objects_enabled"] and p["depth_topic"]:
                 self.create_subscription(Image, p["depth_topic"], self._depth_frames.append, qos_profile_sensor_data)
                 self.create_subscription(
@@ -468,6 +473,42 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     if verification_model
                     else None
                 )
+                approach = None
+                if p["approach_enabled"]:
+                    from placecell.ros2.approach import create_planning_environment
+
+                    if self._object_recall is None:
+                        raise ValidationError("approach planning requires objects_enabled")
+
+                    def current_pose() -> Pose | None:
+                        stamp = self.get_clock().now().to_msg()
+                        return self._pose_at(stamp.sec, stamp.nanosec)
+
+                    environment = create_planning_environment(
+                        self,
+                        self._tf,
+                        current_pose,
+                        frame_id=self._map_frame,
+                        map_id=self._map_id,
+                        base_frame=self._base_frame,
+                        costmap_topic=p["approach_costmap_topic"],
+                        footprint_topic=p["approach_footprint_topic"],
+                        action_name=p["approach_planner_action"],
+                        planner_id=p["approach_planner_id"],
+                        timeout_s=p["approach_request_timeout_s"],
+                    )
+                    approach = ApproachPlanner(
+                        environment,
+                        ApproachPolicy(
+                            clearance_m=p["approach_clearance_m"],
+                            max_uncertainty_m=p["approach_max_uncertainty_m"],
+                            camera_yaw_offset_rad=p["approach_camera_yaw_offset_rad"],
+                            max_sensor_age_s=p["approach_max_sensor_age_s"],
+                            max_position_age_s=p["approach_max_position_age_s"],
+                            planning_timeout_s=p["approach_planning_timeout_s"],
+                        ),
+                        clock=self._memory_time,
+                    )
                 resolver = DestinationResolver(
                     store,
                     self._recall,
@@ -479,6 +520,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     places=places,
                     verifier=verifier,
                     objects=self._object_recall,
+                    approach=approach,
                     policy=NavigationPolicy(
                         min_similarity=p["navigation_min_similarity"],
                         min_confidence=p["navigation_min_confidence"],
@@ -522,8 +564,21 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "robot_id": "robot",
                 "camera_id": "front",
                 "image_topic": "/camera/color/image_raw",
+                "recording_dir": "",
                 "compressed": False,
                 "objects_enabled": False,
+                "approach_enabled": False,
+                "approach_costmap_topic": "/global_costmap/costmap_raw",
+                "approach_footprint_topic": "/local_costmap/published_footprint",
+                "approach_planner_action": "/compute_path_to_pose",
+                "approach_planner_id": "",
+                "approach_request_timeout_s": 2.0,
+                "approach_planning_timeout_s": 8.0,
+                "approach_clearance_m": 0.5,
+                "approach_max_uncertainty_m": 0.35,
+                "approach_max_position_age_s": 300.0,
+                "approach_max_sensor_age_s": 2.0,
+                "approach_camera_yaw_offset_rad": 0.0,
                 "object_model": "",
                 "object_base_url": "https://generativelanguage.googleapis.com/v1beta",
                 "object_api_key_env": "GEMINI_API_KEY",
@@ -535,6 +590,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "camera_info_topic": "/camera/color/camera_info",
                 "object_depth_max_skew_s": 0.08,
                 "object_position_error_m": 0.1,
+                "object_angular_error_rad": 0.05,
                 "map_frame": "map",
                 "base_frame": "base_footprint",
                 "map_id": "",
@@ -631,6 +687,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             if self._object_recall is None:
                 return None
             stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
+            uncertainty = self._localization.uncertainty_at(stamp)
+            if uncertainty is None:
+                return None
             if not self._depth_frames or not self._camera_infos:
                 self.get_logger().warning(
                     "object positions unavailable: waiting for aligned depth and CameraInfo", throttle_duration_sec=5.0
@@ -658,12 +717,20 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     rgb_stamp=stamp,
                     rgb_frame=msg.header.frame_id,
                     max_skew_s=self._depth_skew,
-                    position_error_m=self._depth_error,
-                    angular_error_rad=self._depth_angular_error,
+                    position_error_m=max(self._depth_error, 2 * uncertainty[0]),
+                    angular_error_rad=max(self._depth_angular_error, 2 * uncertainty[1]),
                 )
             except (TransformException, PlacecellError, ValueError) as e:
                 self.get_logger().warning(f"object positions unavailable: {e}", throttle_duration_sec=5.0)
                 return None
+
+        def _record(self, observation: Observation) -> None:
+            if self._recording is not None:
+                try:
+                    self._recording.append(observation)
+                except (OSError, PlacecellError) as e:
+                    self._recording = None
+                    self.get_logger().error(f"recording stopped after an export failure: {e}")
 
         def _on_image(self, msg: Any) -> None:
             pose = self._pose_at(msg.header.stamp.sec, msg.header.stamp.nanosec)
@@ -684,6 +751,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
             obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp), depth=self._depth_at(msg))
+            self._record(obs)
             if self._commands is not None:
                 self._commands.observe(obs)
             if self._worker.submit(obs):
@@ -707,6 +775,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
             obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp), depth=self._depth_at(msg))
+            self._record(obs)
             if self._commands is not None:
                 self._commands.observe(obs)
             if self._worker.submit(obs):
