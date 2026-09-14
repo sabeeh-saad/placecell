@@ -5,7 +5,9 @@ fire when an animal is at a particular place. The robot records what it sees whi
 drives, keeps it together with time and map position, and answers questions like
 *"where did I see the fire extinguisher?"* or *"what was near the door this morning?"*
 with the robot's observation position, which can serve as a navigation viewpoint.
-That position is not a measured object location.
+Optional [RGB-D object memory](docs/objects.md) also estimates object surface locations,
+tracks identities and changes, and retains cropped views. Navigation uses the robot's
+recorded observation pose.
 
 With Nav2 enabled, spoken commands such as **"robot go to the printer"** can resolve a
 destination from a named place or visual memory and start a navigation goal. Camera
@@ -53,8 +55,10 @@ is still closing loops.
   and time queries, even when the newest keyframe replaces the previous one. A superseded
   memory revives with its misses cleared if the object comes back.
 - **Contradiction.** When the robot looks at a place from the same spot and heading and no
-  longer sees what memory expects, that is a miss. Misses on separate visits add up, and after
-  enough of them the memory is superseded. One person blocking the view does not count.
+  longer sees what scene memory expects, that is a miss. Misses on separate visits add up,
+  and after enough of them the scene memory is superseded. Scene similarity alone cannot
+  distinguish occlusion from disappearance. Optional object tracking adds depth visibility
+  checks and explicit visual absence verification before counting object misses.
 - **Corrections.** An operator can mark an answer right or wrong, on `/placecell/correct` in
   ROS 2 or through `CorrectionLog` in the library. Wrong verdicts halve a memory's rank, and
   repeated ones get it superseded by the curator. The log is append-only and mergeable.
@@ -71,6 +75,13 @@ is still closing loops.
   misses and operator verdicts; a rewrite never counts as another observation.
 
 ## Improving stored memories
+
+[Object memory](docs/objects.md) adds persistent IDs, cropped-image and description search,
+RGB-D positions with uncertainty, and bounded change histories. It distinguishes separate
+instances conservatively and tracks a move only when appearance and visibility evidence
+support it. Enable it with `objects_enabled`, a Gemini vision model and aligned, rectified
+RGB-D camera topics. It is covered by synthetic tests; real recording accuracy and robot
+commissioning remain necessary.
 
 Image and caption retrieval is available through `GeminiEmbedder` (hosted) or the optional
 local `ClipEmbedder`. With a captioner,
@@ -200,7 +211,7 @@ Time queries match actual sighting timestamps, not the interval between the firs
 visit. Results expose matching times through `RankedMemory.observed_at`; agent tool results
 and ROS answers include `observed_at` and `last_seen`. Nearby agent queries honor `map_id`.
 
-Existing schema 2, 3, 4 and 5 collections are upgraded to schema 6 when opened. The upgrade retains
+Existing schema 2–6 collections are upgraded to schema 7 when opened. The upgrade retains
 stored rows, captions, evidence and lifecycle counts. It can preserve the recorded first
 and last times, but cannot reconstruct intermediate sightings or observation ids that the
 older schema discarded. Replay detection for merged observations is complete for sightings
@@ -273,8 +284,8 @@ recordings. See `CHANGELOG.md`.
 Use a persistent `db_path` for restart recovery. Each collection now has a
 `<collection>.state.sqlite3` file containing authoritative memory metadata, observation
 history, ingestion jobs and cleanup intents. LanceDB supplies a derived vector index.
-Schema 2–5 collections import into schema 6 in bounded batches when opened. The
-original sighting history is retained during import; older clients reject schema 6.
+Schema 2–6 collections import into schema 7 in bounded batches when opened. The
+original sighting history is retained during import; older clients reject schema 7.
 Stop writers and back up the entire database directory and keyframe directory together
 before an upgrade. Do not remove the state file when rebuilding a vector index.
 

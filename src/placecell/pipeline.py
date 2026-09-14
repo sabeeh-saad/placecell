@@ -10,9 +10,11 @@ import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 
+from placecell.depth import DepthSnapshot
 from placecell.errors import ModelMismatchError, ValidationError
 from placecell.lifecycle import EvidenceRemover, Reinforcer, remove_local_file, remove_unreferenced
 from placecell.memory import Evidence, Memory, Pose, memory_id
+from placecell.objects import ObjectTracker
 from placecell.observer import Observer
 from placecell.providers.base import Captioner, EmbeddingProvider
 from placecell.providers.embedding import embed_memories
@@ -30,6 +32,7 @@ class Observation:
     pose: Pose
     evidence: Evidence
     localization_checked: bool = False
+    depth: DepthSnapshot | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +120,7 @@ class Ingester:
         batch_size: int = 32,
         observer: Observer | None = None,
         remover: EvidenceRemover | None = remove_local_file,
+        objects: ObjectTracker | None = None,
     ) -> None:
         if embedder.model_name != store.info.model or embedder.dimension != store.info.dimension:
             raise ModelMismatchError(
@@ -133,6 +137,9 @@ class Ingester:
         self._observer = observer
         self._store = store
         self._remover = remover
+        self._objects = objects
+        if objects is not None and objects.store is not store:
+            raise ValidationError("object tracking must share the ingestion store")
 
     @property
     def jobs(self) -> WorkJournal:
@@ -169,7 +176,9 @@ class Ingester:
                     discarded.append(observation)
             memories, rejected = self.embed(self.caption(pending)) if pending else ([], [])
             unsupported.extend(m.id for m in rejected)
+            observations_by_id = {memory_id(o.robot_id, o.camera_id, o.timestamp): o for o in pending}
             for m in memories:
+                prepared = self._objects.prepare(observations_by_id[m.id]) if self._objects is not None else None
                 with self._store.transaction():
                     if self._reinforcer.find_observation(m.id) is not None:
                         merged += 1
@@ -180,6 +189,8 @@ class Ingester:
                     inserted += not was_merged
                     if self._observer is not None:
                         contradicted += self._observer.observe(m, stored.id).superseded
+                    if self._objects is not None and prepared is not None:
+                        self._objects.commit(prepared)
             self._discard_evidence(m.evidence for m in rejected if m.evidence is not None)
             batch.clear()
             checkpoint = self._segmenter.checkpoint()

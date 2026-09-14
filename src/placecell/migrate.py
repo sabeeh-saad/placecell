@@ -7,9 +7,13 @@ written to a target collection bound to the new model with all lifecycle fields 
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+import tempfile
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 from placecell.errors import ModelMismatchError, ValidationError
+from placecell.memory import Evidence, EvidenceKind
 from placecell.providers.base import EmbeddingProvider
 from placecell.providers.embedding import embed_memories
 from placecell.store.base import EVERYTHING, VectorStore
@@ -21,6 +25,7 @@ class MigrationReport:
     written: int = 0
     skipped: int = 0
     skipped_ids: tuple[str, ...] = field(default=())
+    objects_written: int = 0
 
 
 def reembed(
@@ -34,6 +39,10 @@ def reembed(
         )
     if batch_size < 1:
         raise ValidationError("batch_size must be positive")
+    if source.objects.count() and not (embedder.capabilities.image and embedder.capabilities.text):
+        raise ValidationError("a collection with objects requires an image and text embedding model")
+    if source is target:
+        raise ValidationError("re-embedding requires a separate target collection")
     read = written = 0
     skipped: list[str] = []
     for batch in source.iter_query(EVERYTHING, batch_size):
@@ -46,4 +55,41 @@ def reembed(
             while history := source.sightings(memory.id, limit=batch_size, after=after):
                 target.append_sightings(memory.id, history)
                 after = (history[-1].timestamp, history[-1].id)
-    return MigrationReport(read, written, len(skipped), tuple(skipped))
+    objects_written = 0
+    for record in source.objects.iter_records():
+        views = source.objects.views(record.id)
+        with tempfile.TemporaryDirectory() as directory:
+            crops = []
+            for i, view in enumerate(views):
+                path = Path(directory) / f"{i}.png"
+                path.write_bytes(view.crop_png)
+                crops.append(replace(view.memory, evidence=Evidence(EvidenceKind.FRAME, str(path))))
+            embedded, rejected = embed_memories(crops, embedder)
+            if rejected:
+                raise ValidationError("target model rejected an object crop")
+        object_history = source.objects.history(record.id)
+        with target.transaction():
+            target.objects.delete(record.id)
+            target.objects.save(record)
+            scope = json.dumps((record.robot_id, record.camera_id, record.frame_id, record.map_id))
+            last_scan = max(
+                source.objects.scan_time(scope) or record.last_seen, target.objects.scan_time(scope) or record.last_seen
+            )
+            target.objects.record_scan(scope, last_scan)
+            for view, memory in zip(views, embedded, strict=True):
+                target.objects.save(
+                    record,
+                    replace(view, memory=replace(memory, evidence=view.memory.evidence)),
+                    max_views=max(1, len(views)),
+                )
+            for event in object_history:
+                # Event positions belong to that historical revision, not necessarily the current one.
+                target.objects.save(
+                    replace(record, position=event.position),
+                    event=event.kind,
+                    event_time=event.timestamp,
+                    max_events=max(1, len(object_history)),
+                )
+            target.objects.save(record)
+        objects_written += 1
+    return MigrationReport(read, written, len(skipped), tuple(skipped), objects_written)

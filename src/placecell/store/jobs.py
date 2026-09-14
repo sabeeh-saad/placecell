@@ -10,6 +10,7 @@ from contextlib import AbstractContextManager
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
+from placecell.depth import DepthSnapshot
 from placecell.errors import ValidationError
 from placecell.memory import Evidence, EvidenceKind, Pose, memory_id
 
@@ -78,6 +79,9 @@ class WorkJournal:
             data["pose"] = Pose(**data["pose"])
             data["evidence"]["kind"] = EvidenceKind(data["evidence"]["kind"])
             data["evidence"] = Evidence(**data["evidence"])
+            if data.get("depth") is not None:
+                data["depth"]["map_from_camera"] = tuple(data["depth"]["map_from_camera"])
+                data["depth"] = DepthSnapshot(**data["depth"])
             jobs.append(Job(row["id"], Observation(**data), row["attempts"]))
         return jobs
 

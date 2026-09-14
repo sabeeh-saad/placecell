@@ -28,6 +28,7 @@ from placecell.memory import Evidence, EvidenceKind, Memory, SearchChannel, Sigh
 from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row, to_row
 from placecell.store.jobs import WorkJournal
+from placecell.store.objects import ObjectJournal
 from placecell.store.refinements import RefinementJournal
 
 HISTORY_PREVIEW = 64
@@ -76,6 +77,7 @@ class StateStore:
 
         self.jobs = WorkJournal(self._conn, self.transaction)
         self.refinements = RefinementJournal(self._conn, self.transaction)
+        self.objects = ObjectJournal(self._conn, self.transaction, info.model, info.dimension)
 
     @property
     def info(self) -> CollectionInfo:
@@ -465,7 +467,9 @@ class StateStore:
             ).fetchall()
             for row in rows:
                 referenced = self._conn.execute(
-                    "SELECT 1 FROM memories WHERE evidence_uri=? LIMIT 1", (row["uri"],)
+                    "SELECT 1 FROM memories WHERE evidence_uri=? UNION ALL "
+                    "SELECT 1 FROM object_views WHERE uri=? LIMIT 1",
+                    (row["uri"], row["uri"]),
                 ).fetchone()
                 if not referenced:
                     data = json.loads(row["payload"])

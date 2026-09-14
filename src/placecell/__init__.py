@@ -4,6 +4,7 @@ from placecell.agent import TOOLS, Agent, Answer
 from placecell.chat import ChatMessage, ChatModel, ChatReply, ToolCall
 from placecell.consolidation import ChatSummarizer, ConsolidationPolicy, ConsolidationReport, Consolidator
 from placecell.corrections import Correction, CorrectionLog, InMemoryCorrectionLog, JsonlCorrectionLog
+from placecell.depth import Box, DepthSnapshot, ObjectPosition
 from placecell.lifecycle import Curator, CuratorReport, ReinforcementPolicy, Reinforcer, RetentionPolicy
 from placecell.localization import LocalizationGate, LocalizationPolicy
 from placecell.memory import SCHEMA_VERSION, Evidence, EvidenceKind, Memory, Pose, Sighting, memory_id
@@ -19,6 +20,8 @@ from placecell.navigation import (
     load_named_places,
     parse_movement,
 )
+from placecell.object_types import Detection, ObjectDetector, ObjectEvent, ObjectHit, ObjectRecord, ObjectView
+from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
 from placecell.observer import ContradictionPolicy, Observer, ObserverReport
 from placecell.pipeline import Ingester, IngestReport, Observation, SegmentationPolicy, Segmenter
 from placecell.refinement import MemoryRefiner, RefinementPolicy, RefinementReport
@@ -34,6 +37,7 @@ __all__ = [
     "TOOLS",
     "Agent",
     "Answer",
+    "Box",
     "ChatMessage",
     "ChatModel",
     "ChatReply",
@@ -47,8 +51,10 @@ __all__ = [
     "CorrectionLog",
     "Curator",
     "CuratorReport",
+    "DepthSnapshot",
     "Destination",
     "DestinationResolver",
+    "Detection",
     "Evidence",
     "EvidenceKind",
     "Filter",
@@ -69,6 +75,15 @@ __all__ = [
     "NavigationEvent",
     "NavigationPolicy",
     "NavigationUpdate",
+    "ObjectDetector",
+    "ObjectEvent",
+    "ObjectHit",
+    "ObjectPolicy",
+    "ObjectPosition",
+    "ObjectRecall",
+    "ObjectRecord",
+    "ObjectTracker",
+    "ObjectView",
     "Observation",
     "Observer",
     "ObserverReport",

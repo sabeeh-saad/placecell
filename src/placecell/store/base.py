@@ -19,6 +19,7 @@ from numpy.typing import ArrayLike
 from placecell.errors import ValidationError
 from placecell.memory import SCHEMA_VERSION, Evidence, Memory, Pose, SearchChannel, Sighting
 from placecell.store.jobs import WorkJournal
+from placecell.store.objects import ObjectJournal
 from placecell.store.refinements import RefinementJournal
 
 
@@ -133,6 +134,7 @@ class VectorStore(Protocol):
 
     jobs: WorkJournal
     refinements: RefinementJournal
+    objects: ObjectJournal
 
     @property
     def info(self) -> CollectionInfo: ...

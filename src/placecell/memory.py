@@ -12,7 +12,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from placecell.errors import FrameMismatchError, ValidationError
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 """Bumped whenever the stored shape of a memory changes. Stores record it per collection."""
 
 Vector = NDArray[np.float32]

@@ -27,6 +27,10 @@ The optional [multimodal embedding adapter](multimodal.md) searches both images 
 It uses the same verified destination path. Changing embedding models requires a new
 collection and evaluation of similarity thresholds on your recordings.
 
+Optional [object memory](objects.md) adds instance-level retrieval and RGB-D change tracking.
+It retains distinct object choices even when they share an observation pose. Object goals
+use the latest recorded robot viewpoint and retain the same arrival verification flow.
+
 ## Robot prerequisites
 
 Run the robot's existing Nav2 stack and localization against a known map. Supply the

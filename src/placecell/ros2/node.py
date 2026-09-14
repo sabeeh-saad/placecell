@@ -13,6 +13,7 @@ import os
 import queue
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -21,6 +22,7 @@ from typing import Any
 from placecell.agent import Agent
 from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
+from placecell.depth import DepthSnapshot
 from placecell.errors import PlacecellError, ValidationError
 from placecell.lifecycle import Curator, remove_local_file
 from placecell.localization import LocalizationGate, LocalizationPolicy
@@ -33,6 +35,7 @@ from placecell.navigation import (
     NavigationUpdate,
     load_named_places,
 )
+from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
 from placecell.observer import Observer
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
 from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
@@ -45,6 +48,7 @@ from placecell.ros2.bridge import (
     stamp_to_seconds,
     update_localization,
 )
+from placecell.ros2.depth import aligned_snapshot
 from placecell.ros2.navigation import Nav2Navigator, create_navigator
 from placecell.store import CollectionInfo, VectorStore
 from placecell.verification import VisionVerifier
@@ -296,7 +300,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
     from geometry_msgs.msg import PoseWithCovarianceStamped
     from rclpy.node import Node
     from rclpy.qos import qos_profile_sensor_data
-    from sensor_msgs.msg import CompressedImage, Image
+    from sensor_msgs.msg import CameraInfo, CompressedImage, Image
     from std_msgs.msg import String
     from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -341,7 +345,27 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._robot_id, self._camera_id = p["robot_id"], p["camera_id"]
             self._store = store
             observer = Observer(store) if p["contradiction"] else None
-            ingester = Ingester(embedder, store, captioner, segmenter, batch_size=p["batch_size"], observer=observer)
+            self._object_policy = ObjectPolicy(
+                max_objects=p["object_max_records"],
+                max_views=p["object_max_views"],
+                retention_s=p["object_retention_s"],
+                min_interval_s=p["object_min_interval_s"],
+            )
+            self._object_recall: ObjectRecall | None = None
+            tracker = None
+            if p["objects_enabled"]:
+                from placecell.providers.object_detection import GeminiObjectDetector
+
+                detector = GeminiObjectDetector(
+                    p["object_model"],
+                    api_key=os.environ.get(p["object_api_key_env"], ""),
+                    base_url=p["object_base_url"],
+                )
+                tracker = ObjectTracker(store, embedder, detector, self._object_policy)
+                self._object_recall = ObjectRecall(store, embedder, clock=self._memory_time)
+            ingester = Ingester(
+                embedder, store, captioner, segmenter, batch_size=p["batch_size"], observer=observer, objects=tracker
+            )
             self._corrections = JsonlCorrectionLog(Path(p["corrections_path"]).expanduser())
             self._recall = Recall(store, embedder, corrections=self._corrections, clock=self._memory_time)
             self._agent: Agent | None = None
@@ -407,6 +431,16 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._tf_timeout = p["tf_timeout_s"]
             self._tf = Buffer()
             self._tf_listener = TransformListener(self._tf, self)
+            self._depth_frames: deque[Any] = deque(maxlen=8)
+            self._camera_infos: deque[Any] = deque(maxlen=8)
+            self._depth_skew = p["object_depth_max_skew_s"]
+            self._depth_error = max(p["object_position_error_m"], p["localization_max_position_std_m"])
+            self._depth_angular_error = p["localization_max_yaw_std_rad"]
+            if p["objects_enabled"] and p["depth_topic"]:
+                self.create_subscription(Image, p["depth_topic"], self._depth_frames.append, qos_profile_sensor_data)
+                self.create_subscription(
+                    CameraInfo, p["camera_info_topic"], self._camera_infos.append, qos_profile_sensor_data
+                )
             if p["compressed"]:
                 self.create_subscription(
                     CompressedImage, p["image_topic"], self._on_compressed, qos_profile_sensor_data
@@ -444,6 +478,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     clock=self._memory_time,
                     places=places,
                     verifier=verifier,
+                    objects=self._object_recall,
                     policy=NavigationPolicy(
                         min_similarity=p["navigation_min_similarity"],
                         min_confidence=p["navigation_min_confidence"],
@@ -488,6 +523,18 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "camera_id": "front",
                 "image_topic": "/camera/color/image_raw",
                 "compressed": False,
+                "objects_enabled": False,
+                "object_model": "",
+                "object_base_url": "https://generativelanguage.googleapis.com/v1beta",
+                "object_api_key_env": "GEMINI_API_KEY",
+                "object_max_records": 1000,
+                "object_max_views": 4,
+                "object_retention_s": 2592000.0,
+                "object_min_interval_s": 15.0,
+                "depth_topic": "/camera/aligned_depth_to_color/image_raw",
+                "camera_info_topic": "/camera/color/camera_info",
+                "object_depth_max_skew_s": 0.08,
+                "object_position_error_m": 0.1,
                 "map_frame": "map",
                 "base_frame": "base_footprint",
                 "map_id": "",
@@ -577,6 +624,47 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 return None
             return pose
 
+        def _depth_at(self, msg: Any) -> DepthSnapshot | None:
+            from rclpy.duration import Duration
+            from rclpy.time import Time
+
+            if self._object_recall is None:
+                return None
+            stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
+            if not self._depth_frames or not self._camera_infos:
+                self.get_logger().warning(
+                    "object positions unavailable: waiting for aligned depth and CameraInfo", throttle_duration_sec=5.0
+                )
+                return None
+
+            def skew(message: Any) -> float:
+                return abs(stamp - stamp_to_seconds(message.header.stamp.sec, message.header.stamp.nanosec))
+
+            depth = min(self._depth_frames, key=skew)
+            info = min(self._camera_infos, key=skew)
+            try:
+                if hasattr(msg, "width") and (msg.width != info.width or msg.height != info.height):
+                    raise ValidationError("RGB and aligned depth dimensions differ")
+                transform = self._tf.lookup_transform(
+                    self._map_frame,
+                    msg.header.frame_id,
+                    Time(seconds=msg.header.stamp.sec, nanoseconds=msg.header.stamp.nanosec),
+                    timeout=Duration(seconds=self._tf_timeout),
+                )
+                return aligned_snapshot(
+                    depth,
+                    info,
+                    transform.transform,
+                    rgb_stamp=stamp,
+                    rgb_frame=msg.header.frame_id,
+                    max_skew_s=self._depth_skew,
+                    position_error_m=self._depth_error,
+                    angular_error_rad=self._depth_angular_error,
+                )
+            except (TransformException, PlacecellError, ValueError) as e:
+                self.get_logger().warning(f"object positions unavailable: {e}", throttle_duration_sec=5.0)
+                return None
+
         def _on_image(self, msg: Any) -> None:
             pose = self._pose_at(msg.header.stamp.sec, msg.header.stamp.nanosec)
             if pose is None:
@@ -595,7 +683,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
-            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp))
+            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp), depth=self._depth_at(msg))
             if self._commands is not None:
                 self._commands.observe(obs)
             if self._worker.submit(obs):
@@ -618,7 +706,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
-            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp))
+            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp), depth=self._depth_at(msg))
             if self._commands is not None:
                 self._commands.observe(obs)
             if self._worker.submit(obs):
@@ -708,6 +796,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._maintenance.submit(self._run_curator)
 
         def _run_curator(self) -> None:
+            self._store.objects.prune(self._memory_time() - self._object_policy.retention_s)
             report = self._curator.run()
             maintain = getattr(self._store, "maintain", None)
             if maintain is not None:
@@ -731,7 +820,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
 
         def _diagnostics(self) -> None:
             stats = self._store.jobs.stats()
-            self.get_logger().info(f"ingestion: {stats}, dropped={self._worker.dropped}")
+            self.get_logger().info(
+                f"ingestion: {stats}, dropped={self._worker.dropped}, objects={self._store.objects.count()}"
+            )
 
         def destroy_node(self) -> bool:
             self.stop_navigation()

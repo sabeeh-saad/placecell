@@ -27,6 +27,7 @@ dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 video = ["opencv-python-headless>=4.8"]
+objects = ["Pillow>=10"]
 clip = ["sentence-transformers>=3.0,<6", "Pillow>=10"]
 speech = ["vosk>=0.3.45", "sounddevice>=0.4.6"]
 lancedb = ["lancedb>=0.25", "pyarrow>=15"]

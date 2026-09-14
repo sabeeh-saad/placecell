@@ -138,7 +138,7 @@ retained image, caption and pose. Refinement rebuilds both and records both for 
 rollback. Summaries carry caption vectors. SQLite owns committed vectors; LanceDB maintains
 separate primary and caption indexes and can rebuild both after interruption.
 
-Collections from schemas 2–5 upgrade when opened. Existing vectors have unknown modality
+Collections from schemas 2–6 upgrade when opened. Older untyped vectors have unknown modality
 and remain available through combined retrieval's primary-vector fallback. Opening an old
 collection does not infer modality from the presence of a JPEG or manufacture new vectors.
 Explicit image-only/caption-only searches require known provenance. For manually constructed

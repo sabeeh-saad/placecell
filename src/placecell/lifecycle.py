@@ -302,12 +302,19 @@ class Curator:
     def forget(self, where: Filter) -> int:
         """Delete every memory the filter matches, evidence included. The explicit-deletion path."""
         removed = 0
+        for record in self._store.objects.iter_records():
+            with self._store.transaction():
+                views = self._store.objects.views(record.id, include_crops=False)
+                if any(where.matches(view.memory) for view in views):
+                    removed += self._store.objects.delete(record.id)
         for doomed in self._store.iter_query(where):
             with self._store.transaction():
                 self._remove(doomed)
                 removed += len(doomed)
             if self._remover is not None:
                 self._store.drain_cleanup(self._remover)
+        if self._remover is not None:
+            self._store.drain_cleanup(self._remover)
         return removed
 
     def _remove(self, memories: Iterable[Memory]) -> None:

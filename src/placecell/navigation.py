@@ -15,6 +15,7 @@ from typing import Literal, Protocol
 
 from placecell.errors import ValidationError
 from placecell.memory import Memory, Pose
+from placecell.objects import ObjectRecall
 from placecell.pipeline import Observation
 from placecell.providers.captioning import data_url
 from placecell.retrieval import RankedMemory, Recall
@@ -94,6 +95,8 @@ class Destination:
     source: Literal["memory", "named_place", "coordinates"]
     memory: Memory | None = field(default=None, repr=False, compare=False)
     target: str = ""
+    object_id: str = ""
+    object_revision: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +138,7 @@ class DestinationResolver:
         places: Mapping[str, Pose] | None = None,
         policy: NavigationPolicy | None = None,
         verifier: SceneVerifier | None = None,
+        objects: ObjectRecall | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         if not robot_id:
@@ -147,6 +151,7 @@ class DestinationResolver:
         self._places = {" ".join(k.casefold().split()).removeprefix("the "): v for k, v in (places or {}).items()}
         self._policy, self._clock = policy or NavigationPolicy(), clock
         self._verifier = verifier
+        self._objects = objects
 
     def resolve(self, command: MovementCommand) -> Resolution:
         if command.kind != "go":
@@ -166,6 +171,10 @@ class DestinationResolver:
             )
         if self._verifier is None:
             return Resolution("not_found", "Visual destination verification is not configured.")
+        if self._objects is not None:
+            object_result = self._resolve_object(command.destination)
+            if object_result is not None:
+                return object_result
         hits = self._recall.similar(command.destination, k=self._policy.candidates, where=self._scope)
         now, p = self._clock(), self._policy
         hits = [
@@ -217,6 +226,55 @@ class DestinationResolver:
             )
         return Resolution("resolved", "Navigating to the remembered observation viewpoint.", choices)
 
+    def _resolve_object(self, target: str) -> Resolution | None:
+        assert self._objects is not None
+        p = self._policy
+        hits = self._objects.similar(
+            target,
+            robot_id=self._scope.robot_id or "",
+            camera_id=self._scope.camera_id or "",
+            frame_id=self._origin.frame_id,
+            map_id=self._origin.map_id,
+            k=p.candidates + 1,
+            max_age_s=p.max_age_s,
+        )
+        hits = [h for h in hits if h.similarity >= p.min_similarity]
+        if not hits:
+            return None
+        if len(hits) > p.verification_candidates:
+            return Resolution("not_found", "Too many possible objects. Please describe the destination more precisely.")
+        choices = []
+        for hit in hits:
+            memory = hit.view.memory
+            verdict = self.verify(target, hit.view.image_url())
+            if verdict.result == "not_matched":
+                continue
+            if verdict.result == "uncertain" or hit.object.status != "present" or hit.object.misses:
+                return Resolution(
+                    "not_found", "That object's identity or current presence is uncertain. Please revisit it."
+                )
+            if (
+                not memory.localization_checked
+                or self._recall.confidence(memory) < p.min_confidence
+                or memory.view_timestamp is None
+                or not 0 <= self._clock() - memory.view_timestamp <= p.max_age_s
+            ):
+                return Resolution("not_found", "That object has no reliable recent observation viewpoint.")
+            choices.append(
+                Destination(memory.caption, memory.pose, "memory", memory, target, hit.object.id, hit.object.revision)
+            )
+        if not choices:
+            return None
+        if len(choices) > 1:
+            return Resolution(
+                "ambiguous",
+                "I found several objects. Say 'option one', 'option two', or give more detail.",
+                tuple(choices),
+            )
+        return Resolution(
+            "resolved", "Navigating to the object's latest verified observation viewpoint.", tuple(choices)
+        )
+
     def verify(self, target: str, image_url: str) -> SceneVerdict:
         if self._verifier is None:
             return SceneVerdict("uncertain", "Visual verification is unavailable.")
@@ -228,6 +286,27 @@ class DestinationResolver:
             return False
         if destination.memory is None:
             return True
+        if destination.object_id:
+            record = self._store.objects.get(destination.object_id)
+            views = self._store.objects.views(destination.object_id, include_crops=False, limit=1)
+            return bool(
+                record is not None
+                and record.revision == destination.object_revision
+                and record.status == "present"
+                and record.misses == 0
+                and record.robot_id == self._scope.robot_id
+                and record.camera_id == self._scope.camera_id
+                and record.frame_id == self._origin.frame_id
+                and record.map_id == self._origin.map_id
+                and 0 <= self._clock() - record.last_seen <= self._policy.max_age_s
+                and views
+                and views[0].memory.id == destination.memory.id
+                and views[0].memory == destination.memory
+                and views[0].memory.same_embeddings(destination.memory)
+                and views[0].memory.pose == destination.pose
+                and views[0].memory.localization_checked
+                and self._recall.confidence(views[0].memory) >= self._policy.min_confidence
+            )
         before = destination.memory
         current = self._store.get(before.id)
         return (
