@@ -31,6 +31,16 @@ not have:
   a pose log is enough to build and query a memory on a laptop. ROS 2 is a thin wrapper,
   not a dependency of the core.
 
+## Gazebo demo
+
+[![Wheeled humanoid receives "go to the printer", drives across the office, verifies arrival and updates its memory](docs/assets/wheeled_humanoid_printer.gif)](docs/assets/wheeled_humanoid_printer.mp4)
+
+**[Watch the full 49-second video](docs/assets/wheeled_humanoid_printer.mp4).**
+`go to the printer` retrieves the destination from visual memory, drives the wheeled
+humanoid 3.98 m, verifies arrival and updates the printer memory. This uses a published
+text command and simulation-time playback; microphone input and arm motion are not
+included. See the [Gazebo office guide](docs/simulation.md) to reproduce the run.
+
 ## How it works
 
 ![Placecell architecture: camera observations become visual memory; spoken commands retrieve and verify a destination before Nav2 navigation, while new observations continue updating memory.](docs/assets/architecture.svg)
@@ -164,11 +174,6 @@ controlled separately by `consolidate_interval_s` and requires a chat model.
 For a robot-free 3D environment, see the [Gazebo office guide](docs/simulation.md).
 It includes a wheeled humanoid, Docker launch, keyboard driving, RGB-D and lidar, AMCL/Nav2 route checks,
 and a live camera-to-memory-to-navigation test using hosted Gemini models.
-
-[Watch the 49-second Gazebo demo](docs/assets/wheeled_humanoid_printer.mp4):
-`go to the printer` retrieves the destination from visual memory, drives the wheeled
-humanoid 3.98 m, verifies arrival and updates the printer memory. The demo uses a
-published text command; microphone input and arm motion are not included.
 
 ```python
 from placecell import CollectionInfo, Curator, Ingester, InMemoryStore, Recall
