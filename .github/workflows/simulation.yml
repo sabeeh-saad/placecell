@@ -1,0 +1,43 @@
+name: simulation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'simulation/**'
+      - 'src/placecell/ros2/depth.py'
+      - 'src/placecell/depth.py'
+      - '.github/workflows/simulation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'simulation/**'
+      - 'src/placecell/ros2/depth.py'
+      - 'src/placecell/depth.py'
+      - '.github/workflows/simulation.yml'
+
+jobs:
+  office:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ROS and Gazebo
+        run: simulation/sim build
+      - name: Start the office
+        run: simulation/sim start
+      - name: Validate sensors, movement and command timeout
+        run: simulation/sim check
+      - name: Collect simulator logs
+        if: always()
+        run: |
+          mkdir -p simulation/artifacts
+          docker compose -f simulation/compose.yaml logs --no-color > simulation/artifacts/simulator.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gazebo-office
+          path: simulation/artifacts/
+      - name: Stop the office
+        if: always()
+        run: simulation/sim stop

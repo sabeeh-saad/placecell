@@ -452,9 +452,14 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._depth_error = p["object_position_error_m"]
             self._depth_angular_error = p["object_angular_error_rad"]
             if p["objects_enabled"] and p["depth_topic"]:
-                self.create_subscription(Image, p["depth_topic"], self._depth_frames.append, qos_profile_sensor_data)
                 self.create_subscription(
-                    CameraInfo, p["camera_info_topic"], self._camera_infos.append, qos_profile_sensor_data
+                    Image, p["depth_topic"], lambda msg: self._depth_frames.append(msg), qos_profile_sensor_data
+                )
+                self.create_subscription(
+                    CameraInfo,
+                    p["camera_info_topic"],
+                    lambda msg: self._camera_infos.append(msg),
+                    qos_profile_sensor_data,
                 )
             if p["compressed"]:
                 self.create_subscription(

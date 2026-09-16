@@ -161,6 +161,10 @@ controlled separately by `consolidate_interval_s` and requires a chat model.
 
 ## Quickstart, offline
 
+For a robot-free 3D environment, see the [Gazebo office guide](docs/simulation.md).
+It provides a Docker launch, keyboard driving, RGB-D and lidar, plus an automated
+sensor and movement check. Nav2 and memory integration are the next simulation milestones.
+
 ```python
 from placecell import CollectionInfo, Curator, Ingester, InMemoryStore, Recall
 from placecell.providers import HashingEmbedder

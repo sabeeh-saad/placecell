@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+sim_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+compose=(docker compose -f "$sim_dir/compose.yaml")
+inside=(bash /opt/placecell-sim/entrypoint.sh)
+command="${1:-help}"
+if (($#)); then shift; fi
+case "$command" in
+  build) "${compose[@]}" build "$@" ;;
+  start) "${compose[@]}" up -d "$@" ;;
+  stop) "${compose[@]}" down ;;
+  logs) "${compose[@]}" logs --tail 100 -f ;;
+  shell) "${compose[@]}" exec simulator "${inside[@]}" bash ;;
+  teleop)
+    "${compose[@]}" exec simulator "${inside[@]}" ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+      --ros-args -p speed:=0.2 -p turn:=0.5
+    ;;
+  check)
+    "${compose[@]}" exec -T simulator "${inside[@]}" python3 /opt/placecell-sim/scripts/smoke_test.py "$@" --output /home/simulator/smoke
+    mkdir -p "$sim_dir/artifacts"
+    "${compose[@]}" cp simulator:/home/simulator/smoke/. "$sim_dir/artifacts/"
+    ;;
+  gui)
+    if [[ -z "${DISPLAY:-}" ]] || ! command -v xauth >/dev/null; then
+      echo 'GUI mode needs a local X11/XWayland session and xauth. Use start for headless mode.' >&2
+      exit 1
+    fi
+    auth_dir="$(mktemp -d)"
+    export SIM_XAUTHORITY="$auth_dir/xauthority"
+    trap '"${compose[@]}" down; rm -f -- "$SIM_XAUTHORITY"; rmdir -- "$auth_dir"' EXIT
+    touch "$SIM_XAUTHORITY"
+    xauth nlist "$DISPLAY" | sed 's/^..../ffff/' | xauth -f "$SIM_XAUTHORITY" nmerge -
+    if [[ ! -s "$SIM_XAUTHORITY" ]]; then
+      echo 'No authorization cookie found for this display.' >&2
+      exit 1
+    fi
+    chmod 644 "$SIM_XAUTHORITY"
+    "${compose[@]}" -f "$sim_dir/compose.gui.yaml" up --force-recreate
+    ;;
+  *)
+    echo 'Usage: simulation/sim {build|start|gui|teleop|check|logs|shell|stop}'
+    echo 'check moves the simulated robot; check --sensors-only only inspects sensor data.'
+    ;;
+esac

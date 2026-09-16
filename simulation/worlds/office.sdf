@@ -1,0 +1,120 @@
+<?xml version="1.0"?>
+<!-- All geometry is bundled and authored for this project; no Fuel downloads. -->
+<sdf version="1.9">
+  <world name="office">
+    <physics name="default" type="ignored"><max_step_size>0.002</max_step_size><real_time_factor>1.0</real_time_factor></physics>
+    <gravity>0 0 -9.81</gravity>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors"><render_engine>ogre2</render_engine></plugin>
+    <scene><ambient>0.65 0.65 0.65 1</ambient><background>0.85 0.9 0.95 1</background><shadows>false</shadows></scene>
+    <light name="sun" type="directional"><pose>0 0 6 0 0 0</pose><diffuse>0.85 0.85 0.85 1</diffuse><specular>0.1 0.1 0.1 1</specular><direction>-0.3 -0.4 -1</direction><cast_shadows>false</cast_shadows></light>
+    <model name="floor"><static>true</static><pose>0 0 -0.1 0 0 0</pose><link name="body">
+      <visual name="floor"><pose>0 0 0 0 0 0</pose><geometry><box><size>12 10 0.2</size></box></geometry><material><ambient>0.55 0.58 0.6 1</ambient><diffuse>0.55 0.58 0.6 1</diffuse></material></visual>
+      <collision name="floor"><pose>0 0 0 0 0 0</pose><geometry><box><size>12 10 0.2</size></box></geometry></collision>
+    </link></model>
+    <model name="walls"><static>true</static><pose>0 0 0 0 0 0</pose><link name="body">
+      <visual name="north"><pose>0 4 1.25 0 0 0</pose><geometry><box><size>10 0.15 2.5</size></box></geometry><material><ambient>0.78 0.8 0.82 1</ambient><diffuse>0.78 0.8 0.82 1</diffuse></material></visual>
+      <collision name="north"><pose>0 4 1.25 0 0 0</pose><geometry><box><size>10 0.15 2.5</size></box></geometry></collision>
+      <visual name="south"><pose>0 -4 1.25 0 0 0</pose><geometry><box><size>10 0.15 2.5</size></box></geometry><material><ambient>0.78 0.8 0.82 1</ambient><diffuse>0.78 0.8 0.82 1</diffuse></material></visual>
+      <collision name="south"><pose>0 -4 1.25 0 0 0</pose><geometry><box><size>10 0.15 2.5</size></box></geometry></collision>
+      <visual name="east"><pose>5 0 1.25 0 0 0</pose><geometry><box><size>0.15 8 2.5</size></box></geometry><material><ambient>0.78 0.8 0.82 1</ambient><diffuse>0.78 0.8 0.82 1</diffuse></material></visual>
+      <collision name="east"><pose>5 0 1.25 0 0 0</pose><geometry><box><size>0.15 8 2.5</size></box></geometry></collision>
+      <visual name="west"><pose>-5 0 1.25 0 0 0</pose><geometry><box><size>0.15 8 2.5</size></box></geometry><material><ambient>0.78 0.8 0.82 1</ambient><diffuse>0.78 0.8 0.82 1</diffuse></material></visual>
+      <collision name="west"><pose>-5 0 1.25 0 0 0</pose><geometry><box><size>0.15 8 2.5</size></box></geometry></collision>
+      <visual name="divider_north"><pose>0 2.8 1.25 0 0 0</pose><geometry><box><size>0.15 2.4 2.5</size></box></geometry><material><ambient>0.78 0.8 0.82 1</ambient><diffuse>0.78 0.8 0.82 1</diffuse></material></visual>
+      <collision name="divider_north"><pose>0 2.8 1.25 0 0 0</pose><geometry><box><size>0.15 2.4 2.5</size></box></geometry></collision>
+      <visual name="divider_south"><pose>0 -2.8 1.25 0 0 0</pose><geometry><box><size>0.15 2.4 2.5</size></box></geometry><material><ambient>0.78 0.8 0.82 1</ambient><diffuse>0.78 0.8 0.82 1</diffuse></material></visual>
+      <collision name="divider_south"><pose>0 -2.8 1.25 0 0 0</pose><geometry><box><size>0.15 2.4 2.5</size></box></geometry></collision>
+    </link></model>
+    <model name="printer_desk"><static>true</static><pose>3 0 0 0 0 1.5707963268</pose><link name="body">
+      <visual name="top"><pose>0 0 0.74 0 0 0</pose><geometry><box><size>1.25 0.8 0.08</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>
+      <collision name="top"><pose>0 0 0.74 0 0 0</pose><geometry><box><size>1.25 0.8 0.08</size></box></geometry></collision>
+      <visual name="leg_-0.53_-0.3"><pose>-0.53 -0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_-0.53_-0.3"><pose>-0.53 -0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry></collision>
+      <visual name="leg_-0.53_0.3"><pose>-0.53 0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_-0.53_0.3"><pose>-0.53 0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry></collision>
+      <visual name="leg_0.53_-0.3"><pose>0.53 -0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_0.53_-0.3"><pose>0.53 -0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry></collision>
+      <visual name="leg_0.53_0.3"><pose>0.53 0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_0.53_0.3"><pose>0.53 0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry></collision>
+    </link></model>
+    <model name="printer"><static>true</static><pose>3 0 0.78 0 0 -1.5707963268</pose><link name="body">
+      <visual name="body"><pose>0 0 0.16 0 0 0</pose><geometry><box><size>0.55 0.42 0.32</size></box></geometry><material><ambient>0.9 0.91 0.93 1</ambient><diffuse>0.9 0.91 0.93 1</diffuse></material></visual>
+      <collision name="body"><pose>0 0 0.16 0 0 0</pose><geometry><box><size>0.55 0.42 0.32</size></box></geometry></collision>
+      <visual name="scanner_lid"><pose>0 0.02 0.34 0 0 0</pose><geometry><box><size>0.58 0.43 0.04</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="scanner_lid"><pose>0 0.02 0.34 0 0 0</pose><geometry><box><size>0.58 0.43 0.04</size></box></geometry></collision>
+      <visual name="paper_slot"><pose>0 -0.216 0.16 0 0 0</pose><geometry><box><size>0.38 0.012 0.045</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="paper_slot"><pose>0 -0.216 0.16 0 0 0</pose><geometry><box><size>0.38 0.012 0.045</size></box></geometry></collision>
+      <visual name="paper_tray"><pose>0 -0.3 0.08 0 0 0</pose><geometry><box><size>0.38 0.19 0.025</size></box></geometry><material><ambient>0.9 0.91 0.93 1</ambient><diffuse>0.9 0.91 0.93 1</diffuse></material></visual>
+      <collision name="paper_tray"><pose>0 -0.3 0.08 0 0 0</pose><geometry><box><size>0.38 0.19 0.025</size></box></geometry></collision>
+      <visual name="paper"><pose>0 -0.29 0.098 0 0 0</pose><geometry><box><size>0.29 0.18 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      <collision name="paper"><pose>0 -0.29 0.098 0 0 0</pose><geometry><box><size>0.29 0.18 0.01</size></box></geometry></collision>
+      <visual name="display"><pose>0.18 -0.22 0.255 0 0 0</pose><geometry><box><size>0.1 0.015 0.05</size></box></geometry><material><ambient>0.06 0.3 0.65 1</ambient><diffuse>0.06 0.3 0.65 1</diffuse></material></visual>
+      <collision name="display"><pose>0.18 -0.22 0.255 0 0 0</pose><geometry><box><size>0.1 0.015 0.05</size></box></geometry></collision>
+    </link></model>
+    <model name="work_desk"><static>true</static><pose>-3 2.8 0 0 0 0</pose><link name="body">
+      <visual name="top"><pose>0 0 0.74 0 0 0</pose><geometry><box><size>1.25 0.8 0.08</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>
+      <collision name="top"><pose>0 0 0.74 0 0 0</pose><geometry><box><size>1.25 0.8 0.08</size></box></geometry></collision>
+      <visual name="leg_-0.53_-0.3"><pose>-0.53 -0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_-0.53_-0.3"><pose>-0.53 -0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry></collision>
+      <visual name="leg_-0.53_0.3"><pose>-0.53 0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_-0.53_0.3"><pose>-0.53 0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry></collision>
+      <visual name="leg_0.53_-0.3"><pose>0.53 -0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_0.53_-0.3"><pose>0.53 -0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry></collision>
+      <visual name="leg_0.53_0.3"><pose>0.53 0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_0.53_0.3"><pose>0.53 0.3 0.35 0 0 0</pose><geometry><box><size>0.07 0.07 0.7</size></box></geometry></collision>
+    </link></model>
+    <model name="monitor"><static>true</static><pose>-3 2.8 0.78 0 0 0</pose><link name="body">
+      <visual name="foot"><pose>0 0 0.015 0 0 0</pose><geometry><box><size>0.3 0.24 0.03</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="foot"><pose>0 0 0.015 0 0 0</pose><geometry><box><size>0.3 0.24 0.03</size></box></geometry></collision>
+      <visual name="stand"><pose>0 0.05 0.15 0 0 0</pose><geometry><box><size>0.06 0.05 0.27</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="stand"><pose>0 0.05 0.15 0 0 0</pose><geometry><box><size>0.06 0.05 0.27</size></box></geometry></collision>
+      <visual name="screen"><pose>0 0.05 0.38 0 0 0</pose><geometry><box><size>0.56 0.05 0.32</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="screen"><pose>0 0.05 0.38 0 0 0</pose><geometry><box><size>0.56 0.05 0.32</size></box></geometry></collision>
+      <visual name="display"><pose>0 0.018 0.38 0 0 0</pose><geometry><box><size>0.52 0.012 0.28</size></box></geometry><material><ambient>0.06 0.3 0.65 1</ambient><diffuse>0.06 0.3 0.65 1</diffuse></material></visual>
+      <collision name="display"><pose>0 0.018 0.38 0 0 0</pose><geometry><box><size>0.52 0.012 0.28</size></box></geometry></collision>
+    </link></model>
+    <model name="chair"><static>true</static><pose>-3 1.7 0 0 0 3.1415926536</pose><link name="body">
+      <visual name="seat"><pose>0 0 0.44 0 0 0</pose><geometry><box><size>0.46 0.45 0.07</size></box></geometry><material><ambient>0.06 0.3 0.65 1</ambient><diffuse>0.06 0.3 0.65 1</diffuse></material></visual>
+      <collision name="seat"><pose>0 0 0.44 0 0 0</pose><geometry><box><size>0.46 0.45 0.07</size></box></geometry></collision>
+      <visual name="back"><pose>0 0.2 0.69 0 0 0</pose><geometry><box><size>0.46 0.06 0.48</size></box></geometry><material><ambient>0.06 0.3 0.65 1</ambient><diffuse>0.06 0.3 0.65 1</diffuse></material></visual>
+      <collision name="back"><pose>0 0.2 0.69 0 0 0</pose><geometry><box><size>0.46 0.06 0.48</size></box></geometry></collision>
+      <visual name="leg_-0.18_-0.18"><pose>-0.18 -0.18 0.2 0 0 0</pose><geometry><box><size>0.035 0.035 0.4</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_-0.18_-0.18"><pose>-0.18 -0.18 0.2 0 0 0</pose><geometry><box><size>0.035 0.035 0.4</size></box></geometry></collision>
+      <visual name="leg_-0.18_0.18"><pose>-0.18 0.18 0.2 0 0 0</pose><geometry><box><size>0.035 0.035 0.4</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_-0.18_0.18"><pose>-0.18 0.18 0.2 0 0 0</pose><geometry><box><size>0.035 0.035 0.4</size></box></geometry></collision>
+      <visual name="leg_0.18_-0.18"><pose>0.18 -0.18 0.2 0 0 0</pose><geometry><box><size>0.035 0.035 0.4</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_0.18_-0.18"><pose>0.18 -0.18 0.2 0 0 0</pose><geometry><box><size>0.035 0.035 0.4</size></box></geometry></collision>
+      <visual name="leg_0.18_0.18"><pose>0.18 0.18 0.2 0 0 0</pose><geometry><box><size>0.035 0.035 0.4</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
+      <collision name="leg_0.18_0.18"><pose>0.18 0.18 0.2 0 0 0</pose><geometry><box><size>0.035 0.035 0.4</size></box></geometry></collision>
+    </link></model>
+    <model name="bookshelf"><static>true</static><pose>3 3.55 0 0 0 0</pose><link name="body">
+      <visual name="left"><pose>-0.6 0 0.9 0 0 0</pose><geometry><box><size>0.08 0.45 1.8</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>
+      <collision name="left"><pose>-0.6 0 0.9 0 0 0</pose><geometry><box><size>0.08 0.45 1.8</size></box></geometry></collision>
+      <visual name="right"><pose>0.6 0 0.9 0 0 0</pose><geometry><box><size>0.08 0.45 1.8</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>
+      <collision name="right"><pose>0.6 0 0.9 0 0 0</pose><geometry><box><size>0.08 0.45 1.8</size></box></geometry></collision>
+      <visual name="back"><pose>0 0.2 0.9 0 0 0</pose><geometry><box><size>1.2 0.05 1.8</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>
+      <collision name="back"><pose>0 0.2 0.9 0 0 0</pose><geometry><box><size>1.2 0.05 1.8</size></box></geometry></collision>
+      <visual name="shelf_0"><pose>0 0 0.05 0 0 0</pose><geometry><box><size>1.2 0.45 0.06</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>
+      <collision name="shelf_0"><pose>0 0 0.05 0 0 0</pose><geometry><box><size>1.2 0.45 0.06</size></box></geometry></collision>
+      <visual name="shelf_1"><pose>0 0 0.6 0 0 0</pose><geometry><box><size>1.2 0.45 0.06</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>
+      <collision name="shelf_1"><pose>0 0 0.6 0 0 0</pose><geometry><box><size>1.2 0.45 0.06</size></box></geometry></collision>
+      <visual name="shelf_2"><pose>0 0 1.15 0 0 0</pose><geometry><box><size>1.2 0.45 0.06</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>
+      <collision name="shelf_2"><pose>0 0 1.15 0 0 0</pose><geometry><box><size>1.2 0.45 0.06</size></box></geometry></collision>
+      <visual name="shelf_3"><pose>0 0 1.75 0 0 0</pose><geometry><box><size>1.2 0.45 0.06</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>
+      <collision name="shelf_3"><pose>0 0 1.75 0 0 0</pose><geometry><box><size>1.2 0.45 0.06</size></box></geometry></collision>
+      <visual name="book_0"><pose>-0.42 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry><material><ambient>0.06 0.3 0.65 1</ambient><diffuse>0.06 0.3 0.65 1</diffuse></material></visual>
+      <collision name="book_0"><pose>-0.42 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry></collision>
+      <visual name="book_1"><pose>-0.24 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry><material><ambient>0.65 0.08 0.06 1</ambient><diffuse>0.65 0.08 0.06 1</diffuse></material></visual>
+      <collision name="book_1"><pose>-0.24 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry></collision>
+      <visual name="book_2"><pose>-0.06 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry><material><ambient>0.08 0.4 0.2 1</ambient><diffuse>0.08 0.4 0.2 1</diffuse></material></visual>
+      <collision name="book_2"><pose>-0.06 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry></collision>
+      <visual name="book_3"><pose>0.12 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry><material><ambient>0.9 0.91 0.93 1</ambient><diffuse>0.9 0.91 0.93 1</diffuse></material></visual>
+      <collision name="book_3"><pose>0.12 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry></collision>
+      <visual name="book_4"><pose>0.3 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry><material><ambient>0.85 0.6 0.1 1</ambient><diffuse>0.85 0.6 0.1 1</diffuse></material></visual>
+      <collision name="book_4"><pose>0.3 0 0.81 0 0 0</pose><geometry><box><size>0.12 0.27 0.36</size></box></geometry></collision>
+    </link></model>
+  </world>
+</sdf>

@@ -1,0 +1,9 @@
+**
+!simulation/
+!simulation/**
+!src/
+!src/placecell/
+!src/placecell/**
+**/__pycache__/
+**/*.pyc
+simulation/artifacts/

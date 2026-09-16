@@ -1,0 +1,17 @@
+name: placecell-sim
+services:
+  simulator:
+    image: placecell-sim:jazzy
+    build:
+      context: ..
+      dockerfile: simulation/Dockerfile
+    init: true
+    shm_size: 512m
+    stop_grace_period: 20s
+    environment:
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    # ROS and Gazebo stay inside this container; no host network or robot devices.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

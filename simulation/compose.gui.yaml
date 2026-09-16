@@ -1,0 +1,10 @@
+services:
+  simulator:
+    environment:
+      DISPLAY: ${DISPLAY:?An X11 or XWayland display is required}
+      XAUTHORITY: /tmp/simulation.xauthority
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - ${SIM_XAUTHORITY:?Use simulation/sim gui}:/tmp/simulation.xauthority:ro
+    command: ["ros2", "launch", "/opt/placecell-sim/launch/office.launch.py", "gui:=true"]

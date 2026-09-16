@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a bundled Gazebo office and RGB-D/lidar robot with Docker launch, keyboard driving, a velocity watchdog and live sensor/motion checks.
+- Use inspectable RGB-D subscription callbacks for compatibility with ROS 2 Jazzy's callback validation.
+
 - Add a native Gemini multimodal adapter with query/document formatting, bounded batches and retries; keep local CLIP as an optional adapter.
 - Expose embedding backend selection and separate API-key configuration in ROS.
 - Store independent image and caption embeddings in schema 6; retrieve candidates from both channels and expose their scores.
