@@ -18,6 +18,27 @@ restamps old covariance. Perception receives pixels, not simulator object labels
 
 ## Test the complete pipeline
 
+To record a command-and-response demonstration without an API key:
+
+```bash
+./simulation/sim build
+./simulation/sim start-nav
+./simulation/sim record-commands
+```
+
+This starts the real Placecell ROS node and publishes `go to 1.0, 0.0`, followed
+by `go to -1.0, 0.3, 3.14`, to `/placecell/command`. Each command must succeed
+through Placecell's parser, localization gate and Nav2 client, with the robot
+moving at least 0.5 m and arriving within 0.15 m of the requested position. The
+last number is yaw in radians. The video shows commands being sent, their status,
+an overhead Gazebo camera and the robot's front camera. The overhead camera is
+only for viewing and is never used for localization or memory. Artifacts are
+saved under `simulation/artifacts/record-commands-*/`.
+
+This demonstration uses coordinate destinations with visual memory disabled;
+it does not exercise object-name retrieval. Use the live test below to record
+`go to the printer` resolved from observed visual memory.
+
 ```bash
 ./simulation/sim build
 ./simulation/sim start-nav

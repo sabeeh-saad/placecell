@@ -21,12 +21,15 @@ case "$command" in
     mkdir -p "$sim_dir/artifacts"
     "${compose[@]}" cp simulator:/home/simulator/smoke/. "$sim_dir/artifacts/"
     ;;
-  check-nav|check-pipeline)
+  check-nav|check-pipeline|record-commands)
     run_name="${command}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
     extra=()
     environment=()
+    script=pipeline_test.py
     if [[ "$command" == check-nav ]]; then
       extra+=(--navigation-only)
+    elif [[ "$command" == record-commands ]]; then
+      script=command_demo.py
     else
       if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
         echo 'Set OPENROUTER_API_KEY in your shell before the live test. No local model is downloaded.' >&2
@@ -36,7 +39,7 @@ case "$command" in
     fi
     result=0
     "${compose[@]}" exec -T "${environment[@]}" simulator "${inside[@]}" python3 \
-      /opt/placecell-sim/scripts/pipeline_test.py --output "/home/simulator/$run_name" "${extra[@]}" "$@" || result=$?
+      "/opt/placecell-sim/scripts/$script" --output "/home/simulator/$run_name" "${extra[@]}" "$@" || result=$?
     mkdir -p "$sim_dir/artifacts/$run_name"
     "${compose[@]}" cp "simulator:/home/simulator/$run_name/." "$sim_dir/artifacts/$run_name/"
     echo "Test artifacts: $sim_dir/artifacts/$run_name"
@@ -60,7 +63,7 @@ case "$command" in
     "${compose[@]}" -f "$sim_dir/compose.gui.yaml" up --force-recreate
     ;;
   *)
-    echo 'Usage: simulation/sim {build|start|start-nav|gui|teleop|check|check-nav|check-pipeline|logs|shell|stop}'
+    echo 'Usage: simulation/sim {build|start|start-nav|gui|teleop|check|check-nav|check-pipeline|record-commands|logs|shell|stop}'
     echo 'check moves the simulated robot; check --sensors-only only inspects sensor data.'
     ;;
 esac
