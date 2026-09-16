@@ -86,6 +86,23 @@ The video plays at five frames per simulation second, with a three-second final
 still; it is not a wall-clock screen capture. The navigation-only recording is
 explicitly labelled as having no model calls. No additional models are downloaded.
 
+For a focused video of a semantic command from farther away, use a fresh world
+and the same live API-key setup:
+
+```bash
+./simulation/sim start-nav
+./simulation/sim check-pipeline --record-command-video --departure-x -3.0 --departure-y -0.5
+```
+
+The robot first learns the printer from RGB-D observations and drives to the
+specified departure position, facing away. Recording starts there, just before
+publishing `go to the printer`; no coordinates or named-place shortcut are sent
+with that command. The video shows the overhead Gazebo view, robot camera,
+retrieved approach goal, trip distance, and fresh visual arrival check. It ends
+after the same object's memory is updated. The separate unknown-destination
+check still runs afterward and is included in the JSON report. Preparation
+movement is excluded from the video's distance counter.
+
 For browser-compatible H.264 output, convert the saved recording with host FFmpeg:
 
 ```bash
@@ -114,6 +131,17 @@ crop-only verification losing scene context, and identity duplication when a det
 changed its label. The automated suite passed 660 tests with 95.20% coverage. A
 non-fatal ROS `Destroyable` warning remains during shutdown; the test exited successfully
 and the persisted database was reopened and checked afterward.
+
+The subsequent command-video run started 5.72 m from the remembered printer,
+facing away. `go to the printer` resolved from visual memory and produced a
+3.95 m trip to an object approach, followed by a fresh visual match. The same
+printer advanced from revision 1 to 3; six scene-vector rows and the object update
+survived reopening the database. The 57-second recording covers the command
+through verified arrival and the memory update. Its
+[validation record](simulation-command-video-validation.json) captures the result.
+The printer fixture now includes a visible paper feed, output page and contrasting
+tray: the simpler fixture was initially classified as a box. Perception still uses
+only camera pixels, without simulator object names or coordinates.
 
 ## Start on Linux with Docker
 

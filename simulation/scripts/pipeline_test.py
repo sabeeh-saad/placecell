@@ -20,6 +20,7 @@ from rclpy.action import ActionClient
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
+from sensor_msgs.msg import Image
 from smoke_test import Probe
 from std_msgs.msg import String
 from tf2_ros import TransformException
@@ -41,6 +42,10 @@ class PipelineProbe(Probe):
         self.lifecycle = self.create_client(GetState, "/bt_navigator/get_state")
         self.lifecycle_request = None
         self.navigation_active = False
+        self.overview = None
+        self.create_subscription(
+            Image, "/demo/overview", lambda msg: setattr(self, "overview", msg), qos_profile_sensor_data
+        )
         self.command = self.create_publisher(String, "/placecell/command", 1)
         self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose", self.localization, qos_profile_sensor_data)
         self.create_subscription(String, "/placecell/navigation_status", self.status, 100)
@@ -126,10 +131,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--navigation-only", action="store_true", help="Test real AMCL/Nav2 without any model calls")
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--record-video", action="store_true", help="Record camera and telemetry to walkthrough.avi")
+    recording = parser.add_mutually_exclusive_group()
+    recording.add_argument("--record-video", action="store_true", help="Record the entire check to walkthrough.avi")
+    recording.add_argument(
+        "--record-command-video", action="store_true", help="Record only the live printer command and verified arrival"
+    )
+    parser.add_argument("--departure-x", type=float, default=-1.0)
+    parser.add_argument("--departure-y", type=float, default=0.3)
     options = parser.parse_args()
     if not options.navigation_only and not os.environ.get("OPENROUTER_API_KEY"):
         parser.error("live mode requires OPENROUTER_API_KEY; it never substitutes mocked perception")
+    if options.record_command_video and options.navigation_only:
+        parser.error("--record-command-video requires the live perception pipeline")
+    if not all(math.isfinite(v) for v in (options.departure_x, options.departure_y)):
+        parser.error("departure coordinates must be finite")
     output = options.output
     output.mkdir(parents=True, exist_ok=False)
     report = {"mode": "navigation" if options.navigation_only else "live_pipeline", "passed": False}
@@ -190,12 +205,26 @@ def main():
         # Face away: the command must recall a previous view, not a freshly seen printer here.
         if video:
             video.phase = "3 / Move away and turn away from the printer"
-        report["departure_pose"] = probe.navigate(-1.0, 0.3, math.pi)
+        report["departure_pose"] = probe.navigate(options.departure_x, options.departure_y, math.pi)
         if not options.navigation_only:
             probe.wait(lambda: probe.command.get_subscription_count() > 0, 20)
+            if options.record_command_video:
+                from video_recorder import VideoRecorder
+
+                probe.wait(lambda: probe.overview is not None and bool(probe.rgb), 20)
+                video = VideoRecorder(output, probe, False, command_demo=True)
+                video.distance_offset = probe.distance
+                video.phase = 'Ready to send: "go to the printer"'
+                video.memory = (
+                    "Printer learned from earlier RGB-D observations. Goal will be selected from visual memory."
+                )
+                ready_until = probe.sim_time + 3
+                probe.wait(lambda: probe.sim_time >= ready_until, 30)
             distance_before = probe.distance
+            report["command"] = {"text": "go to the printer", "sent_at": probe.sim_time}
             if video:
-                video.phase = '4 / Command: "go to the printer"'
+                video.phase = 'SENT: "go to the printer"'
+                video.command, video.command_at = "go to the printer", probe.sim_time
             probe.command.publish(String(data="go to the printer"))
             terminal = {
                 "succeeded",
@@ -237,6 +266,13 @@ def main():
                     f"Arrival verified; printer revision {revision}; {len(report['after']['memories'])} scene memories"
                 )
             report["arrival_pose"] = {"x": probe.pose().x, "y": probe.pose().y}
+            if options.record_command_video:
+                report["command_video_passed"] = True
+                video.phase = "ARRIVED: printer visually verified"
+                show_until = probe.sim_time + 3
+                probe.wait(lambda: probe.sim_time >= show_until, 30)
+                video.close(True)
+                video = None
             previous_statuses, stopped_at = len(probe.statuses), probe.distance
             if video:
                 video.phase = '6 / Unknown destination: "purple helicopter"'

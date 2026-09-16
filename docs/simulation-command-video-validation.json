@@ -1,0 +1,79 @@
+{
+  "date": "2026-09-16",
+  "scenario": "live visual-memory command from the far side of the Gazebo office",
+  "passed": true,
+  "command": "go to the printer",
+  "models": {
+    "vision": "google/gemini-2.5-flash",
+    "embeddings": "google/gemini-embedding-2"
+  },
+  "departure_pose": {
+    "x": -2.946433090023374,
+    "y": -0.47939164266804496,
+    "yaw": -3.098699765394385
+  },
+  "remembered_printer_position": {
+    "x": 2.757800170160122,
+    "y": -0.02588954740230392,
+    "z": 0.9917359846034169,
+    "uncertainty_m": 0.32547297535088837,
+    "radius_m": 0.28939141549994596
+  },
+  "initial_distance_to_printer_m": 5.7222321900630755,
+  "navigation": {
+    "simulation_time": 85.532,
+    "request_id": "de4d817001be4b9e8a48a7a82068db5d",
+    "state": "succeeded",
+    "message": "Destination visible at the reached viewpoint. Saved views and fresh appearance/geometry agree. The two images show the same object from slightly different angles. The blue rectangle, the two dark grey shapes on top, and the two horizontal lines on the front are consistent in position and appearance.",
+    "destination": {
+      "label": "printer: gray printer with a blue screen",
+      "source": "memory",
+      "memory_id": "f3510326-686e-5c70-abef-43ae8f504081",
+      "object_id": "f3510326-686e-5c70-abef-43ae8f504081",
+      "goal_kind": "object_approach",
+      "target": "printer",
+      "x": 1.0521919579284773,
+      "y": -0.4657728579382815,
+      "yaw": 6.535589155013608,
+      "frame_id": "map",
+      "map_id": "office-v1"
+    },
+    "choices": [],
+    "distance_remaining": null,
+    "object_result": "matched",
+    "search_attempt": 0
+  },
+  "semantic_trip_distance_m": 3.951287034821916,
+  "arrival_pose": {
+    "x": 0.977364249641862,
+    "y": -0.4718840840332783
+  },
+  "memory": {
+    "same_object_id": "f3510326-686e-5c70-abef-43ae8f504081",
+    "revision_before": 1,
+    "revision_after": 3,
+    "last_seen_before": 18.8,
+    "last_seen_after": 95.4,
+    "scene_vector_rows_reopened": 6
+  },
+  "unknown_destination": {
+    "result": "not_found",
+    "movement_m": 0.0
+  },
+  "video": {
+    "filename": "go_to_the_printer.mp4",
+    "duration_s": 57.0,
+    "size": [
+      1280,
+      720
+    ],
+    "fps": 5,
+    "clock": "simulation time"
+  },
+  "limitations": [
+    "Text command; microphone and speech recognition not tested.",
+    "Printer learned from earlier camera observations; preparation excluded from video.",
+    "Bundled office with a detailed printer fixture; not evidence of general-world reliability.",
+    "Non-fatal ROS Destroyable warning during shutdown."
+  ]
+}

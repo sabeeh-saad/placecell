@@ -58,12 +58,20 @@
       <collision name="scanner_lid"><pose>0 0.02 0.34 0 0 0</pose><geometry><box><size>0.58 0.43 0.04</size></box></geometry></collision>
       <visual name="paper_slot"><pose>0 -0.216 0.16 0 0 0</pose><geometry><box><size>0.38 0.012 0.045</size></box></geometry><material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material></visual>
       <collision name="paper_slot"><pose>0 -0.216 0.16 0 0 0</pose><geometry><box><size>0.38 0.012 0.045</size></box></geometry></collision>
-      <visual name="paper_tray"><pose>0 -0.3 0.08 0 0 0</pose><geometry><box><size>0.38 0.19 0.025</size></box></geometry><material><ambient>0.9 0.91 0.93 1</ambient><diffuse>0.9 0.91 0.93 1</diffuse></material></visual>
+      <visual name="paper_tray"><pose>0 -0.3 0.08 0 0 0</pose><geometry><box><size>0.38 0.19 0.025</size></box></geometry><material><ambient>0.12 0.14 0.17 1</ambient><diffuse>0.12 0.14 0.17 1</diffuse></material></visual>
       <collision name="paper_tray"><pose>0 -0.3 0.08 0 0 0</pose><geometry><box><size>0.38 0.19 0.025</size></box></geometry></collision>
       <visual name="paper"><pose>0 -0.29 0.098 0 0 0</pose><geometry><box><size>0.29 0.18 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
       <collision name="paper"><pose>0 -0.29 0.098 0 0 0</pose><geometry><box><size>0.29 0.18 0.01</size></box></geometry></collision>
       <visual name="display"><pose>0.18 -0.22 0.255 0 0 0</pose><geometry><box><size>0.1 0.015 0.05</size></box></geometry><material><ambient>0.06 0.3 0.65 1</ambient><diffuse>0.06 0.3 0.65 1</diffuse></material></visual>
       <collision name="display"><pose>0.18 -0.22 0.255 0 0 0</pose><geometry><box><size>0.1 0.015 0.05</size></box></geometry></collision>
+      <visual name="input_support"><pose>0 0.17 0.43 0 0 0</pose><geometry><box><size>0.32 0.025 0.22</size></box></geometry><material><ambient>0.12 0.14 0.17 1</ambient><diffuse>0.12 0.14 0.17 1</diffuse></material></visual>
+      <collision name="input_support"><pose>0 0.17 0.43 0 0 0</pose><geometry><box><size>0.32 0.025 0.22</size></box></geometry></collision>
+      <visual name="input_paper"><pose>0 0.15 0.48 0 0 0</pose><geometry><box><size>0.21 0.006 0.29</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      <collision name="input_paper"><pose>0 0.15 0.48 0 0 0</pose><geometry><box><size>0.21 0.006 0.29</size></box></geometry></collision>
+      <visual name="output_page"><pose>0 -0.402 0.09 0 0 0</pose><geometry><box><size>0.21 0.008 0.15</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      <collision name="output_page"><pose>0 -0.402 0.09 0 0 0</pose><geometry><box><size>0.21 0.008 0.15</size></box></geometry></collision>
+      <visual name="page_line_one"><pose>0 -0.408 0.125 0 0 0</pose><geometry><box><size>0.14 0.002 0.006</size></box></geometry><material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material></visual>
+      <visual name="page_line_two"><pose>-0.015 -0.408 0.10 0 0 0</pose><geometry><box><size>0.11 0.002 0.006</size></box></geometry><material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material></visual>
     </link></model>
     <model name="work_desk"><static>true</static><pose>-3 2.8 0 0 0 0</pose><link name="body">
       <visual name="top"><pose>0 0 0.74 0 0 0</pose><geometry><box><size>1.25 0.8 0.08</size></box></geometry><material><ambient>0.52 0.31 0.16 1</ambient><diffuse>0.52 0.31 0.16 1</diffuse></material></visual>

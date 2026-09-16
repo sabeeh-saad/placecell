@@ -19,6 +19,7 @@ class VideoRecorder:
         self.command_demo = command_demo
         self.command = ""
         self.command_at = None
+        self.distance_offset = 0.0
         self.phase = "Starting navigation check"
         self.memory = "No live model calls" if navigation_only else "Waiting for the first stored observation"
         self.writer = cv2.VideoWriter(str(output / "walkthrough.avi"), cv2.VideoWriter_fourcc(*"MJPG"), 5, (1280, 720))
@@ -64,7 +65,11 @@ class VideoRecorder:
         self.text(frame, title, (300, 43), 0.73)
         mode = "NAVIGATION ONLY - NO MODEL CALLS" if self.navigation_only else "LIVE HOSTED MODELS / TEXT COMMAND"
         if self.command_demo:
-            mode = "PLACECELL COMMAND -> NAV2 -> GAZEBO / COORDINATE DESTINATIONS"
+            mode = (
+                "PLACECELL COMMAND -> NAV2 -> GAZEBO / COORDINATE DESTINATIONS"
+                if self.navigation_only
+                else "LIVE VISUAL MEMORY -> NAV2 -> ARRIVAL VERIFICATION / GEMINI"
+            )
         self.text(frame, mode, (28, 77), 0.52, (213, 190, 48))
         self.text(frame, f"Simulation time {self.probe.sim_time:6.1f}s", (923, 77), 0.53)
         self.text(
@@ -86,6 +91,8 @@ class VideoRecorder:
             tip = self.map_xy(pose.x + 0.5 * math.cos(pose.yaw), pose.y + 0.5 * math.sin(pose.yaw))
             cv2.arrowedLine(map_frame, point, tip, (255, 255, 255), 2, tipLength=0.4)
         status = self.probe.statuses[-1] if self.probe.statuses else {}
+        if self.command_at is not None and status.get("simulation_time", -1) < self.command_at:
+            status = {}
         destination = status.get("destination") or {}
         if "x" in destination and "y" in destination:
             cv2.drawMarker(
@@ -96,6 +103,8 @@ class VideoRecorder:
             label = (
                 f"Goal: x {destination['x']:+.2f}m, y {destination['y']:+.2f}m"
                 if destination
+                else "Awaiting destination"
+                if self.command
                 else "Waiting for command"
             )
             self.text(frame, label, (744, 529), 0.6, (90, 195, 255))
@@ -103,10 +112,13 @@ class VideoRecorder:
             frame[134:534, 744:1224] = map_frame
         if pose is not None:
             self.text(frame, f"x {pose.x:+.2f}m    y {pose.y:+.2f}m", (744, 562), 0.62)
-        self.text(frame, f"Travelled {self.probe.distance:.2f}m", (744, 591), 0.6, (213, 190, 48))
+        travelled = self.probe.distance - self.distance_offset
+        self.text(frame, f"Travelled {travelled:.2f}m", (744, 591), 0.6, (213, 190, 48))
         self.text(frame, self.phase, (28, 649), 0.73)
         state = status.get("state", "ready" if self.command_demo else "route test")
         self.text(frame, f"Status: {state}", (744, 623), 0.55)
+        if status.get("object_result"):
+            self.text(frame, f"Arrival check: {status['object_result']}", (744, 651), 0.55, (123, 225, 153))
         for index, line in enumerate(textwrap.wrap(self.memory, 65)[:2]):
             self.text(frame, line, (28, 677 + index * 23), 0.51, (176, 181, 191))
         self.text(frame, "5 fps / simulation-time playback", (744, 678), 0.49, (176, 181, 191))
@@ -119,11 +131,17 @@ class VideoRecorder:
                     "frame": self.frames,
                     "simulation_time": self.probe.sim_time,
                     "camera_time": rgb.header.stamp.sec + rgb.header.stamp.nanosec / 1e9,
+                    "overview_time": None
+                    if overview is None
+                    else (overview.header.stamp.sec + overview.header.stamp.nanosec / 1e9),
                     "phase": self.phase,
                     "command": self.command,
                     "command_sent_at": self.command_at,
                     "status": state,
+                    "destination": destination,
+                    "object_result": status.get("object_result", ""),
                     "distance_m": self.probe.distance,
+                    "trip_distance_m": travelled,
                     "pose": None if pose is None else {"x": pose.x, "y": pose.y, "yaw": pose.yaw},
                 }
             )
