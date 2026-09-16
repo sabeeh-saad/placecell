@@ -1,0 +1,76 @@
+{
+  "date": "2026-09-16",
+  "scenario": "Wheeled humanoid follows a live visual-memory command across the Gazebo office",
+  "passed": true,
+  "command": "go to the printer",
+  "departure_pose": {
+    "x": -2.9412159632204253,
+    "y": 0.021920640118994555,
+    "yaw": -3.093284825952076
+  },
+  "initial_distance_to_printer_m": 5.711675368123828,
+  "navigation": {
+    "state": "succeeded",
+    "destination": {
+      "label": "printer: gray printer with a blue screen",
+      "source": "memory",
+      "memory_id": "b5cb3a03-212c-5e69-9622-ad7382473b27",
+      "object_id": "22475a99-aa44-54c6-b0e7-272b917be409",
+      "goal_kind": "object_approach",
+      "target": "printer",
+      "x": 1.021180590255164,
+      "y": -0.013498863996203713,
+      "yaw": 0.0023454374177154236,
+      "frame_id": "map",
+      "map_id": "office-v1"
+    },
+    "object_result": "matched"
+  },
+  "semantic_trip_distance_m": 3.9785140068307383,
+  "arrival_pose": {
+    "x": 0.9635407699918117,
+    "y": 0.014195400115094126
+  },
+  "memory": {
+    "same_object_id": "22475a99-aa44-54c6-b0e7-272b917be409",
+    "revision_before": 2,
+    "revision_after": 3,
+    "last_seen_before": 36.0,
+    "last_seen_after": 100.8,
+    "updated_after_command": true
+  },
+  "unknown_destination": {
+    "result": "not_found",
+    "movement_m": 0.0
+  },
+  "sensor_check": {
+    "rgb_size": [
+      640,
+      480
+    ],
+    "camera_frame": "camera_optical_frame",
+    "depth_valid_fraction": 0.9833333333333333,
+    "lidar_samples": 360,
+    "simulation_clock_advances": true,
+    "rgbd_accepted_by_placecell": true,
+    "forward_distance_m": 0.26114999998884264,
+    "turn_rad": 0.7011999995705172,
+    "silence_stops_robot": true
+  },
+  "video": {
+    "filename": "wheeled_humanoid_printer.mp4",
+    "duration_s": 49.0,
+    "size": [
+      1280,
+      720
+    ],
+    "fps": 5,
+    "clock": "simulation time"
+  },
+  "limitations": [
+    "Published text command; microphone and speech recognition not tested.",
+    "Printer learned from earlier RGB-D observations before recording.",
+    "Fixed arms and head; wheeled navigation only.",
+    "One simulated office run; not a hardware or general-world reliability benchmark."
+  ]
+}

@@ -162,7 +162,7 @@ controlled separately by `consolidate_interval_s` and requires a chat model.
 ## Quickstart, offline
 
 For a robot-free 3D environment, see the [Gazebo office guide](docs/simulation.md).
-It provides Docker launch, keyboard driving, RGB-D and lidar, AMCL/Nav2 route checks,
+It includes a wheeled humanoid, Docker launch, keyboard driving, RGB-D and lidar, AMCL/Nav2 route checks,
 and a live camera-to-memory-to-navigation test using hosted Gemini models.
 
 ```python

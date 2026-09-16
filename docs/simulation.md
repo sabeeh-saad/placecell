@@ -1,6 +1,6 @@
 # Gazebo office environment
 
-The office world includes a differential-drive robot with rendered RGB-D, lidar,
+The office world includes a wheeled humanoid with rendered RGB-D, lidar,
 wheel odometry and TF. Run sensor checks, AMCL/Nav2 navigation, or the live
 camera → memory → semantic command → Nav2 → visual arrival test. No physical robot
 is required. Sensor and navigation checks need no API key; the complete perception
@@ -8,7 +8,26 @@ test uses hosted models. All world geometry is bundled; no CLIP weights are down
 
 ![RGB camera view of the printer and desk in the bundled Gazebo office](assets/gazebo-camera.png)
 
-The image above is an actual 320 × 240 camera capture from the headless smoke test.
+The image above is an actual 320 × 240 camera capture from the original headless smoke test.
+
+![Wheeled humanoid rendered in Gazebo](assets/wheeled-humanoid.png)
+
+The default robot has a rounded white shell, dark visor, cyan indicators and tucked
+arms on a differential-drive base. It is about 1.25 m tall and stays within the
+0.48 × 0.46 m navigation footprint. Its arms and head are fixed; manipulation is
+not implemented. RGB-D remains at 0.53 m and lidar at 0.38 m, with the same wheel
+radius, wheel spacing, topics and optical frames. The upper body has mass and a
+conservative collision volume. The authored mesh is bundled and can be regenerated
+with `python3 simulation/scripts/make_robot_mesh.py`; no external robot assets are needed.
+The simulation gives RGB-D callbacks up to one wall-clock second to pair under
+software rendering (`rgbd_wait_s`); the 80 ms capture-time skew limit remains unchanged.
+
+The [humanoid validation report](simulation-humanoid-validation.json) records the
+2026-09-16 sensor and live navigation checks. From 5.71 m away from the remembered
+printer, the command `go to the printer` selected an object approach from visual
+memory. The robot drove 3.98 m, verified the printer on arrival and updated the same
+object from revision 2 to 3. This used a published text command and hosted models;
+microphone input and arm motion were not tested.
 
 The navigation map is generated from static collision geometry at lidar height.
 AMCL receives an initial pose estimate with covariance, then computes localization

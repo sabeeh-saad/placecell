@@ -21,7 +21,10 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     root = Path(__file__).resolve().parents[1]
-    description = xacro.process_file(str(root / "models/robot/robot.urdf.xacro")).toxml()
+    description = xacro.process_file(
+        str(root / "models/robot/robot.urdf.xacro"),
+        mappings={"mesh_root": (root / "models/robot/meshes").as_uri()},
+    ).toxml()
     clock = {"use_sim_time": True}
     server = ExecuteProcess(
         cmd=["xvfb-run", "-a", "gz", "sim", "-s", "-r", "-v", "3", str(root / "worlds/office.sdf")],
