@@ -126,6 +126,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--navigation-only", action="store_true", help="Test real AMCL/Nav2 without any model calls")
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--record-video", action="store_true", help="Record camera and telemetry to walkthrough.avi")
     options = parser.parse_args()
     if not options.navigation_only and not os.environ.get("OPENROUTER_API_KEY"):
         parser.error("live mode requires OPENROUTER_API_KEY; it never substitutes mocked perception")
@@ -133,14 +134,22 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     report = {"mode": "navigation" if options.navigation_only else "live_pipeline", "passed": False}
     process = None
+    video = None
     rclpy.init()
     probe = PipelineProbe()
     log = (output / "placecell.log").open("w")
     try:
         probe.wait(probe.ready, 120)
         report["localization_ready"] = True
+        if options.record_video:
+            from video_recorder import VideoRecorder
+
+            video = VideoRecorder(output, probe, options.navigation_only)
+            video.phase = "1 / Drive to the observation viewpoint"
         report["observation_pose"] = probe.navigate(1.0, 0.0)
         if not options.navigation_only:
+            if video:
+                video.phase = "2 / Observe and store the printer"
             root = Path(__file__).resolve().parents[1]
             config = yaml.safe_load((root / "config/placecell.yaml").read_text())
             params = config["placecell"]["ros__parameters"]
@@ -173,12 +182,20 @@ def main():
 
             probe.wait(stored_printer, 180)
             report["before"] = snapshot(database)
+            if video:
+                video.memory = (
+                    f"Stored {len(report['before']['memories'])} scene memories; printer localized from depth"
+                )
             print("Stored printer from live images with depth coordinates", flush=True)  # noqa: T201
         # Face away: the command must recall a previous view, not a freshly seen printer here.
+        if video:
+            video.phase = "3 / Move away and turn away from the printer"
         report["departure_pose"] = probe.navigate(-1.0, 0.3, math.pi)
         if not options.navigation_only:
             probe.wait(lambda: probe.command.get_subscription_count() > 0, 20)
             distance_before = probe.distance
+            if video:
+                video.phase = '4 / Command: "go to the printer"'
             probe.command.publish(String(data="go to the printer"))
             terminal = {
                 "succeeded",
@@ -211,8 +228,18 @@ def main():
             )
             report["after"] = snapshot(database)
             report["memory_updated_after_command"] = True
+            if video:
+                video.phase = "5 / Arrival verified; object memory updated"
+                before = next((o for o in report["before"]["objects"] if o["id"] == object_id), None)
+                after = next(o for o in report["after"]["objects"] if o["id"] == object_id)
+                revision = f"{before['revision']} -> {after['revision']}" if before else str(after["revision"])
+                video.memory = (
+                    f"Arrival verified; printer revision {revision}; {len(report['after']['memories'])} scene memories"
+                )
             report["arrival_pose"] = {"x": probe.pose().x, "y": probe.pose().y}
             previous_statuses, stopped_at = len(probe.statuses), probe.distance
+            if video:
+                video.phase = '6 / Unknown destination: "purple helicopter"'
             probe.command.publish(String(data="go to the purple helicopter"))
             probe.wait(lambda: len(probe.statuses) > previous_statuses and probe.statuses[-1]["state"] in terminal, 120)
             report["unknown_destination"] = probe.statuses[-1]
@@ -225,6 +252,12 @@ def main():
         report["error"] = str(error)
         raise
     finally:
+        if video:
+            try:
+                video.close(report["passed"])
+            except Exception as error:
+                # A recording failure must not leave the model process or a goal running.
+                report["video_error"] = str(error)
         if probe.current_goal is not None:
             canceled = probe.current_goal.cancel_goal_async()
             with suppress(RuntimeError):

@@ -57,6 +57,21 @@ RGB-D recording, retained keyframes and database. Failed runs save their evidenc
 and exit nonzero. The test stops its Placecell process, so it does not keep making
 API calls afterward. The Gazebo environment remains available until `simulation/sim stop`.
 
+Add `--record-video` to either `check-nav` or `check-pipeline` to save a silent
+`walkthrough.avi` in that run's artifact directory. It combines actual RGB camera
+frames with the localized robot pose, travelled path, test phase and navigation
+status. A `video_frames.jsonl` file records timestamps and telemetry for captured frames.
+The video plays at five frames per simulation second, with a three-second final
+still; it is not a wall-clock screen capture. The navigation-only recording is
+explicitly labelled as having no model calls. No additional models are downloaded.
+
+For browser-compatible H.264 output, convert the saved recording with host FFmpeg:
+
+```bash
+ffmpeg -i /path/to/run/walkthrough.avi -c:v libx264 -crf 20 \
+  -pix_fmt yuv420p -movflags +faststart /path/to/run/walkthrough.mp4
+```
+
 The command is text at the speech-transcript boundary; microphone capture and speech
 recognition are not exercised. This is a bounded office integration test, not a
 long-duration reliability or real-robot validation. The similarity threshold in
