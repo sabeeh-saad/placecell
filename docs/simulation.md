@@ -29,6 +29,11 @@ memory. The robot drove 3.98 m, verified the printer on arrival and updated the 
 object from revision 2 to 3. This used a published text command and hosted models;
 microphone input and arm motion were not tested.
 
+[Watch the 49-second humanoid navigation recording](assets/wheeled_humanoid_printer.mp4).
+The video shows the published command, the Gazebo overview, the robot's camera,
+navigation status and the memory update. Playback uses simulation time; learning
+the printer and driving to the departure position happen before recording begins.
+
 The navigation map is generated from static collision geometry at lidar height.
 AMCL receives an initial pose estimate with covariance, then computes localization
 from actual simulated scans and odometry. The simulator requests fresh AMCL laser

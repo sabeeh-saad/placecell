@@ -165,6 +165,11 @@ For a robot-free 3D environment, see the [Gazebo office guide](docs/simulation.m
 It includes a wheeled humanoid, Docker launch, keyboard driving, RGB-D and lidar, AMCL/Nav2 route checks,
 and a live camera-to-memory-to-navigation test using hosted Gemini models.
 
+[Watch the 49-second Gazebo demo](docs/assets/wheeled_humanoid_printer.mp4):
+`go to the printer` retrieves the destination from visual memory, drives the wheeled
+humanoid 3.98 m, verifies arrival and updates the printer memory. The demo uses a
+published text command; microphone input and arm motion are not included.
+
 ```python
 from placecell import CollectionInfo, Curator, Ingester, InMemoryStore, Recall
 from placecell.providers import HashingEmbedder
