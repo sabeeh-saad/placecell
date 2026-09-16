@@ -28,6 +28,10 @@ jobs:
         run: simulation/sim start
       - name: Validate sensors, movement and command timeout
         run: simulation/sim check
+      - name: Start a fresh world with AMCL and Nav2
+        run: simulation/sim start-nav
+      - name: Validate localization and planned navigation
+        run: simulation/sim check-nav
       - name: Collect simulator logs
         if: always()
         run: |

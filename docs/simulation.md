@@ -1,19 +1,83 @@
 # Gazebo office environment
 
-This first simulation milestone runs an office world and a differential-drive robot
-with rendered RGB-D, lidar, wheel odometry and TF. Drive it from the keyboard or run
-the automated smoke test. No physical robot, API key or embedding-model download is
-required. All world geometry is bundled in the repository.
+The office world includes a differential-drive robot with rendered RGB-D, lidar,
+wheel odometry and TF. Run sensor checks, AMCL/Nav2 navigation, or the live
+camera → memory → semantic command → Nav2 → visual arrival test. No physical robot
+is required. Sensor and navigation checks need no API key; the complete perception
+test uses hosted models. All world geometry is bundled; no CLIP weights are downloaded.
 
 ![RGB camera view of the printer and desk in the bundled Gazebo office](assets/gazebo-camera.png)
 
 The image above is an actual 320 × 240 camera capture from the headless smoke test.
 
-This environment currently validates the robot and sensor interface. Mapping,
-localization, Nav2 goals and Placecell memory ingestion are subsequent milestones.
-It does not yet navigate to objects from spoken commands. In particular, it does not
-publish a fabricated `map` transform or localization confidence to bypass Placecell's
-navigation checks.
+The navigation map is generated from static collision geometry at lidar height.
+AMCL receives an initial pose estimate with covariance, then computes localization
+from actual simulated scans and odometry. The simulator requests fresh AMCL laser
+updates while stationary; it never replaces localization with ground-truth TF or
+restamps old covariance. Perception receives pixels, not simulator object labels.
+
+## Test the complete pipeline
+
+```bash
+./simulation/sim build
+./simulation/sim start-nav
+./simulation/sim check-nav
+```
+
+This checks the production localization gate and sends real Nav2 action goals,
+including translation and rotation. It uses the planner, controller, costmaps,
+velocity smoother and collision monitor. Use a fresh world for each independent run.
+
+For the live model test, provide `OPENROUTER_API_KEY` in your shell without committing
+it to a file. The launcher forwards it only to the test process:
+
+```bash
+read -rs -p 'OpenRouter API key: ' OPENROUTER_API_KEY; echo
+export OPENROUTER_API_KEY
+./simulation/sim start-nav
+./simulation/sim check-pipeline
+unset OPENROUTER_API_KEY
+```
+
+The test uses `google/gemini-embedding-2` for image/text vectors and
+`google/gemini-2.5-flash` for captions, detection and verification. These are paid API
+calls. It starts a fresh Placecell database and:
+
+1. Drives to a viewpoint and waits for a visually detected printer with trustworthy
+   RGB-D coordinates in durable memory.
+2. Drives away and faces the other room, so the printer is out of view.
+3. Publishes `go to the printer` to `/placecell/command`.
+4. Requires retrieval, visual destination verification, a real Nav2 trip of at least
+   one metre, and a fresh object identity match after arrival.
+5. Requires a new sighting of that same object after arrival, then checks that an
+   unknown destination is rejected without movement.
+
+Every run produces a `simulation/artifacts/check-pipeline-*/report.json`, node log,
+RGB-D recording, retained keyframes and database. Failed runs save their evidence
+and exit nonzero. The test stops its Placecell process, so it does not keep making
+API calls afterward. The Gazebo environment remains available until `simulation/sim stop`.
+
+The command is text at the speech-transcript boundary; microphone capture and speech
+recognition are not exercised. This is a bounded office integration test, not a
+long-duration reliability or real-robot validation. The similarity threshold in
+`simulation/config/placecell.yaml` is calibrated on this scene's crops and needs
+evaluation on different recordings. Moving-object and local-search scenarios need
+separate runs. Do not drive with the keyboard while an automated check is active.
+
+### Recorded result: 16 September 2026
+
+The live office test passed using the models above. The semantic command produced a
+1.95 m Nav2 trip to a collision-checked object approach; fresh appearance and geometry
+matched the saved printer. Its identity stayed the same while its revision advanced
+from 1 to 4. Five scene memories, each with image and caption vectors, survived a
+database reopen. The unknown destination returned `not_found` with 0 m movement.
+The [machine-readable result](simulation-validation.json) records the checks and limits.
+
+The run also exposed and fixed TF callback starvation, RGB-D delivery ordering,
+crop-only verification losing scene context, and identity duplication when a detector
+changed its label. The automated suite passed 660 tests with 95.20% coverage. A
+non-fatal ROS `Destroyable` warning remains during shutdown; the test exited successfully
+and the persisted database was reopened and checked afterward.
 
 ## Start on Linux with Docker
 
@@ -37,7 +101,7 @@ The smoke test **moves the simulated robot** a short distance and turns it. Run 
 a freshly started world with no concurrent keyboard controller. It checks:
 
 - An advancing simulation clock and wheel odometry.
-- Nonblank 320 × 240 RGB and aligned floating-point depth from one RGB-D sensor.
+- Nonblank 640 × 480 RGB and aligned floating-point depth from one RGB-D sensor.
 - Matching capture stamps, optical frame and valid CameraInfo through Placecell's
   actual `aligned_snapshot` validator.
 - A 360-sample laser scan and the sensor TF chain, including the optical-axis rotation.
@@ -79,13 +143,15 @@ to stop. The keyboard publisher sends a command for each key event; hold a key t
 your terminal's key repeat. An independent watchdog stops after 0.5 seconds without
 a command and limits forward speed to 0.35 m/s and turning to 0.8 rad/s. Its
 timer uses wall time, including while Gazebo is paused. This is manual driving: lidar
-is published, but there is no autonomous obstacle avoidance in this milestone.
+is published, but keyboard commands go directly to the bounded command guard. Autonomous
+Nav2 commands use Nav2's collision monitor before reaching that same guard.
 
 ## World and interfaces
 
 The office is 10 × 8 m with an open passage, a printer on a desk, a workstation, chair
 and bookshelf. The robot starts at the origin facing the printer. The objects use
-simple authored geometry; recognition accuracy with a vision model has not been measured.
+simple authored geometry. The recorded printer trip exercises recognition in this scene;
+it is not an accuracy benchmark across environments.
 Object model names are never supplied to perception as detection results.
 
 ROS topics inside the container are:
@@ -132,12 +198,15 @@ Gazebo spawning and `robot_state_publisher`. Edit these files, rebuild and resta
 ./simulation/sim check
 ```
 
-The `simulation` GitHub workflow runs the same headless checks when simulator files or
-the depth interface change, and supports manual runs. It uploads the camera image,
-report and simulator logs for inspection. Python tests still run separately in the
+The `simulation` GitHub workflow runs the sensor checks and a fresh AMCL/Nav2 route
+when simulator files or the depth interface change, and supports manual runs. It
+uploads camera images, reports and simulator logs for inspection. Hosted-provider
+tests are opt-in and are not run by pull requests. Python tests still run separately in the
 existing CI workflow. Container dependency versions can change when rebuilding against
 updated package repositories; retain the tested image digest for an exact deployment.
 
-The next milestone adds a saved map, AMCL and Nav2. Then Placecell can ingest simulated
-observations under checked map localization, resolve object requests, and test arrival
-and changing-world scenarios using this same environment.
+Navigation parameters are in `simulation/config/nav2.yaml`; they override the installed
+Jazzy defaults. AMCL noise and Nav2 stopping tolerances are chosen for this simulation,
+not physical hardware. `simulation/config/placecell.yaml` configures the live providers,
+bounded sampling and checked object approaches. For a desktop view with navigation,
+run `SIM_NAVIGATION=true ./simulation/sim gui` instead of `start-nav`.

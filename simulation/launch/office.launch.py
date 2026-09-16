@@ -4,10 +4,17 @@ from pathlib import Path
 
 import xacro
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, EmitEvent, ExecuteProcess, RegisterEventHandler
+from launch.actions import (
+    DeclareLaunchArgument,
+    EmitEvent,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    RegisterEventHandler,
+)
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -49,6 +56,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("gui", default_value="false", description="Open the Gazebo desktop GUI"),
+            DeclareLaunchArgument("navigation", default_value="false", description="Start AMCL and Nav2"),
             RegisterEventHandler(OnProcessExit(target_action=spawn, on_exit=spawn_finished)),
             *[
                 RegisterEventHandler(
@@ -64,6 +72,10 @@ def generate_launch_description():
             state,
             guard,
             spawn,
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(str(root / "launch/navigation.launch.py")),
+                condition=IfCondition(LaunchConfiguration("navigation")),
+            ),
             ExecuteProcess(cmd=["gz", "sim", "-g"], condition=IfCondition(LaunchConfiguration("gui")), output="screen"),
         ]
     )

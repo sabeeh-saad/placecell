@@ -12,9 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 2000 simulator && useradd --uid 2000 --gid 2000 --create-home simulator
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ros-jazzy-navigation2 ros-jazzy-nav2-bringup python3-venv python3-opencv \
+    && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv --system-site-packages /opt/placecell-venv \
+    && /opt/placecell-venv/bin/pip install --no-cache-dir 'lancedb==0.38.0' 'pyarrow==21.0.0'
 COPY --chown=simulator:simulator simulation /opt/placecell-sim
 COPY --chown=simulator:simulator src/placecell /opt/placecell-src/placecell
 ENV PYTHONPATH=/opt/placecell-src \
+    PATH=/opt/placecell-venv/bin:$PATH \
     ROS_DOMAIN_ID=77 \
     ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST \
     GZ_PARTITION=placecell-office \

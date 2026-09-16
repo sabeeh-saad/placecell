@@ -7,4 +7,4 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
       - ${SIM_XAUTHORITY:?Use simulation/sim gui}:/tmp/simulation.xauthority:ro
-    command: ["ros2", "launch", "/opt/placecell-sim/launch/office.launch.py", "gui:=true"]
+    command: ["ros2", "launch", "/opt/placecell-sim/launch/office.launch.py", "gui:=true", 'navigation:=${SIM_NAVIGATION:-false}']

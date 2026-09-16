@@ -1,0 +1,38 @@
+placecell:
+  ros__parameters:
+    use_sim_time: true
+    robot_id: office_robot
+    camera_id: front
+    map_id: office-v1
+    base_frame: base_footprint
+    localization_required: true
+    embed_backend: openrouter
+    embed_model: google/gemini-embedding-2
+    embed_dimension: 768
+    embed_api_key_env: OPENROUTER_API_KEY
+    api_key_env: OPENROUTER_API_KEY
+    caption_base_url: https://openrouter.ai/api/v1
+    caption_model: google/gemini-2.5-flash
+    object_backend: chat
+    object_base_url: https://openrouter.ai/api/v1
+    object_api_key_env: OPENROUTER_API_KEY
+    object_model: google/gemini-2.5-flash
+    objects_enabled: true
+    approach_enabled: true
+    approach_clearance_m: 0.8
+    navigation_enabled: true
+    # Calibrated on this office's printer/table/chair/monitor crops; re-evaluate for other scenes.
+    navigation_min_similarity: 0.75
+    # Cloud calls take wall time; the simulator continues publishing throughout.
+    navigation_lookup_timeout_s: 90.0
+    navigation_arrival_timeout_s: 90.0
+    verification_request_timeout_s: 30.0
+    object_arrival_request_timeout_s: 30.0
+    min_interval_s: 8.0
+    max_interval_s: 20.0
+    min_travel_m: 0.5
+    object_min_interval_s: 8.0
+    max_queue: 4
+    batch_size: 1
+    refine_interval_s: 0.0
+    curator_interval_s: 0.0

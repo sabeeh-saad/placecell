@@ -105,7 +105,7 @@ def main():
             )
         )
         rgb, depth, info, transform = probe.pair()
-        assert (rgb.width, rgb.height) == (depth.width, depth.height) == (320, 240)
+        assert (rgb.width, rgb.height) == (depth.width, depth.height) == (640, 480)
         assert rgb.encoding == "rgb8" and rgb.header.frame_id == "camera_optical_frame"
         assert depth.encoding == "32FC1"
         snapshot = aligned_snapshot(depth, info, transform, rgb_stamp=stamp(rgb), rgb_frame=rgb.header.frame_id)

@@ -1,0 +1,37 @@
+{
+  "date_utc": "2026-09-16",
+  "mode": "live_pipeline",
+  "passed": true,
+  "platform": "Ubuntu 24.04, ROS 2 Jazzy, Gazebo Harmonic, software rendering",
+  "embedding_model": "google/gemini-embedding-2",
+  "vision_model": "google/gemini-2.5-flash",
+  "command": "go to the printer",
+  "goal_kind": "object_approach",
+  "semantic_trip_distance_m": 1.9475971529209177,
+  "total_distance_m": 4.795209130606949,
+  "arrival_state": "succeeded",
+  "object_result": "matched",
+  "same_object_id_before_and_after": true,
+  "printer_revision_before": 1,
+  "printer_revision_after": 4,
+  "printer_last_seen_before_sim_s": 16.8,
+  "printer_last_seen_after_sim_s": 65.4,
+  "memory_count_before": 1,
+  "memory_count_after": 5,
+  "unknown_command": "go to the purple helicopter",
+  "unknown_state": "not_found",
+  "unknown_distance_m": 0.0,
+  "database_reopened_after_shutdown": true,
+  "persisted_image_vectors": 5,
+  "persisted_caption_vectors": 5,
+  "regressions": {
+    "passed": 660,
+    "coverage_percent": 95.2
+  },
+  "limits": [
+    "Text command; microphone and speech recognition not tested.",
+    "One office trip; no long-duration or hardware validation.",
+    "Moved objects and bounded local search were not exercised.",
+    "A non-fatal ROS Destroyable warning was observed during shutdown."
+  ]
+}

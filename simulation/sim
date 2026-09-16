@@ -8,6 +8,7 @@ if (($#)); then shift; fi
 case "$command" in
   build) "${compose[@]}" build "$@" ;;
   start) "${compose[@]}" up -d "$@" ;;
+  start-nav) SIM_NAVIGATION=true "${compose[@]}" up -d --force-recreate "$@" ;;
   stop) "${compose[@]}" down ;;
   logs) "${compose[@]}" logs --tail 100 -f ;;
   shell) "${compose[@]}" exec simulator "${inside[@]}" bash ;;
@@ -19,6 +20,27 @@ case "$command" in
     "${compose[@]}" exec -T simulator "${inside[@]}" python3 /opt/placecell-sim/scripts/smoke_test.py "$@" --output /home/simulator/smoke
     mkdir -p "$sim_dir/artifacts"
     "${compose[@]}" cp simulator:/home/simulator/smoke/. "$sim_dir/artifacts/"
+    ;;
+  check-nav|check-pipeline)
+    run_name="${command}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    extra=()
+    environment=()
+    if [[ "$command" == check-nav ]]; then
+      extra+=(--navigation-only)
+    else
+      if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+        echo 'Set OPENROUTER_API_KEY in your shell before the live test. No local model is downloaded.' >&2
+        exit 1
+      fi
+      environment+=(-e OPENROUTER_API_KEY)
+    fi
+    result=0
+    "${compose[@]}" exec -T "${environment[@]}" simulator "${inside[@]}" python3 \
+      /opt/placecell-sim/scripts/pipeline_test.py --output "/home/simulator/$run_name" "${extra[@]}" "$@" || result=$?
+    mkdir -p "$sim_dir/artifacts/$run_name"
+    "${compose[@]}" cp "simulator:/home/simulator/$run_name/." "$sim_dir/artifacts/$run_name/"
+    echo "Test artifacts: $sim_dir/artifacts/$run_name"
+    exit "$result"
     ;;
   gui)
     if [[ -z "${DISPLAY:-}" ]] || ! command -v xauth >/dev/null; then
@@ -38,7 +60,7 @@ case "$command" in
     "${compose[@]}" -f "$sim_dir/compose.gui.yaml" up --force-recreate
     ;;
   *)
-    echo 'Usage: simulation/sim {build|start|gui|teleop|check|logs|shell|stop}'
+    echo 'Usage: simulation/sim {build|start|start-nav|gui|teleop|check|check-nav|check-pipeline|logs|shell|stop}'
     echo 'check moves the simulated robot; check --sensors-only only inspects sensor data.'
     ;;
 esac

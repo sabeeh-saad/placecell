@@ -6,6 +6,7 @@ services:
       context: ..
       dockerfile: simulation/Dockerfile
     init: true
+    command: [ros2, launch, /opt/placecell-sim/launch/office.launch.py, 'navigation:=${SIM_NAVIGATION:-false}']
     shm_size: 512m
     stop_grace_period: 20s
     environment:

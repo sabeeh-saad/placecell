@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add AMCL/Nav2 office navigation and a live camera-to-memory-to-navigation test with saved RGB-D recordings and failure reports.
+- Support Gemini image/text embeddings and structured object detection through OpenRouter.
+- Let TF update while image callbacks wait, synchronize RGB-D arrivals, and allow brief transform delivery skew for footprints.
+- Verify selected object crops with their original scene context; reject truncated verification replies.
+- Preserve an object's identity across detector label changes only after strong visual, geometric and paired-image agreement; keep its established category searchable.
+- Account for compact objects' surface relief in depth estimates while preserving uncertainty and discontinuity checks.
+- Require LanceDB 0.38 or later for the scalar-index API used by durable memory.
 - Add a bundled Gazebo office and RGB-D/lidar robot with Docker launch, keyboard driving, a velocity watchdog and live sensor/motion checks.
 - Use inspectable RGB-D subscription callbacks for compatibility with ROS 2 Jazzy's callback validation.
 
