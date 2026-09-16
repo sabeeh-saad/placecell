@@ -9,6 +9,8 @@ Optional [RGB-D object memory](docs/objects.md) also estimates object surface lo
 tracks identities and changes, and retains cropped views. Navigation uses the robot's
 recorded observation pose or an optional [checked approach pose](docs/approach.md) near
 a localized object.
+At arrival, [object verification](docs/object-arrival.md) compares saved crops with fresh
+RGB-D observations. An optional bounded search can try nearby checked viewpoints after a miss.
 
 With Nav2 enabled, spoken commands such as **"robot go to the printer"** can resolve a
 destination from a named place or visual memory and start a navigation goal. Camera
@@ -34,8 +36,9 @@ not have:
 ![Placecell architecture: camera observations become visual memory; spoken commands retrieve and verify a destination before Nav2 navigation, while new observations continue updating memory.](docs/assets/architecture.svg)
 
 The diagram shows memory-based navigation. Named places and explicit coordinates can
-also supply a goal. Arrival checks confirm that the requested destination is visible;
-they do not yet prove a physical object identity match.
+also supply a goal. Arrival checks inspect the requested destination; object goals also
+compare saved and live views with geometry. Visually indistinguishable instances remain
+uncertain. Nearby viewpoint search is opt-in.
 Download the diagram as [SVG](docs/assets/architecture.svg) or [PNG](docs/assets/architecture.png).
 
 1. **Memory building** runs while the robot drives in a known map. A segmenter keeps one

@@ -77,8 +77,9 @@ before they can produce an approach pose.
 
 Navigation status includes `object_id` and `goal_kind: "object_approach"` for these goals.
 After Nav2 reports arrival, the fresh-image check must come from the new stopping pose.
-It checks whether the requested destination is visible; it does not yet prove a physical
-instance match against the stored crop.
+It compares the selected object's saved crops with fresh detections, geometry and a
+paired-image check, then verifies the original request. Optional [nearby viewpoint
+search](object-arrival.md) reuses this planner with tighter distance and time limits.
 
 ## Library use and validation
 

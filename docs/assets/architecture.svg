@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1160" height="890" viewBox="0 0 1160 890" role="img" aria-labelledby="title description">
   <title id="title">Placecell: visual memory and robot navigation</title>
-  <desc id="description">Camera frames, capture times and localized robot poses are sampled, queued, described and embedded into visual memory. Optional RGB-D object tracking adds crops, identities and estimated object locations. A spoken or text movement command retrieves and visually verifies candidates, then selects a recorded viewpoint or an optional checked object approach. Nav2 navigates and a fresh image verifies the visible destination. Observations continue during navigation and revisits, updating memory. Refinement and retention maintain stored evidence. Object tracking and approach planning are optional.</desc>
+  <desc id="description">Camera frames, capture times and localized robot poses are sampled, queued, described and embedded into visual memory. Optional RGB-D object tracking adds crops, identities and estimated object locations. A spoken or text movement command retrieves and visually verifies candidates, then selects a recorded viewpoint or an optional checked object approach. Nav2 navigates and a fresh image verifies the visible destination. Object arrival compares saved and live views with geometry; optional bounded search tries nearby checked viewpoints after a miss. Observations continue during navigation and revisits, updating memory. Refinement and retention maintain stored evidence.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 Z" fill="#6366f1"/>
@@ -117,7 +117,8 @@
   <text class="heading green-text" x="902" y="520">Nav2 + arrival</text>
   <text class="body" x="902" y="556">Navigate / cancel</text>
   <text class="body" x="902" y="580">Capture a fresh view</text>
-  <text class="body" x="902" y="604">Verify the destination</text>
+  <text class="body" x="902" y="604">Compare object views*</text>
+  <text class="body" x="902" y="628">Nearby search*</text>
   <path d="M 902 646 H 1098" stroke="#6ee7b7"/>
   <text class="tag green-text" x="902" y="677">REPORT THE OUTCOME</text>
 
@@ -129,5 +130,5 @@
   <text class="section amber-text" x="44" y="809">MEMORY MAINTENANCE</text>
   <text class="body" x="265" y="809">Revisit reinforcement · Evidence rechecks · Decay &amp; retention</text>
   <text class="small" x="44" y="842">Storage: local image files + SQLite state; optional LanceDB index for scene retrieval.</text>
-  <text class="small" x="44" y="866">* Optional object tracking and approach planning. Approaches check the costmap, footprint and Nav2 path.</text>
+  <text class="small" x="44" y="866">* Object tracking, approach planning and nearby search are optional. Paths are checked before dispatch.</text>
 </svg>

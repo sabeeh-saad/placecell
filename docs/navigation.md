@@ -29,7 +29,9 @@ collection and evaluation of similarity thresholds on your recordings.
 
 Optional [object memory](objects.md) adds instance-level retrieval and RGB-D change tracking.
 It retains distinct object choices even when they share an observation pose. Object goals
-use the latest recorded robot viewpoint and retain the same arrival verification flow.
+use the latest recorded robot viewpoint or a checked approach pose. Their
+[arrival check](object-arrival.md) compares the selected object's saved views with fresh
+RGB-D evidence. Optional nearby viewpoint search can try another checked pose after a miss.
 
 ## Robot prerequisites
 
@@ -151,6 +153,12 @@ arrival deadline is 30 seconds. Stop also cancels pending verification, and late
 cannot complete a canceled trip. Verification does not increase memory confidence or
 sighting counts. Camera ingestion still updates memories from the actual observation.
 Named places and coordinate goals report Nav2's result without claiming visual identity.
+
+Object goals additionally require a match against the saved object reference. Ambiguous
+identity produces `destination_ambiguous`. With `object_search_enabled`, a clear absence
+or an unobserved target can enter `planning_search` and `searching` before another arrival
+check. Status includes `object_result` and `search_attempt`; search is disabled by default.
+See [object arrival and search](object-arrival.md) for thresholds, limits and setup.
 
 Schema 5 records retained-image capture time and localization provenance. Earlier memories
 remain searchable for questions but cannot become navigation goals until a new checked

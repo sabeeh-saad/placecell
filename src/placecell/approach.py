@@ -152,12 +152,34 @@ class ApproachPolicy:
 
 
 @dataclass(frozen=True)
+class ViewpointRegion:
+    """Bound every leg of a local search to the original arrival area."""
+
+    center: Pose
+    radius_m: float = 1.5
+    visited: tuple[Pose, ...] = ()
+    separation_m: float = 0.35
+    max_path_m: float = 4.0
+
+    def __post_init__(self) -> None:
+        if any(not math.isfinite(v) or v <= 0 for v in (self.radius_m, self.separation_m, self.max_path_m)):
+            raise ValidationError("search region limits must be finite and positive")
+
+    def contains(self, pose: Pose) -> bool:
+        return pose.same_frame(self.center) and pose.distance_to(self.center) <= self.radius_m
+
+    def candidate(self, pose: Pose) -> bool:
+        return self.contains(pose) and all(pose.distance_to(previous) >= self.separation_m for previous in self.visited)
+
+
+@dataclass(frozen=True)
 class ApproachPlan:
     object: ObjectRecord
     viewpoint: Pose
     pose: Pose
     path: tuple[Pose, ...]
     planned_at: float
+    region: ViewpointRegion | None = None
 
 
 class ApproachPlanner:
@@ -188,7 +210,12 @@ class ApproachPlanner:
         return snapshot
 
     def plan(
-        self, record: ObjectRecord, view: ObjectView, canceled: Callable[[], bool] = lambda: False
+        self,
+        record: ObjectRecord,
+        view: ObjectView,
+        canceled: Callable[[], bool] = lambda: False,
+        *,
+        region: ViewpointRegion | None = None,
     ) -> ApproachPlan | None:
         p, position = self.policy, record.position
         if record.status != "present" or record.misses or not view.memory.localization_checked:
@@ -224,7 +251,7 @@ class ApproachPlanner:
                 record.frame_id,
                 record.map_id,
             )
-            if snapshot.costmap.free(goal, snapshot.footprint_radius_m):
+            if (region is None or region.candidate(goal)) and snapshot.costmap.free(goal, snapshot.footprint_radius_m):
                 candidates.append(goal)
         candidates.sort(key=lambda goal: goal.distance_to(snapshot.robot_pose))
         valid: list[tuple[float, ApproachPlan]] = []
@@ -232,10 +259,10 @@ class ApproachPlanner:
             if canceled() or self.monotonic() >= deadline:
                 raise ValidationError("approach planning canceled or timed out")
             path = self.environment.path(snapshot.robot_pose, goal, deadline, canceled)
-            if path is None or not self._usable_path(path, snapshot, goal):
+            if path is None or not self._usable_path(path, snapshot, goal, region):
                 continue
             length = sum(a.distance_to(b) for a, b in pairwise(path))
-            valid.append((length, ApproachPlan(record, view.memory.pose, goal, path, self.clock())))
+            valid.append((length, ApproachPlan(record, view.memory.pose, goal, path, self.clock(), region)))
         if not valid:
             raise ValidationError("no collision-checked approach path is available")
         plan = min(valid, key=lambda item: item[0])[1]
@@ -243,7 +270,9 @@ class ApproachPlanner:
             raise ValidationError("approach became unavailable while planning")
         return plan
 
-    def _usable_path(self, path: tuple[Pose, ...], snapshot: PlanningSnapshot, goal: Pose) -> bool:
+    def _usable_path(
+        self, path: tuple[Pose, ...], snapshot: PlanningSnapshot, goal: Pose, region: ViewpointRegion | None = None
+    ) -> bool:
         p = self.policy
         if not path or len(path) > 4096 or any(not pose.same_frame(goal) for pose in path):
             return False
@@ -253,7 +282,10 @@ class ApproachPlanner:
         ):
             return False
         full_path = (snapshot.robot_pose, *path, goal)
-        if sum(a.distance_to(b) for a, b in pairwise(full_path)) > p.max_path_m:
+        limit = min(p.max_path_m, region.max_path_m) if region else p.max_path_m
+        if region and not all(region.contains(pose) for pose in full_path):
+            return False
+        if sum(a.distance_to(b) for a, b in pairwise(full_path)) > limit:
             return False
         return snapshot.costmap.path_free(full_path, snapshot.footprint_radius_m)
 
@@ -270,4 +302,4 @@ class ApproachPlanner:
         minimum = snapshot.footprint_radius_m + self.policy.clearance_m + position.radius_m + position.uncertainty_m
         if math.hypot(plan.pose.x - position.x, plan.pose.y - position.y) + 1e-6 < minimum:
             return False
-        return self._usable_path(plan.path, snapshot, plan.pose)
+        return self._usable_path(plan.path, snapshot, plan.pose, plan.region)

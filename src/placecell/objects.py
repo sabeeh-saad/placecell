@@ -121,7 +121,7 @@ class ObjectTracker:
             old_views = {r.id: journal.views(r.id, include_crops=False) for r in records}
             count = journal.count()
         by_id = {r.id: r for r in records}
-        fresh = self._views(observation)
+        fresh = self.detect_views(observation)
         positions = [
             observation.depth.locate(v.box) if observation.depth and observation.localization_checked else None
             for v in fresh
@@ -269,7 +269,8 @@ class ObjectTracker:
                 result[i] = identity
         return result
 
-    def _views(self, observation: Observation) -> list[ObjectView]:
+    def detect_views(self, observation: Observation) -> list[ObjectView]:
+        """Detect and embed crops without changing records, scan timestamps or sighting counts."""
         try:
             from PIL import Image
         except ImportError as e:  # pragma: no cover

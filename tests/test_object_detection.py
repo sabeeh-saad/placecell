@@ -95,3 +95,32 @@ def test_image_type_size_and_missing_file_fail_before_api(image):
     path.unlink()
     with pytest.raises(ProviderError, match="cannot read"):
         detector.detect(image)
+
+
+@pytest.mark.parametrize("verdict", ["matched", "not_matched", "uncertain"])
+def test_instance_comparison_sends_saved_crops_before_the_candidate(image, verdict):
+    import base64
+    from pathlib import Path
+
+    crop = Path(image.uri).read_bytes()
+    transport = FakeTransport([response({"result": verdict, "reason": "Visible marks compared."})])
+    detector = GeminiObjectDetector("vision-test", api_key="test", transport=transport)
+    assert detector.compare((crop, crop), crop).result == verdict
+    request = transport.requests[0]["payload"]
+    parts = request["contents"][0]["parts"]
+    assert len(parts) == 3 and base64.b64decode(parts[-1]["inlineData"]["data"]) == crop
+    assert "instance-specific" in request["systemInstruction"]["parts"][0]["text"]
+
+
+@pytest.mark.parametrize(
+    "value", [{"result": "yes", "reason": "x"}, {"result": "matched"}, {"result": "matched", "reason": ""}]
+)
+def test_bad_instance_comparison_fails_closed(image, value):
+    from pathlib import Path
+
+    crop = Path(image.uri).read_bytes()
+    detector = GeminiObjectDetector("vision-test", api_key="test", transport=FakeTransport([response(value)]))
+    with pytest.raises(ProviderError):
+        detector.compare((crop,), crop)
+    with pytest.raises(ValidationError):
+        detector.compare((), crop)

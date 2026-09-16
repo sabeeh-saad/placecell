@@ -16,6 +16,8 @@ from typing import Literal, Protocol
 from placecell.approach import ApproachPlan, ApproachPlanner
 from placecell.errors import ValidationError
 from placecell.memory import Memory, Pose
+from placecell.object_arrival import ObjectArrivalVerdict, ObjectArrivalVerifier, ObjectReference
+from placecell.object_search import ObjectSearch
 from placecell.objects import ObjectRecall
 from placecell.pipeline import Observation
 from placecell.providers.captioning import data_url
@@ -99,6 +101,7 @@ class Destination:
     object_id: str = ""
     object_revision: int = 0
     approach: ApproachPlan | None = field(default=None, repr=False, compare=False)
+    object_reference: ObjectReference | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +145,7 @@ class DestinationResolver:
         verifier: SceneVerifier | None = None,
         objects: ObjectRecall | None = None,
         approach: ApproachPlanner | None = None,
+        object_arrival: ObjectArrivalVerifier | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         if not robot_id:
@@ -156,9 +160,14 @@ class DestinationResolver:
         self._verifier = verifier
         self._objects = objects
         self._approach = approach
+        self._object_arrival = object_arrival
 
     def prepare_destination(self, destination: Destination, canceled: Callable[[], bool]) -> Destination:
-        if self._approach is None or not destination.object_id:
+        if not destination.object_id:
+            return destination
+        if self._object_arrival is not None:
+            destination = replace(destination, object_reference=self._object_arrival.capture(destination.object_id))
+        if self._approach is None:
             return destination
         record = self._store.objects.get(destination.object_id)
         views = self._store.objects.views(destination.object_id, include_crops=False, limit=1)
@@ -166,6 +175,31 @@ class DestinationResolver:
             raise ValidationError("object changed before approach planning")
         plan = self._approach.plan(record, views[0], canceled)
         return replace(destination, pose=plan.pose, approach=plan) if plan else destination
+
+    def arrival_available(self, destination: Destination) -> bool:
+        return bool(
+            self._object_arrival is not None
+            and destination.object_reference is not None
+            and destination.object_reference.record.id == destination.object_id
+            and self._object_arrival.available(destination.object_reference)
+            and destination.memory is not None
+            and self._recall.confidence(destination.memory) >= self._policy.min_confidence
+        )
+
+    def verify_object_arrival(
+        self, destination: Destination, observation: Observation, image: str, canceled: Callable[[], bool]
+    ) -> ObjectArrivalVerdict:
+        if not self.arrival_available(destination):
+            return ObjectArrivalVerdict("unavailable", "The selected object's saved reference is unavailable.")
+        assert self._object_arrival is not None and destination.object_reference is not None
+        verdict = self._object_arrival.verify_image(destination.object_reference, observation, image, canceled)
+        if verdict.result == "matched" and not canceled():
+            request_check = self.verify(destination.target, image)
+            if request_check.result != "matched":
+                return ObjectArrivalVerdict(
+                    "ambiguous" if request_check.result == "uncertain" else "unobserved", request_check.reason
+                )
+        return verdict
 
     def resolve(self, command: MovementCommand) -> Resolution:
         if command.kind != "go":
@@ -350,12 +384,6 @@ class NavigationEvent:
     distance_remaining: float | None = None
 
 
-class Navigator(Protocol):
-    def send(self, request_id: str, destination: Destination, callback: Callable[[NavigationEvent], None]) -> None: ...
-
-    def cancel(self, request_id: str) -> None: ...
-
-
 @dataclass(frozen=True, slots=True)
 class NavigationUpdate:
     request_id: str
@@ -364,6 +392,14 @@ class NavigationUpdate:
     destination: Destination | None = None
     choices: tuple[Destination, ...] = ()
     distance_remaining: float | None = None
+    object_result: str = ""
+    search_attempt: int = 0
+
+
+class Navigator(Protocol):
+    def send(self, request_id: str, destination: Destination, callback: Callable[[NavigationEvent], None]) -> None: ...
+
+    def cancel(self, request_id: str) -> None: ...
 
 
 class NavigationCommands:
@@ -381,6 +417,7 @@ class NavigationCommands:
         observation_clock: Callable[[], float] = time.time,
         localization_ready: Callable[[], bool] = lambda: True,
         arrival_timeout_s: float = 30.0,
+        search: ObjectSearch | None = None,
     ) -> None:
         if not math.isfinite(request_timeout_s) or request_timeout_s <= 0:
             raise ValidationError("command timeout must be finite and positive")
@@ -399,6 +436,12 @@ class NavigationCommands:
         self._observation_clock, self._localization_ready = observation_clock, localization_ready
         self._arrival_timeout = arrival_timeout_s
         self._arrival_after = self._arrival_deadline = 0.0
+        self._search = search
+        self._search_deadline: float | None = None
+        self._search_anchor: Pose | None = None
+        self._search_visited: tuple[Pose, ...] = ()
+        self._search_count = self._leg = 0
+        self._transport_id = ""
 
     @property
     def busy(self) -> bool:
@@ -443,6 +486,11 @@ class NavigationCommands:
             self._active, self._state, self._destination = request_id, "resolving", None
             self._requested_at = self._clock()
             self._canceling = False
+            self._search_deadline = None
+            self._search_anchor = None
+            self._search_visited = ()
+            self._search_count = self._leg = 0
+            self._transport_id = request_id
             self._publish(NavigationUpdate(request_id, "resolving", "Looking up the destination."))
             if not self._submit(lambda: self._resolve(request_id, command, chosen)):
                 self._active = None
@@ -507,15 +555,17 @@ class NavigationCommands:
                 self._publish(NavigationUpdate(request_id, result.state, result.message, choices=result.choices))
                 return
             self._destination, self._state = result.choices[0], "submitting"
+            self._search_anchor = self._destination.pose
+            self._search_visited = (self._destination.pose,)
             self._publish(NavigationUpdate(request_id, "submitting", result.message, self._destination))
             try:
-                self._navigator.send(request_id, self._destination, lambda e: self._event(request_id, e))
+                self._navigator.send(request_id, self._destination, lambda e: self._event(request_id, e, 0))
             except Exception as e:
                 self._event(request_id, NavigationEvent("uncertain", f"Navigation transport failed: {e}"))
 
-    def _event(self, request_id: str, event: NavigationEvent) -> None:
+    def _event(self, request_id: str, event: NavigationEvent, leg: int | None = None) -> None:
         with self._lock:
-            if request_id != self._active:
+            if request_id != self._active or (leg is not None and leg != self._leg):
                 return
             if self._state in {"awaiting_observation", "verifying_arrival"}:
                 return  # Late transport feedback cannot finish or restart visual verification.
@@ -528,12 +578,15 @@ class NavigationCommands:
                 self._state = "awaiting_observation"
                 self._arrival_after = self._observation_clock()
                 self._arrival_deadline = self._clock() + self._arrival_timeout
+                if self._search_deadline is not None:
+                    self._arrival_deadline = min(self._arrival_deadline, self._search_deadline)
                 self._publish(
                     NavigationUpdate(
                         request_id,
                         self._state,
                         "Reached the pose. Waiting for a fresh view of the destination.",
                         self._destination,
+                        search_attempt=self._search_count,
                     )
                 )
                 return
@@ -549,6 +602,7 @@ class NavigationCommands:
                     event.message,
                     self._destination,
                     distance_remaining=event.distance_remaining,
+                    search_attempt=self._search_count,
                 )
             )
 
@@ -580,35 +634,152 @@ class NavigationCommands:
         try:
             # Snapshot bytes before ingestion can replace and clean up this keyframe.
             image = data_url(observation.evidence.uri)
-            if not self._submit(lambda: self._verify_arrival(request_id, destination, image)):
+            if not self._submit(lambda: self._verify_arrival(request_id, destination, image, observation)):
                 raise ValidationError("the verification worker is busy")
         except Exception as e:
             self._finish_arrival(request_id, False, f"Could not inspect the arrival image: {e}")
 
-    def _verify_arrival(self, request_id: str, destination: Destination, image: str) -> None:
+    def _verify_arrival(self, request_id: str, destination: Destination, image: str, observation: Observation) -> None:
         with self._lock:
             if request_id != self._active or self._clock() >= self._arrival_deadline:
                 return
         try:
+            if destination.object_id:
+
+                def canceled() -> bool:
+                    with self._lock:
+                        return (
+                            request_id != self._active
+                            or self._state != "verifying_arrival"
+                            or self._clock() >= self._arrival_deadline
+                            or not self._localization_ready()
+                        )
+
+                object_verdict = self._resolver.verify_object_arrival(destination, observation, image, canceled)
+                if object_verdict.result in {"missing", "unobserved"} and self._search is not None and not canceled():
+                    self._search_next(request_id, destination, object_verdict)
+                    return
+                self._finish_arrival(
+                    request_id, object_verdict.result == "matched", object_verdict.reason, object_verdict.result
+                )
+                return
             verdict = self._resolver.verify(destination.target, image)
             matched, reason = verdict.result == "matched", verdict.reason
         except Exception as e:
             matched, reason = False, f"Visual verification failed: {e}"
-        self._finish_arrival(request_id, matched, reason)
+        self._finish_arrival(request_id, matched, reason, "unavailable" if destination.object_id else "")
 
-    def _finish_arrival(self, request_id: str, matched: bool, reason: str) -> None:
+    def _search_next(self, request_id: str, destination: Destination, verdict: ObjectArrivalVerdict) -> None:
+        assert self._search is not None
         with self._lock:
             if request_id != self._active:
                 return
-            matched = matched and self._localization_ready() and self._clock() < self._arrival_deadline
+            if (
+                self._state != "verifying_arrival"
+                or self._clock() >= self._arrival_deadline
+                or not self._localization_ready()
+            ):
+                self._finish_arrival(
+                    request_id, False, "Arrival verification expired or became unavailable.", "unavailable"
+                )
+                return
+            if self._search_deadline is None:
+                self._search_deadline = self._clock() + self._search.policy.timeout_s
+            if self._search_count >= self._search.policy.max_viewpoints:
+                self._finish_arrival(request_id, False, "Local search reached its viewpoint limit.", verdict.result)
+                return
+            self._state = "planning_search"
+            self._leg += 1
+            leg = self._leg
+            self._publish(
+                NavigationUpdate(
+                    request_id,
+                    self._state,
+                    "Checking another nearby viewpoint.",
+                    destination,
+                    object_result=verdict.result,
+                    search_attempt=self._search_count + 1,
+                )
+            )
+
+        def canceled() -> bool:
+            with self._lock:
+                return (
+                    request_id != self._active
+                    or self._state != "planning_search"
+                    or self._search_deadline is None
+                    or self._clock() >= self._search_deadline
+                    or not self._localization_ready()
+                )
+
+        try:
+            if not self._resolver.arrival_available(destination):
+                raise ValidationError("the selected object reference is unavailable")
+            assert destination.object_reference is not None and self._search_anchor is not None
+            plan = self._search.next_view(
+                destination.object_reference, self._search_anchor, self._search_visited, canceled
+            )
+            if not self._search.valid(plan, canceled) or not self._resolver.arrival_available(destination):
+                raise ValidationError("the search path or selected object changed")
+            goal = replace(destination, pose=plan.pose, approach=plan)
+        except Exception as e:
+            self._finish_arrival(request_id, False, f"Local search stopped: {e}", verdict.result)
+            return
+        with self._lock:
+            if canceled():
+                self._finish_arrival(request_id, False, "Local search canceled or expired.", verdict.result)
+                return
+            self._search_count += 1
+            self._search_visited += (goal.pose,)
+            self._destination, self._state = goal, "submitting"
+            self._transport_id = f"{request_id}/search/{self._search_count}"
+            self._publish(
+                NavigationUpdate(
+                    request_id,
+                    "searching",
+                    "Navigating to a checked local search viewpoint.",
+                    goal,
+                    object_result=verdict.result,
+                    search_attempt=self._search_count,
+                )
+            )
+            try:
+                self._navigator.send(self._transport_id, goal, lambda e: self._event(request_id, e, leg))
+            except Exception as e:
+                self._event(request_id, NavigationEvent("uncertain", f"Search transport failed: {e}"), leg)
+
+    def _finish_arrival(self, request_id: str, matched: bool, reason: str, object_result: str = "") -> None:
+        with self._lock:
+            if request_id != self._active:
+                return
+            if matched and (not self._localization_ready() or self._clock() >= self._arrival_deadline):
+                matched = False
+                reason = "Arrival verification expired or localization became unavailable."
+                if object_result:
+                    object_result = "unavailable"
+            if matched and self._destination is not None and self._destination.object_id:
+                matched = self._resolver.arrival_available(self._destination)
+                if not matched:
+                    object_result, reason = "unavailable", "The selected object reference became unavailable."
             self._active = None
             self._state = "succeeded" if matched else "destination_unverified"
+            if not matched and object_result == "ambiguous":
+                self._state = "destination_ambiguous"
             message = (
                 "Destination visible at the reached viewpoint. "
                 if matched
                 else "Reached the pose; destination unverified. "
             ) + reason
-            self._publish(NavigationUpdate(request_id, self._state, message, self._destination))
+            self._publish(
+                NavigationUpdate(
+                    request_id,
+                    self._state,
+                    message,
+                    self._destination,
+                    object_result=object_result,
+                    search_attempt=self._search_count,
+                )
+            )
 
     def poll(self) -> None:
         """Bound arrival waits and request cancellation if localization is lost during a trip."""
@@ -624,6 +795,15 @@ class NavigationCommands:
                 )
                 return
             ready = self._localization_ready()
+            if self._search_deadline is not None and self._clock() >= self._search_deadline:
+                if self._state in {"planning_search", "awaiting_observation", "verifying_arrival"}:
+                    self._finish_arrival(self._active, False, "Local search time limit reached.")
+                elif not self._canceling:
+                    self.cancel()
+                return
+            if self._state == "planning_search" and not ready:
+                self._finish_arrival(self._active, False, "Localization became unavailable during local search.")
+                return
             if self._state in {"awaiting_observation", "verifying_arrival"}:
                 if not ready or self._clock() >= self._arrival_deadline:
                     self._finish_arrival(
@@ -641,7 +821,7 @@ class NavigationCommands:
                 self._publish(NavigationUpdate("", "idle", "No navigation request is active."))
                 return
             request_id = self._active
-            if self._state in {"resolving", "awaiting_observation", "verifying_arrival"}:
+            if self._state in {"resolving", "planning_search", "awaiting_observation", "verifying_arrival"}:
                 self._active = None
                 self._publish(NavigationUpdate(request_id, "canceled", "Destination lookup or verification canceled."))
                 return
@@ -651,7 +831,7 @@ class NavigationCommands:
                 NavigationUpdate(request_id, "canceling", "Requesting cancellation from Nav2.", self._destination)
             )
             try:
-                self._navigator.cancel(request_id)
+                self._navigator.cancel(self._transport_id)
             except Exception as e:
                 self._event(request_id, NavigationEvent("uncertain", f"Cancellation could not be confirmed: {e}"))
 

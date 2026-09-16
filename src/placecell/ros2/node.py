@@ -36,6 +36,8 @@ from placecell.navigation import (
     NavigationUpdate,
     load_named_places,
 )
+from placecell.object_arrival import ObjectArrivalPolicy, ObjectArrivalVerifier
+from placecell.object_search import ObjectSearch, ObjectSearchPolicy
 from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
 from placecell.observer import Observer
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
@@ -150,7 +152,13 @@ def navigation_payload(update: NavigationUpdate) -> str:
             "source": destination.source,
             "memory_id": destination.memory.id if destination.memory else None,
             "object_id": destination.object_id,
-            "goal_kind": "object_approach" if destination.approach else "destination",
+            "goal_kind": (
+                "object_search"
+                if destination.approach and destination.approach.region
+                else "object_approach"
+                if destination.approach
+                else "destination"
+            ),
             "target": destination.target,
             "x": p.x,
             "y": p.y,
@@ -167,6 +175,8 @@ def navigation_payload(update: NavigationUpdate) -> str:
             "destination": describe(update.destination) if update.destination else None,
             "choices": [{"option": i, **describe(d)} for i, d in enumerate(update.choices, 1)],
             "distance_remaining": update.distance_remaining,
+            "object_result": update.object_result,
+            "search_attempt": update.search_attempt,
         }
     )
 
@@ -473,8 +483,32 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     if verification_model
                     else None
                 )
+                object_arrival = None
+                if tracker is not None:
+                    from placecell.providers._http import RetryPolicy
+
+                    arrival_detector = GeminiObjectDetector(
+                        p["object_arrival_model"] or p["object_model"],
+                        api_key=os.environ.get(p["object_api_key_env"], ""),
+                        base_url=p["object_base_url"],
+                        timeout_s=p["object_arrival_request_timeout_s"],
+                        retry=RetryPolicy(attempts=1),
+                    )
+                    object_arrival = ObjectArrivalVerifier(
+                        ObjectTracker(store, embedder, arrival_detector, self._object_policy),
+                        arrival_detector,
+                        ObjectArrivalPolicy(
+                            min_similarity=p["object_arrival_min_similarity"],
+                            moved_similarity=p["object_arrival_moved_similarity"],
+                            similarity_margin=p["object_arrival_similarity_margin"],
+                            max_uncertainty_m=p["object_arrival_max_uncertainty_m"],
+                            max_position_age_s=p["object_arrival_max_position_age_s"],
+                            max_move_m=p["object_arrival_max_move_m"],
+                        ),
+                        clock=self._memory_time,
+                    )
                 approach = None
-                if p["approach_enabled"]:
+                if p["approach_enabled"] or p["object_search_enabled"]:
                     from placecell.ros2.approach import create_planning_environment
 
                     if self._object_recall is None:
@@ -520,7 +554,8 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     places=places,
                     verifier=verifier,
                     objects=self._object_recall,
-                    approach=approach,
+                    approach=approach if p["approach_enabled"] else None,
+                    object_arrival=object_arrival,
                     policy=NavigationPolicy(
                         min_similarity=p["navigation_min_similarity"],
                         min_confidence=p["navigation_min_confidence"],
@@ -540,6 +575,17 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     observation_clock=self._memory_time,
                     localization_ready=self._localization.ready,
                     arrival_timeout_s=p["navigation_arrival_timeout_s"],
+                    search=ObjectSearch(
+                        approach,
+                        ObjectSearchPolicy(
+                            max_viewpoints=p["object_search_max_viewpoints"],
+                            timeout_s=p["object_search_timeout_s"],
+                            radius_m=p["object_search_radius_m"],
+                            max_path_m=p["object_search_max_path_m"],
+                        ),
+                    )
+                    if p["object_search_enabled"] and approach is not None
+                    else None,
                 )
                 self.create_timer(0.5, self._navigator.poll)
                 self.create_timer(0.2, self._commands.poll)
@@ -567,6 +613,19 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "recording_dir": "",
                 "compressed": False,
                 "objects_enabled": False,
+                "object_arrival_model": "",
+                "object_arrival_request_timeout_s": 8.0,
+                "object_arrival_min_similarity": 0.85,
+                "object_arrival_moved_similarity": 0.95,
+                "object_arrival_similarity_margin": 0.08,
+                "object_arrival_max_uncertainty_m": 0.35,
+                "object_arrival_max_position_age_s": 300.0,
+                "object_arrival_max_move_m": 3.0,
+                "object_search_enabled": False,
+                "object_search_max_viewpoints": 3,
+                "object_search_timeout_s": 60.0,
+                "object_search_radius_m": 1.5,
+                "object_search_max_path_m": 4.0,
                 "approach_enabled": False,
                 "approach_costmap_topic": "/global_costmap/costmap_raw",
                 "approach_footprint_topic": "/local_costmap/published_footprint",

@@ -8,6 +8,7 @@ from placecell.approach import (
     Costmap,
     PlanningEnvironment,
     PlanningSnapshot,
+    ViewpointRegion,
 )
 from placecell.chat import ChatMessage, ChatModel, ChatReply, ToolCall
 from placecell.consolidation import ChatSummarizer, ConsolidationPolicy, ConsolidationReport, Consolidator
@@ -28,6 +29,14 @@ from placecell.navigation import (
     load_named_places,
     parse_movement,
 )
+from placecell.object_arrival import (
+    ObjectArrivalPolicy,
+    ObjectArrivalVerdict,
+    ObjectArrivalVerifier,
+    ObjectComparator,
+    ObjectReference,
+)
+from placecell.object_search import ObjectSearch, ObjectSearchPolicy
 from placecell.object_types import Detection, ObjectDetector, ObjectEvent, ObjectHit, ObjectRecord, ObjectView
 from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
 from placecell.observer import ContradictionPolicy, Observer, ObserverReport
@@ -88,6 +97,10 @@ __all__ = [
     "NavigationEvent",
     "NavigationPolicy",
     "NavigationUpdate",
+    "ObjectArrivalPolicy",
+    "ObjectArrivalVerdict",
+    "ObjectArrivalVerifier",
+    "ObjectComparator",
     "ObjectDetector",
     "ObjectEvent",
     "ObjectHit",
@@ -95,6 +108,9 @@ __all__ = [
     "ObjectPosition",
     "ObjectRecall",
     "ObjectRecord",
+    "ObjectReference",
+    "ObjectSearch",
+    "ObjectSearchPolicy",
     "ObjectTracker",
     "ObjectView",
     "Observation",
@@ -118,6 +134,7 @@ __all__ = [
     "Sighting",
     "ToolCall",
     "VectorStore",
+    "ViewpointRegion",
     "VisionVerifier",
     "__version__",
     "load_named_places",

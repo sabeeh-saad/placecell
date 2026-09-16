@@ -112,8 +112,10 @@ its maximum allowed thresholds are not substituted for measured covariance. Thes
 must account for camera calibration and mounting errors as well as localization. This is
 a heuristic engineering margin, not a formal confidence bound.
 Keep `localization_required:=true` and set a versioned `map_id`. Existing scene captioning
-and navigation verification parameters still apply; `object_model` does not configure
-the arrival verifier. See [navigation setup](navigation.md) and [multimodal setup](multimodal.md).
+and navigation verification parameters still apply. `object_arrival_model` defaults to
+`object_model` for object comparison, while the full-scene request check uses
+`verification_model`. See [arrival checks](object-arrival.md), [navigation setup](navigation.md)
+and [multimodal setup](multimodal.md).
 
 When depth is unavailable or rejected, logs explain why and RGB memory continues. Do not
 assume that `objects_enabled` alone means a 3D position was measured. Inspect the record's
@@ -178,10 +180,11 @@ and fresh-image arrival verification flow.
 
 Enable [approach planning](approach.md) to select a checked stopping pose near a fresh,
 localized object position. Otherwise Nav2 receives the previously observed robot pose.
-Active searches for moved objects, cross-camera re-identification, manual
-resolution of identity hypotheses and physical-instance verification at arrival remain
-future work. Arrival verification currently checks the requested visible destination,
-not a guaranteed physical identity match against the stored crop. Crop-only lookup can
+[Object arrival verification](object-arrival.md) compares saved crops with fresh detections,
+RGB-D geometry and a paired-image check. Optional bounded viewpoint search can try nearby
+checked poses after a miss. These provide evidence about the selected instance, not a
+guarantee of physical identity. Cross-camera re-identification, manual resolution of
+identity hypotheses and broader exploration remain future work. Crop-only lookup can
 also reject relational requests such as “the printer next to the window” as uncertain.
 
 Automated tests use synthetic RGB-D scenes, pixel-based test embeddings, injected Gemini

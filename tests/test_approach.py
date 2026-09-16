@@ -281,5 +281,6 @@ def test_object_command_checks_planning_changes_and_verifies_arrival_at_new_pose
     assert commands.needs_observation and not tasks
     commands.observe(replace(obs, pose=destination.pose))
     tasks.pop()()
-    assert events[-1].state == "succeeded" and not commands.busy
+    assert events[-1].state == "destination_unverified" and not commands.busy
+    assert events[-1].object_result == "unavailable"  # An object goal needs its own arrival verifier.
     store.close()
