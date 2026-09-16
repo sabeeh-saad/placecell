@@ -52,7 +52,7 @@ from placecell.ros2.bridge import (
     stamp_to_seconds,
     update_localization,
 )
-from placecell.ros2.depth import aligned_snapshot
+from placecell.ros2.depth import PendingImages, aligned_snapshot
 from placecell.ros2.navigation import Nav2Navigator, create_navigator
 from placecell.store import CollectionInfo, VectorStore
 from placecell.verification import VisionVerifier
@@ -71,6 +71,16 @@ def build_embedder(
     batch_size: int = 16,
     cache_folder: str = "",
 ) -> EmbeddingProvider:
+    if backend == "openrouter":
+        from placecell.providers.openrouter import OPENROUTER_BASE_URL, OpenRouterGeminiEmbedder
+
+        return OpenRouterGeminiEmbedder(
+            model or "google/gemini-embedding-2",
+            api_key=api_key,
+            dimension=dimension or 768,
+            base_url=base_url or OPENROUTER_BASE_URL,
+            batch_size=batch_size,
+        )
     if backend == "gemini":
         from placecell.providers.gemini import DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, GeminiEmbedder
 
@@ -96,7 +106,7 @@ def build_embedder(
             raise ValidationError("embed_dimension does not match the CLIP checkpoint")
         return embedder
     if backend != "auto":
-        raise ValidationError("embed_backend must be auto, gemini or clip")
+        raise ValidationError("embed_backend must be auto, gemini, openrouter or clip")
     if not model:
         return HashingEmbedder()
     from placecell.providers import OpenAICompatibleEmbedder
@@ -367,10 +377,13 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             )
             self._object_recall: ObjectRecall | None = None
             tracker = None
+            if p["object_backend"] not in {"gemini", "chat"}:
+                raise ValidationError("object_backend must be gemini or chat")
             if p["objects_enabled"]:
-                from placecell.providers.object_detection import GeminiObjectDetector
+                from placecell.providers.object_detection import ChatObjectDetector, GeminiObjectDetector
 
-                detector = GeminiObjectDetector(
+                detector_type = ChatObjectDetector if p["object_backend"] == "chat" else GeminiObjectDetector
+                detector = detector_type(
                     p["object_model"],
                     api_key=os.environ.get(p["object_api_key_env"], ""),
                     base_url=p["object_base_url"],
@@ -451,7 +464,10 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._depth_skew = p["object_depth_max_skew_s"]
             self._depth_error = p["object_position_error_m"]
             self._depth_angular_error = p["object_angular_error_rad"]
+            self._pending_images = PendingImages(self._depth_skew)
             if p["objects_enabled"] and p["depth_topic"]:
+                self._depth_frames = self._pending_images.depth
+                self._camera_infos = self._pending_images.info
                 self.create_subscription(
                     Image, p["depth_topic"], lambda msg: self._depth_frames.append(msg), qos_profile_sensor_data
                 )
@@ -461,12 +477,15 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     lambda msg: self._camera_infos.append(msg),
                     qos_profile_sensor_data,
                 )
+            self._sync_images = p["objects_enabled"] and bool(p["depth_topic"])
+            if self._sync_images:
+                self.create_timer(0.04, self._drain_image)
             if p["compressed"]:
                 self.create_subscription(
-                    CompressedImage, p["image_topic"], self._on_compressed, qos_profile_sensor_data
+                    CompressedImage, p["image_topic"], self._receive_compressed, qos_profile_sensor_data
                 )
             else:
-                self.create_subscription(Image, p["image_topic"], self._on_image, qos_profile_sensor_data)
+                self.create_subscription(Image, p["image_topic"], self._receive_image, qos_profile_sensor_data)
             self.create_subscription(String, "~/ask", self._on_ask, 10)
             self.create_subscription(String, "~/correct", self._on_correct, 10)
             self.create_subscription(String, "~/refine", self._on_refine, 10)
@@ -492,7 +511,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 if tracker is not None:
                     from placecell.providers._http import RetryPolicy
 
-                    arrival_detector = GeminiObjectDetector(
+                    arrival_detector = detector_type(
                         p["object_arrival_model"] or p["object_model"],
                         api_key=os.environ.get(p["object_api_key_env"], ""),
                         base_url=p["object_base_url"],
@@ -644,6 +663,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "approach_max_sensor_age_s": 2.0,
                 "approach_camera_yaw_offset_rad": 0.0,
                 "object_model": "",
+                "object_backend": "gemini",
                 "object_base_url": "https://generativelanguage.googleapis.com/v1beta",
                 "object_api_key_env": "GEMINI_API_KEY",
                 "object_max_records": 1000,
@@ -822,6 +842,24 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self._admission.accept(obs)
             self._writer.confirm(obs.evidence)
 
+        def _receive_image(self, msg: Any) -> None:
+            if self._sync_images:
+                self._pending_images.add(msg, False, time.monotonic())
+            else:
+                self._on_image(msg)
+
+        def _receive_compressed(self, msg: Any) -> None:
+            if self._sync_images:
+                self._pending_images.add(msg, True, time.monotonic())
+            else:
+                self._on_compressed(msg)
+
+        def _drain_image(self) -> None:
+            ready = self._pending_images.pop(time.monotonic())
+            if ready is not None:
+                message, compressed = ready
+                (self._on_compressed if compressed else self._on_image)(message)
+
         def _on_compressed(self, msg: Any) -> None:
             pose = self._pose_at(msg.header.stamp.sec, msg.header.stamp.nanosec)
             if pose is None:
@@ -969,6 +1007,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
 
     import signal
 
+    from rclpy.executors import MultiThreadedExecutor
     from rclpy.signals import SignalHandlerOptions
 
     # Own the signals: rclpy's handler tears the context down from inside the signal handler,
@@ -978,16 +1017,21 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
         signal.signal(sig, lambda *_: stop.set())
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = PlacecellNode()
+    # TF uses its own reentrant callback group. A second executor thread lets transforms
+    # arrive while camera/footprint callbacks wait; ordinary node callbacks remain serialized.
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
         while not stop.is_set() and rclpy.ok():
-            rclpy.spin_once(node, timeout_sec=0.2)
+            executor.spin_once(timeout_sec=0.2)
     finally:
         node.stop_navigation()
         deadline = time.monotonic() + 2.0
         while node.navigation_busy() and rclpy.ok() and time.monotonic() < deadline:
-            rclpy.spin_once(node, timeout_sec=0.1)
+            executor.spin_once(timeout_sec=0.1)
         if node.navigation_busy():
             node.get_logger().warning("Shutdown could not confirm navigation cancellation; check Nav2 status.")
+        executor.shutdown()
         node.destroy_node()
         rclpy.try_shutdown()
 

@@ -30,7 +30,7 @@ video = ["opencv-python-headless>=4.8"]
 objects = ["Pillow>=10"]
 clip = ["sentence-transformers>=3.0,<6", "Pillow>=10"]
 speech = ["vosk>=0.3.45", "sounddevice>=0.4.6"]
-lancedb = ["lancedb>=0.25", "pyarrow>=15"]
+lancedb = ["lancedb>=0.38", "pyarrow>=16"]
 dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.6", "mypy>=1.10", "pre-commit>=3", "Pillow>=10"]
 
 [project.scripts]

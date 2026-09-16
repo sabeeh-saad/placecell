@@ -1,5 +1,12 @@
 # Object memory with RGB-D change tracking
 
+Detector labels can vary between views. A changed label can retain an existing identity
+only with a strong appearance match, nearby reliable RGB-D coordinates, an unambiguous
+assignment and a positive paired-image comparison. Checks are bounded per observation.
+The established category is retained in the refreshed caption and re-embedded, so a
+printer temporarily described as a box remains searchable as the verified printer.
+Without those checks, a changed label cannot silently merge or relocate an object.
+
 Object memory is optional. It adds persistent object identities alongside the existing
 whole-scene memories. Detection and embedding use your configured providers; enabling
 this feature does not download a local model. `GeminiObjectDetector` uses the native

@@ -7,12 +7,14 @@ from placecell.providers.chat import OpenAICompatibleChat
 from placecell.providers.clip import ClipEmbedder
 from placecell.providers.gemini import GeminiEmbedder
 from placecell.providers.hashing import HashingEmbedder
-from placecell.providers.object_detection import GeminiObjectDetector
+from placecell.providers.object_detection import ChatObjectDetector, GeminiObjectDetector
 from placecell.providers.openai_compatible import OpenAICompatibleEmbedder
+from placecell.providers.openrouter import OpenRouterGeminiEmbedder
 
 __all__ = [
     "Capabilities",
     "Captioner",
+    "ChatObjectDetector",
     "ClipEmbedder",
     "EmbeddingProvider",
     "GeminiEmbedder",
@@ -21,6 +23,7 @@ __all__ = [
     "OpenAICompatibleCaptioner",
     "OpenAICompatibleChat",
     "OpenAICompatibleEmbedder",
+    "OpenRouterGeminiEmbedder",
     "QueryEmbeddingProvider",
     "RetryPolicy",
     "Transport",

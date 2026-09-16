@@ -48,6 +48,22 @@ explicitly. This adapter currently accepts frames, not audio, PDFs or video clip
 collection identity includes the model, dimension and retrieval-format version. Switching
 between Gemini and CLIP, or changing Gemini dimensions, requires re-embedding.
 
+## Use Gemini through OpenRouter
+
+Set `embed_backend:=openrouter`, `embed_model:=google/gemini-embedding-2`,
+`embed_api_key_env:=OPENROUTER_API_KEY` and `embed_dimension:=768`. The
+`OpenRouterGeminiEmbedder` adapter sends independent image and text content blocks
+to OpenRouter's [multimodal embeddings endpoint](https://openrouter.ai/docs/api_reference/embeddings).
+It preserves the native adapter's retrieval prefixes and vector validation, with a
+separate collection identity. Native Gemini collections require re-embedding before
+switching providers.
+
+For object detection through the same key, use `object_backend:=chat`,
+`object_base_url:=https://openrouter.ai/api/v1`, `object_api_key_env:=OPENROUTER_API_KEY`
+and `object_model:=google/gemini-2.5-flash`. Captioning and verification use the same
+base URL with `api_key_env:=OPENROUTER_API_KEY`. Native Gemini object detection remains
+the default. See the [complete simulation configuration](../simulation/config/placecell.yaml).
+
 ## Optional local CLIP
 
 From this repository (the package has not been published to PyPI):

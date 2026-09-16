@@ -305,6 +305,30 @@ def test_vision_provider_uses_pixels_and_a_strict_query_specific_verdict():
     assert "caption" not in json.dumps(payload)
 
 
+def test_object_verification_uses_original_scene_without_changing_selected_crop():
+    response = {"choices": [{"message": {"content": json.dumps({"result": "uncertain", "reason": "Crop unclear"})}}]}
+    transport = FakeTransport([(200, {}, response)])
+    verifier = VisionVerifier("vision", "http://localhost/v1", transport=transport)
+    crop, scene = "data:image/png;base64,YQ==", "data:image/jpeg;base64,Yg=="
+    assert verifier.verify_object("printer", crop, scene).result == "uncertain"
+    payload = transport.requests[0]["payload"]
+    assert [p["image_url"]["url"] for p in payload["messages"][1]["content"][1:]] == [crop, scene]
+    assert "A different object visible elsewhere" in payload["messages"][0]["content"]
+    with pytest.raises(ValidationError):
+        verifier.verify_object("printer", crop, "https://example.org/frame.jpg")
+
+
+def test_truncated_or_missing_completion_cannot_authorize_navigation():
+    for response in (
+        {},
+        {"choices": []},
+        {"choices": [{"finish_reason": "length", "message": {"content": '{"result":"matched","reason":"Printer"}'}}]},
+    ):
+        verifier = VisionVerifier("vision", "http://localhost/v1", transport=FakeTransport([(200, {}, response)]))
+        with pytest.raises(ProviderError):
+            verifier.verify("printer", "data:image/jpeg;base64,YQ==")
+
+
 @pytest.mark.parametrize(
     "answer",
     [

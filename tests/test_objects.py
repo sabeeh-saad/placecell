@@ -118,6 +118,41 @@ def test_revisit_identity_and_bounded_views_survive_restart(setup, tmp_path):
     reopened.close()
 
 
+def test_changed_detector_label_keeps_confirmed_identity_and_searchable_category(setup, tmp_path):
+    store, embedder, detector, tracker = setup
+    first = ingest(tracker, observation(tmp_path))[0]
+    comparisons = []
+
+    def compare(references, candidate):
+        comparisons.append((references, candidate))
+        return SceneVerdict("matched", "Same distinctive markings and geometry")
+
+    detector.compare = compare
+    detector.detections = [Detection("box", "red rectangular device", CENTER)]
+    records = ingest(tracker, observation(tmp_path, 2000))
+    assert len(records) == 1 and records[0].id == first.id
+    assert records[0].label == "printer" and records[0].last_seen == 2000
+    view = store.objects.views(first.id)[0]
+    assert view.memory.caption == "printer: box: red rectangular device"
+    assert np.allclose(view.memory.caption_embedding, embedder.embed_text([view.memory.caption])[0])
+    assert len(comparisons) == 1 and comparisons[0][0][0].startswith(b"\x89PNG")
+
+
+@pytest.mark.parametrize("reason", ["uncertain", "not_matched", "no_depth", "different_position", "no_comparator"])
+def test_label_changes_cannot_merge_without_geometry_and_identity_confirmation(setup, tmp_path, reason):
+    store, _, detector, tracker = setup
+    first = ingest(tracker, observation(tmp_path))[0]
+    if reason != "no_comparator":
+        detector.compare = lambda *_: SceneVerdict(
+            reason if reason in {"uncertain", "not_matched"} else "matched", "evidence"
+        )
+    box = RIGHT if reason == "different_position" else CENTER
+    detector.detections = [Detection("box", "red rectangular device", box)]
+    ingest(tracker, observation(tmp_path, 2000, (box,), depth=reason != "no_depth"))
+    assert store.objects.get(first.id).last_seen == 1000
+    assert store.objects.count() == 2
+
+
 def test_unique_move_requires_empty_old_location(setup, tmp_path):
     store, _, detector, tracker = setup
     before = ingest(tracker, observation(tmp_path))[0]

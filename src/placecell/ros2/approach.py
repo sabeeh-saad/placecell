@@ -218,7 +218,7 @@ def create_planning_environment(
                 message.header.frame_id,
                 base_frame,
                 Time(seconds=stamp.sec, nanoseconds=stamp.nanosec),
-                Duration(seconds=0),
+                Duration(seconds=min(timeout_s, 0.1)),
             )
             t = transform.transform.translation
             environment.update_footprint(message, t.x, t.y)

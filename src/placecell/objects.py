@@ -17,7 +17,7 @@ import numpy as np
 
 from placecell.errors import ModelMismatchError, PlacecellError, ValidationError
 from placecell.memory import Evidence, EvidenceKind, Memory
-from placecell.object_types import Detection, ObjectDetector, ObjectHit, ObjectRecord, ObjectView
+from placecell.object_types import Detection, ObjectComparator, ObjectDetector, ObjectHit, ObjectRecord, ObjectView
 from placecell.providers.base import EmbeddingProvider, QueryEmbeddingProvider, normalise_rows
 from placecell.providers.embedding import embed_memories
 from placecell.store.base import VectorStore
@@ -33,6 +33,8 @@ class ObjectPolicy:
     max_views: int = 4
     max_events: int = 32
     max_absence_checks: int = 4
+    max_identity_checks: int = 4
+    max_association_uncertainty_m: float = 0.35
     association_similarity: float = 0.85
     association_margin: float = 0.08
     nearby_m: float = 0.35
@@ -51,6 +53,7 @@ class ObjectPolicy:
                 self.max_views,
                 self.max_events,
                 self.max_absence_checks,
+                self.max_identity_checks,
                 self.misses_to_missing,
             )
             < 1
@@ -60,6 +63,7 @@ class ObjectPolicy:
             math.isfinite(v) and v > 0
             for v in (
                 self.association_margin,
+                self.max_association_uncertainty_m,
                 self.nearby_m,
                 self.max_move_m,
                 self.visit_interval_s,
@@ -130,11 +134,22 @@ class ObjectTracker:
         for i, view in enumerate(fresh):
             assert view.memory.embedding is not None
             for record in records:
-                if record.label != view.memory.caption.split(":", 1)[0] or observation.timestamp <= record.last_seen:
+                if observation.timestamp <= record.last_seen:
                     continue
                 vectors = [v.memory.embedding for v in old_views[record.id] if v.memory.embedding is not None]
                 if vectors:
-                    similarities[i, record.id] = max(float(view.memory.embedding @ vector) for vector in vectors)
+                    score = max(float(view.memory.embedding @ vector) for vector in vectors)
+                    if record.label != view.memory.caption.split(":", 1)[0]:
+                        location, previous = positions[i], record.position
+                        if (
+                            score < p.moved_similarity
+                            or location is None
+                            or previous is None
+                            or max(location.uncertainty_m, previous.uncertainty_m) > p.max_association_uncertainty_m
+                            or location.distance(previous) > p.nearby_m
+                        ):
+                            continue
+                    similarities[i, record.id] = score
 
         # Nearby assignments need unambiguous best matches on BOTH sides of the association.
         edges: dict[tuple[int, str], float] = {}
@@ -154,6 +169,22 @@ class ObjectTracker:
             if nearby:
                 edges[i, identity] = score
         assignments = self._unique(edges)
+        identity_checks = 0
+        for i, identity in list(assignments.items()):
+            if by_id[identity].label == fresh[i].memory.caption.split(":", 1)[0]:
+                continue
+            # A detector's changed category is not identity evidence. Require a bounded,
+            # explicit paired-image confirmation in addition to appearance and geometry.
+            if not isinstance(self.detector, ObjectComparator) or identity_checks >= p.max_identity_checks:
+                del assignments[i]
+                continue
+            references = journal.views(identity, limit=1)
+            identity_checks += 1
+            verdict = self.detector.compare((references[0].crop_png,), fresh[i].crop_png)
+            if verdict.result != "matched" or not verdict.reason.strip():
+                del assignments[i]
+                if verdict.result == "not_matched":
+                    del edges[i, identity]
         assigned_ids = set(assignments.values())
         absent: set[str] = set()
         # A detector omission is never sufficient. Geometry AND a visual check must agree.
@@ -184,6 +215,7 @@ class ObjectTracker:
             current = positions[i]
             if (
                 i not in assignments
+                and record.label == fresh[i].memory.caption.split(":", 1)[0]
                 and identity in absent
                 and record.position is not None
                 and current is not None
@@ -227,6 +259,10 @@ class ObjectTracker:
             else:
                 identity = assigned_identity
                 before = by_id[identity]
+                if before.label != label:
+                    caption = f"{before.label}: {view.memory.caption}"
+                    encoded = normalise_rows(self.embedder.embed_text([caption]), 1, self.embedder.dimension)[0]
+                    view = replace(view, memory=replace(view.memory, caption=caption, caption_embedding=encoded))
                 event = "moved" if i in moved else ("returned" if before.status == "missing" else "")
                 record = replace(
                     before,

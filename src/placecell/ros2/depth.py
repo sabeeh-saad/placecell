@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import deque
 from typing import Any
 
 import numpy as np
@@ -10,6 +11,52 @@ import numpy as np
 from placecell.depth import DepthSnapshot
 from placecell.errors import ValidationError
 from placecell.ros2.bridge import stamp_to_seconds
+
+
+class PendingImages:
+    """Bounded wait for depth/calibration callbacks that may arrive after RGB.
+
+    Pop in capture order, falling back to a scene-only observation after the wall-time
+    deadline. Missing depth never receives a fabricated position. Call from one callback group.
+    """
+
+    def __init__(self, max_skew_s: float = 0.08, wait_s: float = 0.3, capacity: int = 8) -> None:
+        if not math.isfinite(max_skew_s) or not math.isfinite(wait_s) or min(max_skew_s, wait_s, capacity) <= 0:
+            raise ValidationError("invalid image synchronization bounds")
+        self.depth: deque[Any] = deque(maxlen=capacity)
+        self.info: deque[Any] = deque(maxlen=capacity)
+        self._images: deque[tuple[Any, bool, float]] = deque(maxlen=capacity)
+        self._skew, self._wait = max_skew_s, wait_s
+        self._last_stamp = -math.inf
+
+    @staticmethod
+    def stamp(message: Any) -> float:
+        return stamp_to_seconds(message.header.stamp.sec, message.header.stamp.nanosec)
+
+    def add(self, message: Any, compressed: bool, now: float) -> None:
+        timestamp = self.stamp(message)
+        if timestamp <= self._last_stamp or (self._images and timestamp <= self.stamp(self._images[-1][0])):
+            return
+        self._images.append((message, compressed, now))
+
+    def pop(self, now: float) -> tuple[Any, bool] | None:
+        if not self._images:
+            return None
+        message, compressed, received = self._images[0]
+        timestamp = self.stamp(message)
+        frame = message.header.frame_id
+        depth_ready = any(
+            d.header.frame_id == frame and abs(self.stamp(d) - timestamp) <= self._skew for d in self.depth
+        )
+        info_ready = any(
+            i.header.frame_id == frame and (self.stamp(i) == 0 or abs(self.stamp(i) - timestamp) <= self._skew)
+            for i in self.info
+        )
+        if not (depth_ready and info_ready) and 0 <= now - received < self._wait:
+            return None
+        self._images.popleft()
+        self._last_stamp = timestamp
+        return message, compressed
 
 
 def aligned_snapshot(

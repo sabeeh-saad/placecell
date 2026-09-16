@@ -5,11 +5,14 @@ from __future__ import annotations
 import base64
 import math
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from placecell.depth import Box, ObjectPosition
 from placecell.errors import ValidationError
 from placecell.memory import Evidence, Memory
+
+if TYPE_CHECKING:
+    from placecell.verification import SceneVerdict
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,11 @@ class ObjectDetector(Protocol):
     def absent(self, reference_png: bytes, image: Evidence, region: Box) -> bool:
         """True only for a clearly visible, empty old location; occlusion/uncertainty return False."""
         ...
+
+
+@runtime_checkable
+class ObjectComparator(Protocol):
+    def compare(self, references: tuple[bytes, ...], candidate: bytes) -> SceneVerdict: ...
 
 
 @dataclass(frozen=True)

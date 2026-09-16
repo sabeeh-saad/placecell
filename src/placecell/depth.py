@@ -161,7 +161,14 @@ class DepthSnapshot:
             return None
         z = float(np.median(valid))
         spread = float(np.quantile(valid, 0.9) - np.quantile(valid, 0.1))
-        if spread > max(0.15, z * 0.1):
+        radius = (
+            max((box.right - box.left) * self.width * z / self.fx, (box.bottom - box.top) * self.height * z / self.fy)
+            / 2
+        )
+        # Compact 3D landmarks can have several surfaces (e.g. a printer body and tray).
+        # Bound their depth spread by visible extent, then retain that spread in uncertainty.
+        # Large foreground/background discontinuities still produce no position.
+        if spread > max(0.15, radius):
             return None
         u, v = (box.left + box.right) * self.width / 2, (box.top + box.bottom) * self.height / 2
         point = np.asarray(self.map_from_camera).reshape(4, 4) @ [
@@ -170,10 +177,6 @@ class DepthSnapshot:
             z,
             1,
         ]
-        radius = (
-            max((box.right - box.left) * self.width * z / self.fx, (box.bottom - box.top) * self.height * z / self.fy)
-            / 2
-        )
         return ObjectPosition(
             float(point[0]),
             float(point[1]),

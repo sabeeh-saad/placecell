@@ -53,6 +53,18 @@ def test_mixed_depth_patch_has_no_trustworthy_location():
     assert snapshot().locate(Box(0.49, 0.49, 0.5, 0.5)) is None
 
 
+def test_compact_object_surface_relief_increases_position_uncertainty():
+    array = np.full((100, 100), 1.7)
+    array[40:48] = 1.5  # A protruding tray, still part of the compact visible object.
+    box = Box(0.3, 0.3, 0.7, 0.7)
+    position = snapshot(array).locate(box)
+    assert position is not None
+    assert position.z == pytest.approx(1.7)
+    assert position.uncertainty_m >= snapshot(1.7).locate(box).uncertainty_m + 0.09
+    array[40:48] = 0.5  # An unrelated foreground object must remain unlocalized.
+    assert snapshot(array).locate(box) is None
+
+
 def test_visibility_requires_every_ray_valid_and_background_beyond_old_extent():
     position = snapshot().locate(BOX)
     assert snapshot(5).clear_region(position) is not None

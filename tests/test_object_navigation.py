@@ -22,10 +22,33 @@ from placecell import (
 from placecell.object_types import Detection
 from placecell.objects import ObjectRecall
 from placecell.ros2.node import navigation_payload
+from placecell.verification import SceneVerdict
 from tests.test_approach import Environment, pose
 from tests.test_navigation import FakeNavigator
 from tests.test_object_arrival import Comparator
 from tests.test_objects import CENTER, Detector, Matched, PixelEmbedder, ingest, observation
+
+
+@pytest.mark.parametrize("verdict,expected", [("matched", "resolved"), ("uncertain", "not_found")])
+def test_selected_object_verification_keeps_its_original_scene(tmp_path, verdict, expected):
+    from placecell import parse_movement
+
+    calls = []
+
+    class ContextVerifier:
+        def verify(self, *_):
+            raise AssertionError("Object verification should retain its scene context")
+
+        def verify_object(self, target, crop, scene):
+            calls.append((target, crop, scene))
+            return SceneVerdict(verdict, "pixel evidence")
+
+    harness = Harness(tmp_path)
+    harness.resolver._verifier = ContextVerifier()
+    assert harness.resolver.resolve(parse_movement("go to printer")).state == expected
+    assert len(calls) == 1 and calls[0][0] == "printer"
+    assert calls[0][1].startswith("data:image/png;base64,")
+    assert calls[0][2].startswith("data:image/png;base64,") and calls[0][1] != calls[0][2]
 
 
 def frame(tmp_path, timestamp, robot_pose, visible=True):

@@ -23,7 +23,7 @@ from placecell.pipeline import Observation
 from placecell.providers.captioning import data_url
 from placecell.retrieval import RankedMemory, Recall
 from placecell.store.base import Filter, VectorStore
-from placecell.verification import SceneVerdict, SceneVerifier
+from placecell.verification import ObjectSceneVerifier, SceneVerdict, SceneVerifier
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,7 +294,10 @@ class DestinationResolver:
         choices = []
         for hit in hits:
             memory = hit.view.memory
-            verdict = self.verify(target, hit.view.image_url())
+            if isinstance(self._verifier, ObjectSceneVerifier) and memory.evidence is not None:
+                verdict = self._verifier.verify_object(target, hit.view.image_url(), data_url(memory.evidence.uri))
+            else:
+                verdict = self.verify(target, hit.view.image_url())
             if verdict.result == "not_matched":
                 continue
             if verdict.result == "uncertain" or hit.object.status != "present" or hit.object.misses:
