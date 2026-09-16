@@ -464,7 +464,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._depth_skew = p["object_depth_max_skew_s"]
             self._depth_error = p["object_position_error_m"]
             self._depth_angular_error = p["object_angular_error_rad"]
-            self._pending_images = PendingImages(self._depth_skew)
+            self._pending_images = PendingImages(self._depth_skew, wait_s=p["rgbd_wait_s"])
             if p["objects_enabled"] and p["depth_topic"]:
                 self._depth_frames = self._pending_images.depth
                 self._camera_infos = self._pending_images.info
@@ -673,6 +673,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "depth_topic": "/camera/aligned_depth_to_color/image_raw",
                 "camera_info_topic": "/camera/color/camera_info",
                 "object_depth_max_skew_s": 0.08,
+                "rgbd_wait_s": 0.3,
                 "object_position_error_m": 0.1,
                 "object_angular_error_rad": 0.05,
                 "map_frame": "map",

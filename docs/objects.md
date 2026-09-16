@@ -86,9 +86,11 @@ mismatched sizes/frames and excessive timestamp skew are rejected for geometry. 
 rectified, aligned streams with calibrated intrinsics; the bridge currently does not
 undistort images. Depth accepts `16UC1` millimetres or `32FC1` metres, including row padding
 and either byte order. Depth and dynamic CameraInfo must be within 80 ms of the RGB frame;
-a zero-stamped static CameraInfo is also accepted. RGB callbacks use the nearest already
-received depth/CameraInfo from an eight-message buffer. If the matching data arrive later,
-that capture remains RGB-only. The camera optical frame must have timestamped TF into the
+a zero-stamped static CameraInfo is also accepted. An eight-message buffer waits for
+matching depth/CameraInfo callbacks for up to `rgbd_wait_s` wall-clock seconds (default
+0.3). Increasing that delivery wait does not loosen the 80 ms capture-time limit.
+If matching data are still unavailable at the deadline, that capture remains RGB-only.
+The camera optical frame must have timestamped TF into the
 versioned map, including camera height, tilt and mounting offset.
 
 Set `GEMINI_API_KEY` and `GEMINI_VISION_MODEL` to your key and an available vision model

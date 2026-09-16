@@ -5,6 +5,9 @@ placecell:
     camera_id: front
     map_id: office-v1
     base_frame: base_footprint
+    # Software rendering can deliver the matching depth callback after RGB.
+    # Wait longer without accepting a different capture timestamp.
+    rgbd_wait_s: 1.0
     localization_required: true
     embed_backend: openrouter
     embed_model: google/gemini-embedding-2

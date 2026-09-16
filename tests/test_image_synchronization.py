@@ -32,6 +32,17 @@ def test_wrong_capture_or_frame_waits_then_falls_back_without_fabricating_depth(
     assert pending.pop(1.31) == (rgb, True)
 
 
+def test_longer_transport_wait_still_requires_the_matching_capture():
+    pending = PendingImages(wait_s=1.0)
+    rgb = message(10)
+    pending.add(rgb, False, 1.0)
+    pending.depth.append(message(9))
+    pending.info.append(message(10))
+    assert pending.pop(1.8) is None
+    pending.depth.append(message(10))
+    assert pending.pop(1.9) == (rgb, False)
+
+
 def test_queue_is_bounded_and_rejects_out_of_order_or_duplicate_images():
     pending = PendingImages(capacity=2)
     a, b, c = message(10), message(11), message(12)
