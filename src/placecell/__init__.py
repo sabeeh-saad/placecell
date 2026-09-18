@@ -18,6 +18,8 @@ from placecell.lifecycle import Curator, CuratorReport, ReinforcementPolicy, Rei
 from placecell.localization import LocalizationGate, LocalizationPolicy
 from placecell.memory import SCHEMA_VERSION, Evidence, EvidenceKind, Memory, Pose, Sighting, memory_id
 from placecell.migrate import MigrationReport, reembed
+from placecell.mission_context import MissionContext
+from placecell.missions import MissionPlan, MissionPlanner, PlanReviewAgent
 from placecell.navigation import (
     Destination,
     DestinationResolver,
@@ -92,6 +94,9 @@ __all__ = [
     "MemoryRefiner",
     "MemoryRevision",
     "MigrationReport",
+    "MissionContext",
+    "MissionPlan",
+    "MissionPlanner",
     "MovementCommand",
     "NavigationCommands",
     "NavigationEvent",
@@ -116,6 +121,7 @@ __all__ = [
     "Observation",
     "Observer",
     "ObserverReport",
+    "PlanReviewAgent",
     "PlanningEnvironment",
     "PlanningSnapshot",
     "Pose",

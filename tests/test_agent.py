@@ -230,3 +230,13 @@ def test_chat_adapter_rejects_malformed_replies() -> None:
         OpenAICompatibleChat("")
     with pytest.raises(ValidationError):
         OpenAICompatibleChat("llm", temperature=-1)
+
+
+@pytest.mark.parametrize("reason", ["length", "content_filter"])
+def test_interrupted_chat_responses_cannot_authorize_tool_execution(reason) -> None:
+    status, headers, body = _reply(
+        None, [{"id": "1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]
+    )
+    body["choices"][0]["finish_reason"] = reason
+    with pytest.raises(ProviderError, match="interrupted"):
+        OpenAICompatibleChat("llm", transport=FakeTransport([(status, headers, body)])).complete([], [])

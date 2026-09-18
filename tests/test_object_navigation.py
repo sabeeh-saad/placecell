@@ -312,3 +312,27 @@ def test_wrong_fresh_request_verdict_blocks_object_success(tmp_path):
     h.resolver._verifier = Verifier(["not_matched"])
     h.observe()
     assert h.events[-1].state == "destination_unverified"
+
+
+def test_context_failure_cannot_start_another_object_search_viewpoint(tmp_path, monkeypatch):
+    from placecell import MissionContext
+
+    h = Harness(tmp_path)
+    context = MissionContext()
+    h.commands._context = context
+    record = context.record
+
+    def fail_search(request_id, kind, payload):
+        if payload.get("state") == "searching":
+            raise OSError("disk full")
+        record(request_id, kind, payload)
+
+    monkeypatch.setattr(context, "record", fail_search)
+    try:
+        h.start()
+        h.arrive()
+        h.observe(False)
+        assert not h.commands.busy and len(h.nav.sent) == 1
+        assert h.events[-1].state == "destination_unverified"
+    finally:
+        context.close()

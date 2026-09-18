@@ -16,6 +16,8 @@ from typing import Literal, Protocol
 from placecell.approach import ApproachPlan, ApproachPlanner
 from placecell.errors import ValidationError
 from placecell.memory import Memory, Pose
+from placecell.mission_context import MissionContext
+from placecell.missions import MissionPlan, MissionPlanner
 from placecell.object_arrival import ObjectArrivalVerdict, ObjectArrivalVerifier, ObjectReference
 from placecell.object_search import ObjectSearch
 from placecell.objects import ObjectRecall
@@ -204,6 +206,7 @@ class DestinationResolver:
     def resolve(self, command: MovementCommand) -> Resolution:
         if command.kind != "go":
             raise ValidationError("only a go command has a destination")
+        command = replace(command, destination=" ".join(command.destination.casefold().split()).removeprefix("the "))
         if command.coordinates is not None:
             x, y, yaw = command.coordinates
             pose = Pose(x, y, yaw, self._origin.frame_id, self._origin.map_id)
@@ -397,6 +400,9 @@ class NavigationUpdate:
     distance_remaining: float | None = None
     object_result: str = ""
     search_attempt: int = 0
+    mission_id: str = ""
+    mission_step: int = 0
+    mission_destinations: tuple[str, ...] = ()
 
 
 class Navigator(Protocol):
@@ -406,7 +412,7 @@ class Navigator(Protocol):
 
 
 class NavigationCommands:
-    """One active trip. Cancellation bypasses slow resolution; stopped work is never replayed."""
+    """One active trip or ordered mission. Cancellation never waits for a model call."""
 
     def __init__(
         self,
@@ -421,6 +427,8 @@ class NavigationCommands:
         localization_ready: Callable[[], bool] = lambda: True,
         arrival_timeout_s: float = 30.0,
         search: ObjectSearch | None = None,
+        mission_planner: MissionPlanner | None = None,
+        mission_context: MissionContext | None = None,
     ) -> None:
         if not math.isfinite(request_timeout_s) or request_timeout_s <= 0:
             raise ValidationError("command timeout must be finite and positive")
@@ -445,21 +453,121 @@ class NavigationCommands:
         self._search_visited: tuple[Pose, ...] = ()
         self._search_count = self._leg = 0
         self._transport_id = ""
+        self._mission_planner = mission_planner
+        self._mission: MissionPlan | None = None
+        self._mission_id = ""
+        self._mission_step = 0
+        self._context = mission_context or (MissionContext() if mission_planner is not None else None)
+        self._context_ok = True
+        self._last_context_state: tuple[str, str] | None = None
 
     @property
     def busy(self) -> bool:
         with self._lock:
-            return self._active is not None
+            return self._active is not None or self._mission is not None
+
+    def _emit(self, update: NavigationUpdate) -> None:
+        if self._mission_id:
+            update = replace(
+                update,
+                mission_id=self._mission_id,
+                mission_step=self._mission_step + 1 if self._mission else 0,
+                mission_destinations=self._mission.destinations if self._mission else (),
+            )
+        key = (update.request_id, update.state)
+        if self._context is not None and key != self._last_context_state:
+            destination = update.destination
+            try:
+                self._context.record(
+                    update.request_id,
+                    "status",
+                    {
+                        "state": update.state,
+                        "message": update.message,
+                        "mission_id": update.mission_id,
+                        "step": update.mission_step,
+                        "destinations": update.mission_destinations,
+                        "target": destination.target if destination else "",
+                        "memory_id": destination.memory.id if destination and destination.memory else "",
+                        "object_id": destination.object_id if destination else "",
+                    },
+                )
+                self._last_context_state = key
+            except Exception as e:
+                self._context_ok = False
+                update = replace(update, message=f"{update.message} Context persistence failed: {e}")
+        self._publish(update)
+
+    def _record_instruction(self, request_id: str, text: str) -> bool:
+        if self._context is None:
+            return True
+        try:
+            self._context.record(request_id, "instruction", {"text": text})
+            self._context_ok = True
+            return True
+        except Exception as e:
+            self._context_ok = False
+            self._publish(NavigationUpdate(request_id, "unavailable", f"Could not save the instruction context: {e}"))
+            return False
+
+    def _clear_mission(self) -> None:
+        self._mission, self._mission_id, self._mission_step = None, "", 0
+
+    def _reset_leg(self, request_id: str) -> None:
+        self._active, self._state, self._destination = request_id, "resolving", None
+        self._requested_at = self._clock()
+        self._canceling = False
+        self._search_deadline = None
+        self._search_anchor = None
+        self._search_visited = ()
+        self._search_count = self._leg = 0
+        self._transport_id = request_id
+
+    def _complete(self, update: NavigationUpdate) -> None:
+        """Called under the controller lock, only after a terminal trip outcome."""
+        self._active = None
+        if (
+            update.state == "succeeded"
+            and self._mission is not None
+            and not self._canceling
+            and self._mission_step + 1 < len(self._mission.destinations)
+        ):
+            self._emit(replace(update, state="step_succeeded"))
+            if not self._context_ok:
+                self._emit(NavigationUpdate(update.request_id, "unavailable", "Mission stopped: context unavailable."))
+                self._clear_mission()
+                return
+            self._mission_step += 1
+            request_id = uuid.uuid4().hex
+            self._reset_leg(request_id)
+            command = MovementCommand("go", self._mission.destinations[self._mission_step])
+            self._emit(NavigationUpdate(request_id, "resolving", "Looking up the next mission destination."))
+            if not self._submit(lambda: self._resolve(request_id, command)):
+                self._active = None
+                self._emit(NavigationUpdate(request_id, "failed", "Mission stopped: the command worker is busy."))
+                self._clear_mission()
+            return
+        if self._canceling and update.state == "succeeded":
+            update = replace(update, state="canceled", message="Navigation ended after cancellation; no further steps.")
+        self._state = update.state
+        self._emit(update)
+        self._clear_mission()
 
     def handle(self, text: str) -> None:
         request_id = uuid.uuid4().hex
+        command = None
         try:
             command = parse_movement(text)
         except ValidationError as e:
-            self._publish(NavigationUpdate(request_id, "invalid", str(e)))
-            return
-        if command.kind == "cancel":
+            if self._mission_planner is None:
+                self._publish(NavigationUpdate(request_id, "invalid", str(e)))
+                return
+        if command is not None and command.kind == "cancel":
             self.cancel()
+            self._record_instruction(request_id, text)
+            return
+        if not text.strip() or len(text) > 2000:
+            self._publish(NavigationUpdate(request_id, "invalid", "Instructions must contain 1..2000 characters."))
             return
         with self._lock:
             if self._closed or self._active:
@@ -469,14 +577,18 @@ class NavigationCommands:
                     )
                 )
                 return
-            if not self._localization_ready():
-                self._choices = ()
-                self._publish(
-                    NavigationUpdate(request_id, "unavailable", "Localization is missing, stale or uncertain.")
+            if self._mission is not None and (command is None or command.kind != "choose"):
+                self._emit(
+                    NavigationUpdate(request_id, "busy", "Select a destination option or stop the mission first.")
                 )
                 return
+            if not self._localization_ready():
+                self._choices = ()
+                self._emit(NavigationUpdate(request_id, "unavailable", "Localization is missing, stale or uncertain."))
+                self._clear_mission()
+                return
             chosen = None
-            if command.kind == "choose":
+            if command is not None and command.kind == "choose":
                 if not 1 <= command.choice <= len(self._choices) or self._clock() - self._choices_at > self._timeout:
                     self._publish(
                         NavigationUpdate(
@@ -485,29 +597,73 @@ class NavigationCommands:
                     )
                     return
                 chosen = self._choices[command.choice - 1]
+            if not self._record_instruction(request_id, text):
+                self._clear_mission()
+                self._choices = ()
+                return
             self._choices = ()
-            self._active, self._state, self._destination = request_id, "resolving", None
-            self._requested_at = self._clock()
-            self._canceling = False
-            self._search_deadline = None
-            self._search_anchor = None
-            self._search_visited = ()
-            self._search_count = self._leg = 0
-            self._transport_id = request_id
-            self._publish(NavigationUpdate(request_id, "resolving", "Looking up the destination."))
-            if not self._submit(lambda: self._resolve(request_id, command, chosen)):
+            self._reset_leg(request_id)
+            if self._mission_planner is not None and chosen is None:
+                self._state, self._mission_id = "planning", request_id
+                self._emit(NavigationUpdate(request_id, "planning", "Planning and reviewing the requested mission."))
+                submitted = self._submit(lambda: self._plan(request_id, text))
+            else:
+                assert command is not None
+                self._emit(NavigationUpdate(request_id, "resolving", "Looking up the destination."))
+                submitted = self._submit(lambda: self._resolve(request_id, command, chosen))
+            if not submitted:
                 self._active = None
-                self._publish(
+                self._emit(
                     NavigationUpdate(request_id, "busy", "The command worker is busy. Please repeat the command.")
                 )
+                self._clear_mission()
 
-    def _resolve(self, request_id: str, command: MovementCommand, chosen: Destination | None) -> None:
+    def _plan(self, request_id: str, text: str) -> None:
+        assert self._mission_planner is not None
+
+        def canceled() -> bool:
+            with self._lock:
+                return (
+                    request_id != self._active
+                    or self._clock() - self._requested_at >= self._timeout
+                    or not self._localization_ready()
+                )
+
+        try:
+            context = self._context.recent(exclude_request_id=request_id) if self._context else []
+            plan = self._mission_planner.plan(text, canceled, context=context)
+        except Exception as e:
+            with self._lock:
+                if request_id == self._active:
+                    self._complete(NavigationUpdate(request_id, "rejected", f"Mission planning failed: {e}"))
+            return
+        with self._lock:
+            if request_id != self._active:
+                return
+            if canceled():
+                self._complete(
+                    NavigationUpdate(request_id, "rejected", "Mission planning expired or became unavailable.")
+                )
+                return
+            if plan.decision != "ready":
+                self._complete(
+                    NavigationUpdate(
+                        request_id, "clarification_required" if plan.decision == "clarify" else "rejected", plan.message
+                    )
+                )
+                return
+            self._mission = plan
+            self._reset_leg(request_id)
+            self._emit(NavigationUpdate(request_id, "planned", plan.message))
+            self._emit(NavigationUpdate(request_id, "resolving", "Looking up the first mission destination."))
+        self._resolve(request_id, MovementCommand("go", plan.destinations[0]))
+
+    def _resolve(self, request_id: str, command: MovementCommand, chosen: Destination | None = None) -> None:
         with self._lock:
             if request_id != self._active:
                 return
             if self._clock() - self._requested_at > self._timeout:
-                self._active = None
-                self._publish(
+                self._complete(
                     NavigationUpdate(request_id, "not_found", "The command expired while waiting. Please repeat it.")
                 )
                 return
@@ -555,12 +711,18 @@ class NavigationCommands:
                 self._active = None
                 self._choices = result.choices
                 self._choices_at = self._clock()
-                self._publish(NavigationUpdate(request_id, result.state, result.message, choices=result.choices))
+                self._state = result.state
+                self._emit(NavigationUpdate(request_id, result.state, result.message, choices=result.choices))
+                if result.state != "ambiguous":
+                    self._clear_mission()
                 return
             self._destination, self._state = result.choices[0], "submitting"
             self._search_anchor = self._destination.pose
             self._search_visited = (self._destination.pose,)
-            self._publish(NavigationUpdate(request_id, "submitting", result.message, self._destination))
+            self._emit(NavigationUpdate(request_id, "submitting", result.message, self._destination))
+            if not self._context_ok:
+                self._complete(NavigationUpdate(request_id, "unavailable", "Navigation stopped: context unavailable."))
+                return
             try:
                 self._navigator.send(request_id, self._destination, lambda e: self._event(request_id, e, 0))
             except Exception as e:
@@ -583,7 +745,7 @@ class NavigationCommands:
                 self._arrival_deadline = self._clock() + self._arrival_timeout
                 if self._search_deadline is not None:
                     self._arrival_deadline = min(self._arrival_deadline, self._search_deadline)
-                self._publish(
+                self._emit(
                     NavigationUpdate(
                         request_id,
                         self._state,
@@ -596,18 +758,18 @@ class NavigationCommands:
             if self._canceling and event.state == "navigating":
                 event = NavigationEvent("canceling", "Waiting for cancellation to finish.", event.distance_remaining)
             self._state = event.state
-            if event.state in {"succeeded", "canceled", "failed", "rejected", "unavailable"}:
-                self._active = None
-            self._publish(
-                NavigationUpdate(
-                    request_id,
-                    event.state,
-                    event.message,
-                    self._destination,
-                    distance_remaining=event.distance_remaining,
-                    search_attempt=self._search_count,
-                )
+            update = NavigationUpdate(
+                request_id,
+                event.state,
+                event.message,
+                self._destination,
+                distance_remaining=event.distance_remaining,
+                search_attempt=self._search_count,
             )
+            if event.state in {"succeeded", "canceled", "failed", "rejected", "unavailable"}:
+                self._complete(update)
+            else:
+                self._emit(update)
 
     @property
     def needs_observation(self) -> bool:
@@ -694,7 +856,7 @@ class NavigationCommands:
             self._state = "planning_search"
             self._leg += 1
             leg = self._leg
-            self._publish(
+            self._emit(
                 NavigationUpdate(
                     request_id,
                     self._state,
@@ -736,7 +898,7 @@ class NavigationCommands:
             self._search_visited += (goal.pose,)
             self._destination, self._state = goal, "submitting"
             self._transport_id = f"{request_id}/search/{self._search_count}"
-            self._publish(
+            self._emit(
                 NavigationUpdate(
                     request_id,
                     "searching",
@@ -746,6 +908,9 @@ class NavigationCommands:
                     search_attempt=self._search_count,
                 )
             )
+            if not self._context_ok:
+                self._finish_arrival(request_id, False, "Local search stopped: context unavailable.")
+                return
             try:
                 self._navigator.send(self._transport_id, goal, lambda e: self._event(request_id, e, leg))
             except Exception as e:
@@ -764,7 +929,6 @@ class NavigationCommands:
                 matched = self._resolver.arrival_available(self._destination)
                 if not matched:
                     object_result, reason = "unavailable", "The selected object reference became unavailable."
-            self._active = None
             self._state = "succeeded" if matched else "destination_unverified"
             if not matched and object_result == "ambiguous":
                 self._state = "destination_ambiguous"
@@ -773,7 +937,7 @@ class NavigationCommands:
                 if matched
                 else "Reached the pose; destination unverified. "
             ) + reason
-            self._publish(
+            self._complete(
                 NavigationUpdate(
                     request_id,
                     self._state,
@@ -788,16 +952,25 @@ class NavigationCommands:
         """Bound arrival waits and request cancellation if localization is lost during a trip."""
         with self._lock:
             if self._active is None:
+                if self._mission is not None and self._clock() - self._choices_at >= self._timeout:
+                    self._choices = ()
+                    self._complete(
+                        NavigationUpdate(self._transport_id, "not_found", "Mission destination choice expired.")
+                    )
                 return
-            if self._state == "resolving" and self._clock() - self._requested_at >= self._timeout:
-                request_id, self._active = self._active, None
-                self._publish(
+            if self._state in {"planning", "resolving"} and self._clock() - self._requested_at >= self._timeout:
+                self._complete(
                     NavigationUpdate(
-                        request_id, "not_found", "Destination lookup timed out. Please repeat the command."
+                        self._active,
+                        "not_found",
+                        "Planning or destination lookup timed out. Please repeat the command.",
                     )
                 )
                 return
             ready = self._localization_ready()
+            if not self._context_ok and not self._canceling:
+                self.cancel()
+                return
             if self._search_deadline is not None and self._clock() >= self._search_deadline:
                 if self._state in {"planning_search", "awaiting_observation", "verifying_arrival"}:
                     self._finish_arrival(self._active, False, "Local search time limit reached.")
@@ -821,16 +994,18 @@ class NavigationCommands:
         with self._lock:
             self._choices = ()
             if self._active is None:
-                self._publish(NavigationUpdate("", "idle", "No navigation request is active."))
+                if self._mission is not None:
+                    self._complete(NavigationUpdate(self._transport_id, "canceled", "Mission canceled."))
+                else:
+                    self._publish(NavigationUpdate("", "idle", "No navigation request is active."))
                 return
             request_id = self._active
-            if self._state in {"resolving", "planning_search", "awaiting_observation", "verifying_arrival"}:
-                self._active = None
-                self._publish(NavigationUpdate(request_id, "canceled", "Destination lookup or verification canceled."))
+            if self._state in {"planning", "resolving", "planning_search", "awaiting_observation", "verifying_arrival"}:
+                self._complete(NavigationUpdate(request_id, "canceled", "Destination lookup or verification canceled."))
                 return
             self._state = "canceling"
             self._canceling = True
-            self._publish(
+            self._emit(
                 NavigationUpdate(request_id, "canceling", "Requesting cancellation from Nav2.", self._destination)
             )
             try:

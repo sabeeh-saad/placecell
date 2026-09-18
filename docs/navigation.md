@@ -173,8 +173,11 @@ Supported commands include:
 - `option one`, `option two`, `option three` after an ambiguous result
 - `stop` or `cancel navigation`
 
-The movement grammar currently uses English. Questions, negated requests and conditional
-or compound movement requests are rejected by this command interface. Send questions to
+The default movement grammar uses English. Questions, negated requests and conditional
+or compound movement requests are rejected by this default interface. Optional
+[agent-planned missions](missions.md) accept natural single or chained navigation requests,
+review the proposed order, preserve conversation context and report each goal's status.
+Send questions to
 `/placecell/ask`. Coordinate commands require numeric literals and commas; the speech
 adapter does not infer coordinates from spoken number words.
 

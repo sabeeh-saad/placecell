@@ -28,6 +28,8 @@ from placecell.errors import PlacecellError, ValidationError
 from placecell.lifecycle import Curator, remove_local_file
 from placecell.localization import LocalizationGate, LocalizationPolicy
 from placecell.memory import Pose
+from placecell.mission_context import MissionContext
+from placecell.missions import MissionPlanner, PlanReviewAgent
 from placecell.navigation import (
     Destination,
     DestinationResolver,
@@ -127,6 +129,31 @@ def build_store(db_path: str, collection: str, embedder: EmbeddingProvider) -> V
     return LanceDBStore(Path(db_path).expanduser(), info)
 
 
+def build_mission_planner(parameters: dict[str, Any], api_key: str | None) -> MissionPlanner | None:
+    if not parameters["mission_enabled"]:
+        return None
+    from placecell.providers import OpenAICompatibleChat
+    from placecell.providers._http import RetryPolicy
+
+    model = parameters["mission_model"]
+    if not model:
+        raise ValidationError("mission_enabled requires mission_model with tool calling")
+    base_url = parameters["mission_base_url"] or parameters["chat_base_url"]
+    options = {
+        "api_key": api_key,
+        "timeout_s": parameters["mission_request_timeout_s"],
+        "max_tokens": 2048,
+        "retry": RetryPolicy(attempts=1),
+    }
+    planner = OpenAICompatibleChat(model, base_url, **options)
+    reviewer = OpenAICompatibleChat(
+        parameters["mission_review_model"] or model,
+        parameters["mission_review_base_url"] or base_url,
+        **options,
+    )
+    return MissionPlanner(planner, PlanReviewAgent(reviewer), max_destinations=parameters["mission_max_destinations"])
+
+
 def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[Any]) -> str:
     return json.dumps(
         {
@@ -187,6 +214,9 @@ def navigation_payload(update: NavigationUpdate) -> str:
             "distance_remaining": update.distance_remaining,
             "object_result": update.object_result,
             "search_attempt": update.search_attempt,
+            "mission_id": update.mission_id,
+            "mission_step": update.mission_step,
+            "mission_destinations": list(update.mission_destinations),
         }
     )
 
@@ -494,7 +524,13 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._commands: NavigationCommands | None = None
             self._navigator: Nav2Navigator | None = None
             self._command_tasks: BoundedTasks | None = None
+            self._mission_context: MissionContext | None = None
             if p["navigation_enabled"]:
+                if p["mission_enabled"]:
+                    self._mission_context = MissionContext(
+                        p["mission_context_path"] or ":memory:",
+                        scope=json.dumps([p["robot_id"], p["map_id"], p["mission_conversation_id"]]),
+                    )
                 places = load_named_places(p["places_file"]) if p["places_file"] else {}
                 verification_model = p["verification_model"] or p["caption_model"]
                 verifier = (
@@ -599,6 +635,8 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     observation_clock=self._memory_time,
                     localization_ready=self._localization.ready,
                     arrival_timeout_s=p["navigation_arrival_timeout_s"],
+                    mission_planner=build_mission_planner(p, api_key),
+                    mission_context=self._mission_context,
                     search=ObjectSearch(
                         approach,
                         ObjectSearchPolicy(
@@ -721,6 +759,15 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "refine_batch_size": 8,
                 "refine_model": "",
                 "navigation_enabled": False,
+                "mission_enabled": False,
+                "mission_model": "",
+                "mission_base_url": "",
+                "mission_review_model": "",
+                "mission_review_base_url": "",
+                "mission_request_timeout_s": 8.0,
+                "mission_max_destinations": 8,
+                "mission_context_path": "~/.placecell/missions.sqlite3",
+                "mission_conversation_id": "default",
                 "verification_model": "",
                 "verification_base_url": "",
                 "verification_request_timeout_s": 8.0,
@@ -1004,6 +1051,8 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             maintained = self._maintenance.stop()
             if ingested and answered and maintained and commands_done:
                 self._store.close()
+                if self._mission_context is not None:
+                    self._mission_context.close()
             return bool(super().destroy_node())
 
     import signal

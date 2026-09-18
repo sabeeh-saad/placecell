@@ -68,6 +68,8 @@ def _encode(m: ChatMessage) -> dict[str, Any]:
 
 def _decode(body: Any) -> ChatReply:
     try:
+        if body["choices"][0].get("finish_reason", "stop") not in {"stop", "tool_calls"}:
+            raise ProviderError("chat completion was interrupted or truncated")
         msg = body["choices"][0]["message"]
         content = msg.get("content")
         raw_calls = msg.get("tool_calls") or []
