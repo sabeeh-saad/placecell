@@ -7,6 +7,7 @@ from collections import deque
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from placecell.depth import DepthSnapshot
 from placecell.errors import ValidationError
@@ -105,7 +106,7 @@ def aligned_snapshot(
     ):
         raise ValidationError("invalid depth buffer size or stride")
     dtype = (">" if depth.is_bigendian else "<") + ("u2" if size == 2 else "f4")
-    array = np.ndarray(
+    array: NDArray[np.float32] = np.ndarray(
         (depth.height, depth.width), dtype=dtype, buffer=bytes(depth.data), strides=(depth.step, size)
     ).astype(np.float32)
     if size == 2:

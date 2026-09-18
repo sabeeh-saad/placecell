@@ -143,8 +143,10 @@ class MemoryRefiner:
         if not embedded:
             raise UnsupportedMediaError("refinement embedder cannot embed this evidence or its caption")
         candidate = embedded[0]
-        if not np.any(candidate.embedding) or (
-            candidate.caption_embedding is not None and not np.any(candidate.caption_embedding)
+        if (
+            candidate.embedding is None
+            or not np.any(candidate.embedding)
+            or (candidate.caption_embedding is not None and not np.any(candidate.caption_embedding))
         ):
             raise ProviderError("refinement embedding contains no signal")
         return candidate
