@@ -31,7 +31,7 @@ objects = ["Pillow>=10"]
 clip = ["sentence-transformers>=3.0,<6", "Pillow>=10"]
 speech = ["vosk>=0.3.45", "sounddevice>=0.4.6"]
 lancedb = ["lancedb>=0.38", "pyarrow>=16"]
-dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.6", "mypy>=1.10", "pre-commit>=3", "Pillow>=10"]
+dev = ["pytest>=7", "pytest-cov>=4", "ruff==0.16.8", "mypy>=1.10", "pre-commit>=3", "Pillow>=10"]
 
 [project.scripts]
 placecell-ros2 = "placecell.ros2.node:main"
@@ -50,6 +50,7 @@ where = ["src"]
 placecell = ["py.typed"]
 
 [tool.ruff]
+required-version = "==0.16.8"
 line-length = 120
 target-version = "py310"
 src = ["src", "tests"]

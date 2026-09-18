@@ -125,9 +125,7 @@ memory = Memory.create(
     pose=Pose(2.0, 1.0, map_id="office"),
     caption="A red printer beside the window",
 )
-memory = memory.with_embedding(
-    embedder.embed_text([memory.caption])[0], embedder.model_name, kind="caption"
-)
+memory = memory.with_embedding(embedder.embed_text([memory.caption])[0], embedder.model_name, kind="caption")
 store.upsert([memory])
 
 for hit in Recall(store, embedder).similar("red printer", k=1):

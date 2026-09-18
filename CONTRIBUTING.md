@@ -5,8 +5,15 @@ git clone https://github.com/sabeeh-saad/placecell && cd placecell
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 pre-commit install
+ruff check .
+ruff format --check .
+mypy
 pytest --cov
 ```
+
+Ruff also formats Python examples in Markdown. Keep the Ruff dependency and
+`required-version` in `pyproject.toml` aligned with `.pre-commit-config.yaml` so
+local checks, commit hooks, and CI use the same version.
 
 Rules that keep the code base honest:
 
