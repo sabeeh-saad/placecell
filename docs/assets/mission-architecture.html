@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PlaceCell — agent-enabled navigation architecture</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #222;
+      --muted: #555;
+      --line: #bbb;
+      --arrow: #777;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #fff; }
+    body { width: 1080px; color: var(--ink); font-family: Arial, Helvetica, sans-serif; }
+    main { padding: 36px; }
+    h1, h2, h3, p { margin: 0; }
+    header { border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+    h1 { font-size: 28px; font-weight: 600; }
+    .label { color: var(--muted); font-size: 16px; }
+    .request { display: flex; gap: 26px; align-items: center; padding: 20px 24px;
+      margin-top: 24px; border: 1px solid #aeb6bf; background: #f2f4f6; position: relative; }
+    .request .label { flex: 0 0 154px; line-height: 1.5; }
+    .request p { font-size: 23px; }
+    .request::after { content: ""; position: absolute; top: 100%; left: 24%;
+      width: 1px; height: 31px; background: var(--arrow); }
+    .request::before { content: ""; position: absolute; top: calc(100% + 23px); left: calc(24% - 4px);
+      width: 9px; height: 9px; border-right: 1px solid var(--arrow); border-bottom: 1px solid var(--arrow); transform: rotate(45deg); }
+    .agents { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 32px; }
+    .agent { border: 1px solid var(--line); padding: 20px 24px; position: relative; }
+    .planner { border-color: #8ca7cb; background: #eef3fa; }
+    .planner h2 { color: #31547f; }
+    .reviewer { border-color: #c1a16a; background: #fbf5e9; }
+    .reviewer h2 { color: #705626; }
+    .agent:first-child::after { content: ""; position: absolute; left: 100%; top: 50%;
+      width: 46px; height: 1px; background: var(--arrow); }
+    .agent:first-child::before { content: ""; position: absolute; left: calc(100% + 38px); top: calc(50% - 4px);
+      width: 9px; height: 9px; border-right: 1px solid var(--arrow); border-top: 1px solid var(--arrow); transform: rotate(45deg); }
+    .agent h2 { font-size: 22px; font-weight: 600; }
+    .agent p { margin-top: 10px; font-size: 18px; line-height: 1.45; color: var(--muted); }
+    .handoff { display: flex; align-items: center; gap: 12px; padding-left: 76%;
+      height: 48px; font-size: 15px; color: var(--muted); }
+    .down { width: 1px; height: 46px; background: var(--arrow); position: relative; }
+    .down::after { content: ""; position: absolute; bottom: 1px; left: -4px; width: 9px; height: 9px;
+      border-right: 1px solid var(--arrow); border-bottom: 1px solid var(--arrow); transform: rotate(45deg); }
+    .controller { border: 1px solid #7caaa0; background: #edf5f3; padding: 22px 24px; }
+    .controller-head { display: flex; align-items: center; justify-content: space-between; }
+    .controller h2 { font-size: 23px; font-weight: 600; color: #346a60; }
+    .controller > p { color: var(--muted); font-size: 17px; margin-top: 7px; }
+    .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; margin-top: 25px; }
+    .step { position: relative; padding: 16px 14px; border: 1px solid #b5ccc6; background: #fff; }
+    .step:not(:last-child)::after { content: ""; position: absolute; left: 100%; top: 29px;
+      width: 26px; height: 1px; background: var(--arrow); }
+    .step:not(:last-child)::before { content: ""; position: absolute; left: calc(100% + 19px); top: 25px;
+      width: 9px; height: 9px; border-right: 1px solid var(--arrow); border-top: 1px solid var(--arrow); transform: rotate(45deg); }
+    .step h3 { font-size: 20px; font-weight: 600; margin-bottom: 10px; }
+    .step p { color: var(--muted); font-size: 17px; line-height: 1.4; }
+    .outcomes { display: grid; grid-template-columns: 1fr 1fr 1.12fr; gap: 18px;
+      border-top: 1px solid #b5ccc6; margin-top: 22px; padding-top: 17px; }
+    .outcomes h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+    .outcomes p { font-size: 16px; color: var(--muted); line-height: 1.35; }
+    .memory { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 28px; }
+    .memory article { border: 1px solid var(--line); padding: 18px; }
+    .memory .visual-memory { border-color: #c59b88; background: #faf0ec; }
+    .visual-memory h2 { color: #805445; }
+    .memory .conversation-memory { border-color: #b69bb3; background: #f5eff4; }
+    .conversation-memory h2 { color: #75566e; }
+    .memory h2 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+    .memory p { color: var(--muted); font-size: 17px; line-height: 1.4; }
+    .memory .use { font-size: 15px; margin-top: 7px; }
+    .status { display: flex; justify-content: space-between; align-items: center;
+      border: 1px solid #91a5b2; background: #edf3f6; padding: 19px 20px; margin-top: 25px; gap: 24px; }
+    .status h2 { font-family: "DejaVu Sans Mono", monospace; font-weight: 400; font-size: 19px; color: #425e70; }
+    .status p { color: var(--muted); font-size: 16px; line-height: 1.45; }
+    footer { color: var(--muted); margin-top: 16px; font-size: 14px; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <main aria-label="PlaceCell navigation architecture">
+    <header>
+      <h1 data-check>PlaceCell navigation architecture</h1>
+    </header>
+
+    <section class="request" aria-label="User instruction">
+      <span class="label">User instruction<br>Text or transcript</span>
+      <p data-check>“Go to the printer, then visit the cupboard.”</p>
+    </section>
+
+    <section class="agents" aria-label="Planning and review">
+      <article class="agent planner">
+        <h2 data-check>Planning agent</h2>
+        <p data-check>Interpret the request and context.<br>Propose ordered destination descriptions.</p>
+      </article>
+      <article class="agent reviewer">
+        <h2 data-check>Plan review agent</h2>
+        <p data-check>Check intent, order and constraints.<br>Approve, clarify or reject the plan.</p>
+      </article>
+    </section>
+
+    <div class="handoff"><span class="down" aria-hidden="true"></span>Approved plan</div>
+
+    <section class="controller" aria-label="Per-goal execution">
+      <div class="controller-head">
+        <h2 data-check>Mission controller</h2>
+        <span class="label">Execute one goal at a time</span>
+      </div>
+      <p data-check>Owns goal order, localization checks, timeouts and cancellation.</p>
+      <div class="steps">
+        <article class="step">
+          <h3 data-check>Retrieve</h3>
+          <p data-check>Find candidates in current visual and object memory.</p>
+        </article>
+        <article class="step">
+          <h3 data-check>Inspect images</h3>
+          <p data-check>A vision model checks saved images against the goal.</p>
+        </article>
+        <article class="step">
+          <h3 data-check>Navigate</h3>
+          <p data-check>Nav2 drives to the checked destination pose.</p>
+        </article>
+        <article class="step">
+          <h3 data-check>Verify arrival</h3>
+          <p data-check>Fresh camera evidence checks the requested destination.</p>
+        </article>
+      </div>
+      <div class="outcomes">
+        <article><h3 data-check>Ambiguous candidate</h3><p data-check>Ask for a selection before driving.</p></article>
+        <article><h3 data-check>Verified arrival</h3><p data-check>Start the next goal, or finish.</p></article>
+        <article><h3 data-check>Failed or unverified</h3><p data-check>End the sequence; never skip ahead.</p></article>
+      </div>
+    </section>
+
+    <section class="memory" aria-label="Two separate kinds of memory">
+      <article class="visual-memory">
+        <h2 data-check>Visual &amp; object memory</h2>
+        <p data-check>Images, captions, object IDs, poses and times.<br>Camera observations continue during motion.</p>
+        <p class="use" data-check>Supports retrieval and arrival verification.</p>
+      </article>
+      <article class="conversation-memory">
+        <h2 data-check>Conversation context</h2>
+        <p data-check>Saved prompts, reviewed plans and outcomes.<br>History survives restart; movement does not replay.</p>
+        <p class="use" data-check>Supports planning, review and follow-up requests.</p>
+      </article>
+    </section>
+
+    <section class="status" aria-label="ROS feedback">
+      <h2 data-check>/placecell/navigation_status</h2>
+      <p data-check>Mission ID · Current goal · State · Remaining distance<br>Live feedback throughout planning and execution.</p>
+    </section>
+
+    <footer data-check>Memory-goal path shown. Named places use Nav2 completion. Agent-planned missions are experimental.</footer>
+  </main>
+  <script id="render-report" type="application/json"></script>
+  <script>
+    // The exporter uses this report to size the screenshot and reject clipped text.
+    const canvas = document.querySelector('main');
+    const overflow = [...document.querySelectorAll('[data-check]')].filter(element =>
+      element.scrollWidth > element.clientWidth + 1 ||
+      element.getBoundingClientRect().right > canvas.getBoundingClientRect().right
+    ).map(element => element.textContent.trim());
+    document.querySelector('#render-report').textContent = JSON.stringify({
+      width: Math.ceil(canvas.getBoundingClientRect().width),
+      height: Math.ceil(canvas.getBoundingClientRect().height),
+      overflow
+    });
+  </script>
+</body>
+</html>

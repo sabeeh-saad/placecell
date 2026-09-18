@@ -59,27 +59,9 @@ embeddings, optional local CLIP embeddings, and in-memory or persistent storage.
 
 The agent-enabled path for destinations retrieved from visual memory is:
 
-```mermaid
-flowchart TD
-    Input[Text or speech transcript] --> Planner[Planning agent]
-    Context[(Conversation history)] --> Planner
-    Planner --> Review[Plan review agent]
-    Context --> Review
-    Review -->|Approved plan| Controller[Mission controller]
-    Camera[Camera + localized pose] --> Memory[(Visual and object memory)]
-    Controller --> Retrieve[Retrieve and visually check candidates]
-    Memory --> Retrieve
-    Retrieve -->|Resolved destination| Nav[Nav2 navigation]
-    Retrieve -->|Ambiguous| Choice[Publish options and wait for selection]
-    Choice --> Controller
-    Nav --> Arrival[Fresh arrival verification]
-    Camera --> Arrival
-    Arrival -->|Verified, more goals| Controller
-    Controller --> Status[ROS goal and mission status]
-    Nav --> Status
-    Arrival --> Status
-    Status --> Context
-```
+[![PlaceCell architecture: planning and review agents pass ordered goals to a mission controller; each goal is retrieved, visually checked, navigated to with Nav2, and verified on arrival, with persistent memory, conversation context, and ROS feedback.](docs/assets/mission-architecture.png)](docs/assets/mission-architecture.png)
+
+[View full-size diagram](docs/assets/mission-architecture.png) · [Editable HTML source](docs/assets/mission-architecture.html)
 
 Models interpret intent and inspect evidence. The controller owns goal order, localization
 checks, deadlines, and cancellation; models do not invent executable coordinates or declare

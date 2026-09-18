@@ -8,26 +8,9 @@ and simulated transport, not real-model language accuracy or live robot reliabil
 
 ## Agents and execution
 
-```mermaid
-flowchart TD
-    Input[Typed text or completed speech transcript] --> Planner[Planning agent]
-    History[(Conversation and mission history)] --> Planner
-    Planner --> Review[Plan review agent]
-    History --> Review
-    Review --> Controller[Mission controller]
-    Controller --> Retrieval[Current visual memory retrieval]
-    Retrieval --> Vision[Visual verification]
-    Vision --> Choice{One verified destination?}
-    Choice -->|Ambiguous| Clarify[Publish choices and wait]
-    Clarify -->|User selects| Controller
-    Choice -->|Yes| Nav[Checked goal to Nav2]
-    Nav --> Arrival[Fresh arrival verification for memory goals]
-    Arrival -->|Verified, more steps| Controller
-    Arrival --> Status[Goal and mission outcome]
-    Controller --> Feedback[ROS navigation status]
-    Feedback --> History
-    Status --> History
-```
+[![PlaceCell architecture: planning and review agents pass ordered goals to a mission controller; each goal is retrieved, visually checked, navigated to with Nav2, and verified on arrival, with persistent memory, conversation context, and ROS feedback.](assets/mission-architecture.png)](assets/mission-architecture.png)
+
+[View full-size diagram](assets/mission-architecture.png) · [Editable HTML source](assets/mission-architecture.html)
 
 - The **planning agent** interprets the complete instruction and proposes an ordered list
   of destination descriptions. It does not split sentences on `then`, and destination
