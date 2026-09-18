@@ -12,7 +12,9 @@ context for follow-up requests while continuing to learn from camera observation
 The Python core also works with recorded observations, without ROS or a physical robot.
 Typed text and completed speech transcripts share the navigation interface.
 
-**Status: pre-alpha.** Agent-planned missions are experimental and opt-in. The repository
+**Status: alpha.** The first prerelease is
+[v0.1.0-alpha.1](https://github.com/sabeeh-saad/placecell/releases/tag/v0.1.0-alpha.1).
+Agent-planned missions are experimental and opt-in. The repository
 includes a recorded single-goal Gazebo demonstration and automated regression tests;
 real-model mission accuracy and hardware reliability still need evaluation.
 
@@ -84,12 +86,15 @@ See [missions](docs/missions.md) for the agent contracts and
 Requires **Python 3.10 or newer**. The package has not been published to PyPI.
 
 ```bash
-git clone https://github.com/sabeeh-saad/placecell.git
+git clone --branch v0.1.0-alpha.1 https://github.com/sabeeh-saad/placecell.git
 cd placecell
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
 ```
+
+This checks out the first prerelease. For ongoing development, clone the default `main`
+branch instead. Python package metadata identifies this release as `0.1.0a1`.
 
 Add the extras needed for your deployment from the repository directory:
 

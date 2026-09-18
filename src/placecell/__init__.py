@@ -50,7 +50,7 @@ from placecell.store import CollectionInfo, Filter, Hit, InMemoryStore, VectorSt
 from placecell.store.refinements import MemoryRevision
 from placecell.verification import SceneVerdict, SceneVerifier, VisionVerifier
 
-__version__ = "0.0.1"
+__version__ = "0.1.0a1"
 
 __all__ = [
     "SCHEMA_VERSION",

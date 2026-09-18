@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.1](https://github.com/sabeeh-saad/placecell/releases/tag/v0.1.0-alpha.1) - 2026-09-18
+
+First public alpha prerelease. Python package version: `0.1.0a1`.
+See the [release notes](docs/releases/v0.1.0-alpha.1.md) for installation and current limitations.
+
+- Add optional agent-planned navigation missions with independent plan review, ordered goal execution, clarification, and cancellation.
+- Persist conversation context and mission outcomes by robot, map, and conversation; never replay movement automatically after restart.
+- Publish mission and per-goal progress over `/placecell/navigation_status` while camera ingestion continues.
+- Add mission documentation and an editable architecture diagram with a reproducible PNG exporter.
+- Align Ruff versions across local development, pre-commit, and CI; fix Python 3.10 NumPy typing compatibility.
+
 - Add AMCL/Nav2 office navigation and a live camera-to-memory-to-navigation test with saved RGB-D recordings and failure reports.
 - Support Gemini image/text embeddings and structured object detection through OpenRouter.
 - Let TF update while image callbacks wait, synchronize RGB-D arrivals, and allow brief transform delivery skew for footprints.

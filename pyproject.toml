@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "placecell"
-version = "0.0.1"
-description = "Long-term visual memory for mobile robots: record what the robot sees, retrieve it by meaning, time and place."
+version = "0.1.0a1"
+description = "Multi-agent mission planning, persistent visual memory, and natural-language navigation for mobile robots."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 authors = [{name = "Sabeeh ul Hassan Saad"}]
 keywords = ["robotics", "memory", "embeddings", "retrieval", "ros2", "navigation"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
