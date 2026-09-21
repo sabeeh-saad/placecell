@@ -25,6 +25,13 @@ The [Day 2 record](validation/day-02.json) distinguishes the offline software ba
 unassessed model/execution quality. Human label review, independent held-out data, model
 spending and a measured ingestion-age budget remain dependencies; no paid run is scheduled.
 
+Day 3, 21 September: the [offline fault runner](fault-injection.md) now connects the actual
+mission controller and Nav2 adapter to controlled providers/transport. It reproduced and
+fixed a late Nav2 success advancing a mission after transport timeout. The
+[Day 3 record](validation/day-03.json) records 36 scenarios and validation evidence.
+These sequential software checks do not satisfy live ROS/Gazebo fault coverage, concurrent
+race testing, physical stopping measurements or post-crash active-goal reconciliation.
+
 ## Scope for this month
 
 The supported reference is a single robot, one aligned RGB-D stream, trusted localization

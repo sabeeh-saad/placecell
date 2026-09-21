@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add an offline fault runner covering planning, review, visual verification, localization, Nav2, context persistence and interrupted SQLite writes, with per-case JSON reports and CI artifacts.
+- Preserve transport-initiated cancellation in the mission controller: a late Nav2 success after a timeout no longer launches the next destination.
+
 ## [0.1.0-alpha.1](https://github.com/sabeeh-saad/placecell/releases/tag/v0.1.0-alpha.1) - 2026-09-18
 
 First public alpha prerelease. Python package version: `0.1.0a1`.

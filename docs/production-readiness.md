@@ -62,6 +62,12 @@ Qualification minimum: 1,000 deterministic mission/fault executions spanning at 
 separately specified cases. Repeating a case exercises races; it does not create a new
 perception example. Existing tests count where their scenario and assertions meet this contract.
 
+Day 3 adds 36 offline scenarios with controlled provider/action faults and SQLite
+interruption. Repetitions are sequential with fixed event ordering; they establish
+repeatability, not race coverage. See the [validation record](validation/day-03.json).
+These checks leave the qualification gate unassessed, including live ROS scheduling,
+actual TF outages, active-goal reconciliation after a process restart and measured stop latency.
+
 Release blockers include any observed:
 
 - Goal execution before required plan review, localization or destination checks.

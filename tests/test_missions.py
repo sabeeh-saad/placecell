@@ -248,6 +248,19 @@ def test_cancel_during_motion_never_advances_even_if_success_arrives_late(missio
     assert not m.commands.busy and not m.tasks and len(m.nav.sent) == 1
 
 
+@pytest.mark.parametrize("state", ["canceling", "uncertain", "cancel_failed"])
+def test_transport_cancellation_intent_survives_feedback_and_late_success(mission, state):
+    m = mission
+    start(m)
+    callback = m.nav.sent[0][2]
+    callback(NavigationEvent(state))
+    callback(NavigationEvent("navigating", distance_remaining=1.0))
+    assert m.events[-1].state == "canceling" and m.commands.busy
+    callback(NavigationEvent("succeeded"))
+    assert m.events[-1].state == "canceled"
+    assert not m.commands.busy and not m.tasks and len(m.nav.sent) == 1
+
+
 @pytest.mark.parametrize("outcome", ["failed", "rejected", "unavailable", "uncertain"])
 def test_failure_or_uncertain_transport_never_skips_to_the_next_goal(mission, outcome):
     m = mission

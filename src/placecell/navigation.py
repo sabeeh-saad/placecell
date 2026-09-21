@@ -734,6 +734,10 @@ class NavigationCommands:
                 return
             if self._state in {"awaiting_observation", "verifying_arrival"}:
                 return  # Late transport feedback cannot finish or restart visual verification.
+            if event.state in {"canceling", "cancel_failed", "uncertain"}:
+                # Transport deadlines/errors can initiate cancellation independently.
+                # A late success must not resume the mission after that decision.
+                self._canceling = True
             if event.state == "succeeded" and self._destination is not None and self._destination.source == "memory":
                 if self._canceling or not self._localization_ready():
                     self._finish_arrival(
