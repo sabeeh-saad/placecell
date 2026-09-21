@@ -34,6 +34,11 @@ not proof of independent errors, and a reviewer can also approve an incorrect in
 
 ## Enable the ROS interface
 
+For the bundled Gazebo office, the [reference deployment guide](reference-deployment.md)
+provides an explicit model configuration and `simulation/sim missions` launcher. That
+profile loads after the existing perception configuration and uses a 30-second timeout
+per planning/review call; the library defaults described below remain unchanged.
+
 Keep the camera, localization, map and verification configuration in the
 [navigation guide](navigation.md). Add these parameters to `placecell-ros2`:
 

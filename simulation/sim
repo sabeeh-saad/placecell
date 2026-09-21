@@ -12,6 +12,20 @@ case "$command" in
   stop) "${compose[@]}" down ;;
   logs) "${compose[@]}" logs --tail 100 -f ;;
   shell) "${compose[@]}" exec simulator "${inside[@]}" bash ;;
+  missions)
+    if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+      echo 'Set OPENROUTER_API_KEY before starting missions. Camera ingestion and missions make paid API calls.' >&2
+      exit 1
+    fi
+    echo 'Starting the opt-in mission profile in the foreground. Ctrl+C stops PlaceCell; Gazebo stays running.'
+    # A lock prevents two profile launchers from sharing a collection/command topic.
+    # Keep the credential out of arguments and out of the container configuration.
+    "${compose[@]}" exec -e OPENROUTER_API_KEY simulator "${inside[@]}" \
+      flock --no-fork -n -E 73 /home/simulator/placecell-missions.lock \
+      python3 -m placecell.ros2.node --ros-args \
+      --params-file /opt/placecell-sim/config/placecell.yaml \
+      --params-file /opt/placecell-sim/config/missions.yaml "$@"
+    ;;
   teleop)
     "${compose[@]}" exec simulator "${inside[@]}" ros2 run teleop_twist_keyboard teleop_twist_keyboard \
       --ros-args -p speed:=0.2 -p turn:=0.5
@@ -63,7 +77,8 @@ case "$command" in
     "${compose[@]}" -f "$sim_dir/compose.gui.yaml" up --force-recreate
     ;;
   *)
-    echo 'Usage: simulation/sim {build|start|start-nav|gui|teleop|check|check-nav|check-pipeline|record-commands|logs|shell|stop}'
+    echo 'Usage: simulation/sim {build|start|start-nav|gui|teleop|missions|check|check-nav|check-pipeline|record-commands|logs|shell|stop}'
     echo 'check moves the simulated robot; check --sensors-only only inspects sensor data.'
+    echo 'missions requires start-nav and a funded API key; see docs/reference-deployment.md.'
     ;;
 esac
