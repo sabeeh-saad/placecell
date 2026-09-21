@@ -1,0 +1,718 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-21",
+  "scope": "Day 3 offline fault contracts and transport-cancellation regression fix",
+  "runtime_base_commit": "a648a10f5b57d22105fe55b7e70919bd8a56301d",
+  "source_state": "Local Day 3 working tree identified by source hashes; planning history remains local",
+  "sources_sha256": {
+    "src/placecell/fault_injection.py": "cf73cae40491b7b2e8cf56a6b36874b1de628bfaf068d68e22e2d4123ecee10d",
+    "src/placecell/navigation.py": "a6155fddcd71d9713461bef0fcc182adde5a161b7b245489c587d3d8dfbbbfe7",
+    "src/placecell/ros2/navigation.py": "90667590d10cbb3506e53a4bf684b8dd8660b97b921a34286c5a7bfa8ca2dd3d",
+    "src/placecell/mission_context.py": "044d45cc2fc6d7f17c13f12ce2ae1b6dcc2c51fcb3f9be8fd1a44cc7296f474c",
+    "src/placecell/localization.py": "d7c8ff8a8b350973dcacdb5625e48ac1cfdd55a5b427f2440fadbcae7f9edb03",
+    "src/placecell/ros2/depth.py": "e6221ae223b2b7b2a2809f57ec395b308e24852bfc2dff1d2f9638e275ff058b",
+    "tests/test_fault_injection.py": "e43a1f2c3d4367e2f95ec7bb1c6021c854ad3d9dd186494519226ec99fe9e61e",
+    "tests/test_missions.py": "786050f8529057fc4b243917afbd102d9058cfce50ba928570e67f06742cde37",
+    "pyproject.toml": "2645b8ea09e2b3fda2285f61b959f24582e2095b53e919fb41cbdcd22593a9da",
+    ".github/workflows/ci.yml": "18e00a3eb0c55c8d2cb33a049a2140b9d9f3b58bffd92b5623b386436ab95720",
+    "docs/fault-injection.md": "fe4c8c2fb06573c5347cd418a7f2518bf045dd544afedabdb4d835fb9d6b5def"
+  },
+  "artifacts_sha256": {
+    "simulation/artifacts/day-03/initial.json": "ca763762c3146fbbe8c4cd8a57cfb148e401df1131754ce91014eddd51bad243",
+    "simulation/artifacts/day-03/report-final.json": "e2c72a478b1ac43bfb600bd8ccf48783b259ab8112d5c547f08a3e6abf510799",
+    "simulation/artifacts/day-03/coverage.json": "1cb7d4a3c6f6dd7ba33dc03263f6798287112f1c244d841c9e2d738d2b384d33",
+    "simulation/artifacts/day-03/tests.xml": "75eadc899d3f4d9aaa59e55a63d9ef483a250ad53e1beeb6add4b115fe969b44"
+  },
+  "confirmed_defect": {
+    "trigger": "Nav2 trip timeout requests cancellation, then a late successful action result arrives",
+    "before": {
+      "case_passed": false,
+      "state": "submitting",
+      "dispatch_attempts": 2,
+      "problem": "Second destination dispatched despite transport-initiated cancellation"
+    },
+    "fix": "Latch cancellation intent in NavigationCommands for canceling, cancel_failed and uncertain transport events",
+    "after": {
+      "case_passed": true,
+      "state": "canceled",
+      "dispatch_attempts": 1,
+      "mission_owned": false
+    },
+    "additional_regressions": [
+      "nav_late_acceptance_success",
+      "nav_timeout_visual_success"
+    ]
+  },
+  "offline_campaign": {
+    "command": ".venv/bin/placecell-check-faults --repeat 10 --output simulation/artifacts/day-03/report-final.json",
+    "suite": "placecell-offline-faults-v1",
+    "created_at": "2026-09-21T14:33:55.658237+00:00",
+    "python_version": "3.12.3",
+    "cases": 36,
+    "fault_cases": 34,
+    "successful_control_cases": 2,
+    "configuration": {
+      "repeat": 10,
+      "case_ids": [
+        "control_ordered_mission",
+        "control_visual_arrival",
+        "planner_timeout",
+        "planner_malformed",
+        "planner_late",
+        "review_timeout",
+        "review_late",
+        "review_malformed",
+        "review_reject",
+        "review_stop",
+        "nav_unavailable",
+        "nav_rejected",
+        "nav_send_error",
+        "nav_late_acceptance",
+        "nav_late_acceptance_success",
+        "nav_lost_result",
+        "nav_timeout_late_success",
+        "nav_timeout_visual_success",
+        "nav_cancel_delayed",
+        "nav_cancel_rejected",
+        "localization_stale_before",
+        "localization_stale_motion",
+        "localization_paused_clock",
+        "visual_lookup_timeout",
+        "arrival_missing_camera",
+        "arrival_stale_camera",
+        "arrival_untrusted_pose",
+        "arrival_verifier_timeout",
+        "storage_instruction",
+        "storage_read",
+        "storage_dispatch",
+        "storage_motion",
+        "storage_step",
+        "depth_missing",
+        "depth_stale",
+        "storage_interrupted"
+      ],
+      "lookup_timeout_s": 5,
+      "arrival_timeout_s": 3,
+      "nav_response_timeout_s": 2,
+      "nav_trip_timeout_s": 10
+    },
+    "results": {
+      "runs": 360,
+      "passed": 360,
+      "failed": 0,
+      "wall_duration_ms": 23225.826606998453
+    },
+    "assertion_checks": 2640,
+    "failed_assertions": 0,
+    "repetition_claim": "Sequential fixed-order repeatability, not concurrency/race coverage or independent perception examples",
+    "paid_api_calls": 0,
+    "cost_usd": 0,
+    "cases_summary": [
+      {
+        "case_id": "control_ordered_mission",
+        "scope": "mission",
+        "fault": "No fault: two named places complete in order",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "succeeded"
+        ],
+        "dispatch_attempt_counts": [
+          2
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "control_visual_arrival",
+        "scope": "mission",
+        "fault": "No fault: scripted candidate and fresh arrival verification",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "succeeded"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "planner_timeout",
+        "scope": "mission",
+        "fault": "Planning provider raises TimeoutError",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "rejected"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "planner_malformed",
+        "scope": "mission",
+        "fault": "Planning provider returns no structured tool call",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "rejected"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "planner_late",
+        "scope": "mission",
+        "fault": "Planning reply arrives after the lookup deadline is polled",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "not_found"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "review_timeout",
+        "scope": "mission",
+        "fault": "Review provider raises TimeoutError",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "rejected"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "review_late",
+        "scope": "mission",
+        "fault": "Review reply arrives after the lookup deadline is polled",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "not_found"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "review_malformed",
+        "scope": "mission",
+        "fault": "Review provider returns no structured tool call",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "rejected"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "review_reject",
+        "scope": "mission",
+        "fault": "Independent reviewer rejects a valid plan",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "rejected"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "review_stop",
+        "scope": "mission",
+        "fault": "Stop arrives during plan review",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "canceled"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "nav_unavailable",
+        "scope": "mission",
+        "fault": "Action server is unavailable before dispatch",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "unavailable"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "nav_rejected",
+        "scope": "mission",
+        "fault": "Action server rejects the submitted goal",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "rejected"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "nav_send_error",
+        "scope": "mission",
+        "fault": "Transport raises after a goal submission attempt",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "uncertain"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          true
+        ]
+      },
+      {
+        "case_id": "nav_late_acceptance",
+        "scope": "mission",
+        "fault": "Goal is accepted after its response deadline",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "canceled"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "nav_late_acceptance_success",
+        "scope": "mission",
+        "fault": "Late-accepted goal reports success after cancellation was requested",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "canceled"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "nav_lost_result",
+        "scope": "mission",
+        "fault": "Trip expires; cancel acknowledged but terminal result never arrives",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "busy"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          true
+        ]
+      },
+      {
+        "case_id": "nav_timeout_late_success",
+        "scope": "mission",
+        "fault": "Trip expires; a successful terminal result arrives after cancellation",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "canceled"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "nav_timeout_visual_success",
+        "scope": "mission",
+        "fault": "Remembered-pose trip expires, then reports success without arrival evidence",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "destination_unverified"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "nav_cancel_delayed",
+        "scope": "mission",
+        "fault": "Cancel acknowledgement is delayed past the response deadline",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "canceled"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "nav_cancel_rejected",
+        "scope": "mission",
+        "fault": "Action server refuses cancellation",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "canceled"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "localization_stale_before",
+        "scope": "mission",
+        "fault": "Localization ages out before instruction admission",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "unavailable"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "localization_stale_motion",
+        "scope": "mission",
+        "fault": "Localization ages out during navigation",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "canceled"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "localization_paused_clock",
+        "scope": "mission",
+        "fault": "Source time pauses while localization receipt age expires",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "canceled"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "visual_lookup_timeout",
+        "scope": "mission",
+        "fault": "Candidate image verifier raises TimeoutError",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "not_found"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "arrival_missing_camera",
+        "scope": "mission",
+        "fault": "No camera image arrives after reaching a remembered pose",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "destination_unverified"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "arrival_stale_camera",
+        "scope": "mission",
+        "fault": "Only a pre-arrival camera image arrives",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "destination_unverified"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "arrival_untrusted_pose",
+        "scope": "mission",
+        "fault": "Fresh image has no validated capture pose (TF/localization boundary)",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "destination_unverified"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "arrival_verifier_timeout",
+        "scope": "mission",
+        "fault": "Fresh arrival image verifier raises TimeoutError",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "destination_unverified"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "storage_instruction",
+        "scope": "mission",
+        "fault": "Context instruction write fails",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "unavailable"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "storage_read",
+        "scope": "mission",
+        "fault": "Context history read fails before planning",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "rejected"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "storage_dispatch",
+        "scope": "mission",
+        "fault": "Context status write fails immediately before dispatch",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "unavailable"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "storage_motion",
+        "scope": "mission",
+        "fault": "Context status write fails when navigation is accepted",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "canceled"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "storage_step",
+        "scope": "mission",
+        "fault": "Context status write fails after the first completed step",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "unavailable"
+        ],
+        "dispatch_attempt_counts": [
+          1
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "depth_missing",
+        "scope": "sensor_boundary",
+        "fault": "RGB arrives without depth or calibration",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "idle"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "depth_stale",
+        "scope": "sensor_boundary",
+        "fault": "Only out-of-skew depth accompanies RGB",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "idle"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      },
+      {
+        "case_id": "storage_interrupted",
+        "scope": "persistence_restart",
+        "fault": "Child exits with an uncommitted SQLite write",
+        "runs": 10,
+        "passed": 10,
+        "final_states": [
+          "idle"
+        ],
+        "dispatch_attempt_counts": [
+          0
+        ],
+        "ownership_retained": [
+          false
+        ]
+      }
+    ]
+  },
+  "validation": {
+    "tests": {
+      "command": "COVERAGE_FILE=/tmp/placecell-day3.coverage timeout 300 .venv/bin/pytest --cov=placecell --cov-report=term --cov-report=json:simulation/artifacts/day-03/coverage.json --junitxml=simulation/artifacts/day-03/tests.xml",
+      "total": 835,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "duration_s": 51.312,
+      "execution": "Outside filesystem sandbox after a targeted storage-backed run stalled inside it"
+    },
+    "coverage_percent": 95.68160597572363,
+    "fault_runner_coverage_percent": 98.83040935672514,
+    "ruff_check": "passed",
+    "ruff_format_check": "passed",
+    "mypy_strict": "passed (61 source files)",
+    "installed_cli": "Editable package installed with --no-index --no-deps --no-build-isolation; entry point executed successfully",
+    "ci": "Workflow configured for Python 3.10/3.11/3.12 reports; remote CI not run for these local changes"
+  },
+  "qualification": "unassessed",
+  "limitations": [
+    "Scripted providers and action transport; no live ROS, Gazebo or physical robot",
+    "Virtual deadlines are not physical stop latency or wall-clock provider timeouts",
+    "Depth tests cover synchronization only; TF tests cover capture-trust admission, not a TF buffer",
+    "Process interruption covers SQLite rollback and no automatic replay, not robot restart reconciliation",
+    "Synthetic fixtures do not measure model or visual recognition accuracy",
+    "No fresh live Gazebo or physical-robot fault campaign in this change",
+    "No paid models, measured cancellation latency, 24-hour endurance or independent held-out scene validation",
+    "The existing Day 1/Day 2 setup evidence is not reclassified as qualification"
+  ]
+}

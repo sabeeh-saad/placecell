@@ -39,6 +39,7 @@ placecell-listen = "placecell.ros2.speech:main"
 placecell-evaluate = "placecell.evaluation:main"
 placecell-evaluate-objects = "placecell.object_evaluation:main"
 placecell-evaluate-missions = "placecell.mission_evaluation:main"
+placecell-check-faults = "placecell.fault_injection:main"
 
 [project.urls]
 Homepage = "https://github.com/sabeeh-saad/placecell"

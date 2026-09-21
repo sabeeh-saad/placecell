@@ -24,3 +24,12 @@ jobs:
       - run: ruff format --check .
       - run: mypy
       - run: pytest --cov --cov-report=term-missing
+      - name: Offline fault contracts
+        if: always()
+        run: python -m placecell.fault_injection --output fault-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fault-report-python-${{ matrix.python-version }}
+          path: fault-report.json
+          if-no-files-found: warn
