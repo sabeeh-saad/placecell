@@ -1,7 +1,9 @@
 # Production-readiness contract
 
-Status: **proposed and unassessed**, 18 September 2026. This document defines what must
-be demonstrated; it does not certify the current alpha or turn a deadline into a guarantee.
+Status: **version 1 qualification targets frozen; evidence unassessed**, 21 September 2026.
+This document defines what must be demonstrated; it does not certify the current alpha
+or turn a deadline into a guarantee. Provider spending and the ingestion-age budget remain
+explicit open dependencies; this is not a declaration that every resource target is finalized.
 Implementation sequencing is in the [30-day roadmap](roadmap.md).
 
 The [Day 1 reference deployment](reference-deployment.md) specifies the initial configuration
@@ -37,9 +39,11 @@ also outside the isolated local ROS reference deployment.
 
 ## Evidence rules
 
-Freeze the evaluation protocol and final acceptance targets on day 2, before tuning against
-the held-out set. The numbers below are initial engineering targets for review, not industry
-standards or measured results. Record any change to the contract and its rationale; do not
+The Day 2 protocol freezes case identities, grouped splits, order/instance scoring,
+missing-trial handling and the numerical targets below before live-model tuning. These
+are engineering targets, not industry standards or measured results. The initial 24 cases
+are assistant-authored drafts; there is no approved held-out dataset yet. Require human
+review and independent data before claiming quality. Record any change to the contract and its rationale; do not
 lower a threshold at release time to convert a failure into a pass.
 
 Each report must identify its commit, package and model versions, configuration, scenario,
@@ -54,7 +58,7 @@ Ground-truth simulator labels may score a trial but must not leak into robot dec
 
 ## Gate 1: Execution correctness
 
-Proposed minimum: 1,000 deterministic mission/fault executions spanning at least 100
+Qualification minimum: 1,000 deterministic mission/fault executions spanning at least 100
 separately specified cases. Repeating a case exercises races; it does not create a new
 perception example. Existing tests count where their scenario and assertions meet this contract.
 
@@ -69,7 +73,7 @@ Release blockers include any observed:
 
 Cover cancellation during model work, submission, travel, arrival checks and ambiguity.
 Measure wall-clock time from command acceptance to a cancellation request being issued.
-The initial target is p99 at most 500 ms on the declared reference machine under supported
+The version 1 target is p99 at most 500 ms on the declared reference machine under supported
 load, independent of model responsiveness. Measure Nav2 acknowledgement separately against
 its configured deadline. Missing acknowledgement must retain uncertain goal ownership,
 block a replacement trip and produce an operator-visible failure.
@@ -79,12 +83,12 @@ physical stopping time or replace an independent robot stop mechanism.
 
 ## Gate 2: Language, grounding and mission outcomes
 
-Proposed minimum: 200 held-out labelled instruction/perception cases across at least three
+Qualification minimum: 200 held-out labelled instruction/perception cases across at least three
 separately configured layouts or recording sessions, plus 50 complete Gazebo missions
 covering single goals, chains and clarification. Record the sampling and repetitions;
 multiple frames of the same object do not count as independent scene diversity.
 
-Initial targets:
+Version 1 targets:
 
 - At least 95% complete success on feasible, unambiguous supported missions, with the full
   requested order and all required arrival checks. Report counts and per-scenario rates.
@@ -124,6 +128,20 @@ Run at least one 24-hour continuous software workload after critical fixes, usin
 observations and scripted provider responses for predictable load and fault injection.
 Also run repeated complete Gazebo missions for a declared duration. Report real wall-clock
 and simulated time separately. Live-model evaluation is a separate, budgeted workload.
+
+The reference campaign has an eight-CPU container quota, a 16 GiB container memory ceiling,
+and at most 20 GiB of per-run data/artifacts. The first two limits were used for Day 1's
+bounded Gazebo checks; they are engineering ceilings, not minimum hardware recommendations.
+The disk ceiling still needs runtime enforcement/retention qualification. Use the reference
+5 Hz simulated camera input and 8–20-second sampling settings, and retain their configuration
+hash. Automatic-phase deadlines remain the profile's 90-second planning/lookup and arrival
+limits, 10-second Nav2 response limit and 600-second trip limit; human clarification wait is
+reported separately. The 500 ms cancellation target is a wall-clock command-latency target.
+
+Measure accepted ingestion-work age with the selected provider workload before freezing
+that budget; the model budget is still undecided. Do not use the scripted evaluator's tiny
+latency or memory footprint to fill this gap. The endurance gate cannot pass while that
+budget is missing. Existing setup evidence does not establish 24-hour resource behavior.
 
 Pass only if:
 

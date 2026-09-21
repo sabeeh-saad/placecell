@@ -19,6 +19,12 @@ in the [Day 1 record](validation/day-01.json). The monthly model budget is undec
 compute/storage allowances are provisional until Day 2 measurements. No live-model
 mission quality or production qualification is claimed by these setup checks.
 
+Day 2, 21 September: a versioned draft dataset, split validation, scripted planning baseline
+and mission-outcome scorer are described in the [evaluation guide](mission-evaluation.md).
+The [Day 2 record](validation/day-02.json) distinguishes the offline software baseline from
+unassessed model/execution quality. Human label review, independent held-out data, model
+spending and a measured ingestion-age budget remain dependencies; no paid run is scheduled.
+
 ## Scope for this month
 
 The supported reference is a single robot, one aligned RGB-D stream, trusted localization

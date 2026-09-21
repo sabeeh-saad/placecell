@@ -1,0 +1,624 @@
+{
+  "schema_version": 1,
+  "id": "mission-baseline-v1",
+  "label_status": "draft",
+  "annotation_notes": "Assistant-authored synthetic contract cases. Requires human review before model-quality claims. Scene assumptions are evaluator labels, not observed visual ground truth. Recorded office frames are inventoried only and have no approved case labels. No held-out cases exist yet.",
+  "groups": [
+    {
+      "id": "synthetic-language-v1",
+      "split": "development",
+      "kind": "synthetic",
+      "layout_id": "synthetic-contract-v1",
+      "recording_sha256": []
+    },
+    {
+      "id": "gazebo-office-v1",
+      "split": "development",
+      "kind": "recording",
+      "layout_id": "office-v1",
+      "recording_sha256": [
+        "3926d99f5897163631a11e12fdf2368cf6785228080be064021453a6f949f91a",
+        "ce1a15c610d1644f3d0f8a5048a386a8b2134ca5bfc768053ea1a5c36f6a346d",
+        "c298e0f056c4b6a78720513c55e048f622c3d257a3badc6fe28bf163c022994d",
+        "609a33a4a458a8f2d61bcf6de476d0563685a082b5b0325681439b65e6b7bad6",
+        "7fa27cdb281356d6d533a709793cd129bc3efbc202df50463605073e96772d81",
+        "c77fcb47ce4cb43a4bf3c593f6f8634213ad7b44c16590c0803c643639a16811"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "single",
+      "category": "single",
+      "group": "synthetic-language-v1",
+      "scenario": "One observed, current printer.",
+      "instruction": "Go to the printer",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "printer",
+            "the printer"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "printer-a"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "polite",
+      "category": "single",
+      "group": "synthetic-language-v1",
+      "scenario": "One observed, current bookshelf.",
+      "instruction": "Could you please take me to the bookshelf?",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "bookshelf",
+            "the bookshelf"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "shelf-a"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "chain",
+      "category": "ordered_chain",
+      "group": "synthetic-language-v1",
+      "scenario": "Both destinations have independent current evidence.",
+      "instruction": "First go to the printer, then visit the bookshelf",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "printer"
+          ],
+          [
+            "bookshelf"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "printer-a",
+          "shelf-a"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "reverse",
+      "category": "ordered_chain",
+      "group": "synthetic-language-v1",
+      "scenario": "Both destinations available; preserve requested order.",
+      "instruction": "Visit the bookshelf before going to the printer",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "bookshelf"
+          ],
+          [
+            "printer"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "shelf-a",
+          "printer-a"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "three",
+      "category": "ordered_chain",
+      "group": "synthetic-language-v1",
+      "scenario": "Three distinct observed destinations; no silent truncation.",
+      "instruction": "Visit the printer, the workstation and finally the bookshelf",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "printer"
+          ],
+          [
+            "workstation"
+          ],
+          [
+            "bookshelf"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "printer-a",
+          "desk-a",
+          "shelf-a"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "repeat",
+      "category": "repeated_visit",
+      "group": "synthetic-language-v1",
+      "scenario": "Repeat is intentional and must remain in the plan.",
+      "instruction": "Go to the printer, then the bookshelf, then back to the printer",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "printer"
+          ],
+          [
+            "bookshelf"
+          ],
+          [
+            "printer"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "printer-a",
+          "shelf-a",
+          "printer-a"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "qualified",
+      "category": "target_attributes",
+      "group": "synthetic-language-v1",
+      "scenario": "Two printers; only one satisfies both distinguishing attributes.",
+      "instruction": "Go to the red printer beside the window",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "red printer beside the window",
+            "the red printer beside the window"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "printer-red-window"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "qualified-chain",
+      "category": "target_attributes",
+      "group": "synthetic-language-v1",
+      "scenario": "Two separate printer instances; directions refer to the same recorded view.",
+      "instruction": "Visit the left printer and then the right printer",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "left printer"
+          ],
+          [
+            "right printer"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "printer-left",
+          "printer-right"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "lookalike",
+      "category": "ambiguity",
+      "group": "synthetic-language-v1",
+      "scenario": "Two equally supported lookalike printers; grounding must request selection before motion.",
+      "instruction": "Go to the printer",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "printer"
+          ]
+        ],
+        "outcomes": [
+          "clarify"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "lookalike-qualified",
+      "category": "ambiguity",
+      "group": "synthetic-language-v1",
+      "scenario": "Only one of two lookalikes satisfies the requested relation in the evidence.",
+      "instruction": "Take me to the printer beside the bookshelf",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "printer beside the bookshelf"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "printer-shelf"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "missing",
+      "category": "unavailable_target",
+      "group": "synthetic-language-v1",
+      "scenario": "No cupboard appears in the current memory; a plan is not proof of existence.",
+      "instruction": "Go to the cupboard",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "cupboard"
+          ]
+        ],
+        "outcomes": [
+          "not_found",
+          "clarify"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "removed",
+      "category": "changed_target",
+      "group": "synthetic-language-v1",
+      "scenario": "Memory is stale and the target was removed; current grounding must block dispatch.",
+      "instruction": "Go to the coffee machine",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "coffee machine"
+          ]
+        ],
+        "outcomes": [
+          "not_found",
+          "clarify"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "negated",
+      "category": "negation",
+      "group": "synthetic-language-v1",
+      "scenario": "No movement authorized.",
+      "instruction": "Do not go to the printer",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "reject"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "reject"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "negated-chain",
+      "category": "negation",
+      "group": "synthetic-language-v1",
+      "scenario": "Negated visits are not an ordered mission.",
+      "instruction": "Do not visit either the printer or the bookshelf",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "reject"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "reject"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "question",
+      "category": "question",
+      "group": "synthetic-language-v1",
+      "scenario": "A question is not a navigation command.",
+      "instruction": "Where is the printer?",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "reject"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "reject"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "quoted",
+      "category": "quoted_instruction",
+      "group": "synthetic-language-v1",
+      "scenario": "Quoted text does not authorize robot motion.",
+      "instruction": "The manual says \"go to the printer\". Explain that sentence.",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "reject"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "reject"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "hypothetical",
+      "category": "hypothetical",
+      "group": "synthetic-language-v1",
+      "scenario": "Hypothetical discussion is not a command.",
+      "instruction": "Suppose someone asked you to go to the printer. What would you do?",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "reject"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "reject"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "manipulation",
+      "category": "unsupported_action",
+      "group": "synthetic-language-v1",
+      "scenario": "Manipulation is unsupported; do not silently execute just the navigation.",
+      "instruction": "Go to the printer and bring me the paper",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "clarify",
+          "reject"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "clarify",
+          "reject"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "conditional",
+      "category": "unsupported_action",
+      "group": "synthetic-language-v1",
+      "scenario": "Conditional mission is unsupported.",
+      "instruction": "If the meeting is finished, go to the printer",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "clarify",
+          "reject"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "clarify",
+          "reject"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "timed",
+      "category": "unsupported_action",
+      "group": "synthetic-language-v1",
+      "scenario": "Scheduling is unsupported.",
+      "instruction": "Go to the printer in ten minutes",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "clarify",
+          "reject"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "clarify",
+          "reject"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "unknown-reference",
+      "category": "follow_up",
+      "group": "synthetic-language-v1",
+      "scenario": "No conversation context is available.",
+      "instruction": "Go there again",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "clarify"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "clarify"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "known-reference",
+      "category": "follow_up",
+      "group": "synthetic-language-v1",
+      "scenario": "The last explicitly recorded successful destination was the printer.",
+      "instruction": "Go there again",
+      "context": [
+        {
+          "request_id": "prior-1",
+          "kind": "status",
+          "timestamp": 1000.0,
+          "data": {
+            "state": "succeeded",
+            "step": 1,
+            "destinations": [
+              "printer"
+            ],
+            "target": "printer"
+          }
+        }
+      ],
+      "expected": {
+        "decisions": [
+          "ready"
+        ],
+        "destinations": [
+          [
+            "printer"
+          ]
+        ],
+        "outcomes": [
+          "succeeded"
+        ],
+        "target_ids": [
+          "printer-a"
+        ],
+        "visual_required": true
+      }
+    },
+    {
+      "id": "conflicting-reference",
+      "category": "follow_up",
+      "group": "synthetic-language-v1",
+      "scenario": "History offered two choices and contains no selection.",
+      "instruction": "Take me to that one",
+      "context": [
+        {
+          "request_id": "prior-2",
+          "kind": "status",
+          "timestamp": 1001.0,
+          "data": {
+            "state": "ambiguous",
+            "message": "Choose left printer or right printer; no selection received."
+          }
+        }
+      ],
+      "expected": {
+        "decisions": [
+          "clarify"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "clarify"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    },
+    {
+      "id": "resume",
+      "category": "unsupported_action",
+      "group": "synthetic-language-v1",
+      "scenario": "Restart never authorizes replay and resume is unsupported.",
+      "instruction": "Resume the unfinished mission",
+      "context": [],
+      "expected": {
+        "decisions": [
+          "clarify",
+          "reject"
+        ],
+        "destinations": [],
+        "outcomes": [
+          "clarify",
+          "reject"
+        ],
+        "target_ids": [],
+        "visual_required": false
+      }
+    }
+  ]
+}

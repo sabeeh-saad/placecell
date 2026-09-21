@@ -230,6 +230,7 @@ See [memory operations](docs/operations.md) for retention, upgrades, and recover
 - [Object approach planning](docs/approach.md): selecting checked stopping poses near objects.
 - [Arrival verification and search](docs/object-arrival.md): fresh evidence and bounded viewpoint search.
 - [Object evaluation](docs/object-evaluation.md): replaying labelled RGB-D recordings.
+- [Mission evaluation](docs/mission-evaluation.md): versioned cases, grouped splits, offline plan checks, and outcome scoring.
 - [Gazebo simulation](docs/simulation.md): setup, recorded results, and demonstrations.
 - [Memory operations](docs/operations.md) and [refinement](docs/refinement.md): persistence and maintenance.
 - [Roadmap](docs/roadmap.md) and [changelog](CHANGELOG.md): planned work and change history.

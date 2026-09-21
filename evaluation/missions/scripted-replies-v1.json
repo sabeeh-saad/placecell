@@ -1,0 +1,565 @@
+{
+  "schema_version": 1,
+  "cases": {
+    "single": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "polite": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "the bookshelf"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "chain": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer",
+                "bookshelf"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "reverse": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "bookshelf",
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "three": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer",
+                "workstation",
+                "bookshelf"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "repeat": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer",
+                "bookshelf",
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "qualified": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "red printer beside the window"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "qualified-chain": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "left printer",
+                "right printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "lookalike": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "lookalike-qualified": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer beside the bookshelf"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "missing": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "cupboard"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "removed": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "coffee machine"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "negated": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "negated-chain": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "question": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "quoted": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "hypothetical": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "manipulation": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "conditional": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "timed": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "unknown-reference": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "known-reference": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "conflicting-reference": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "resume": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    }
+  }
+}
