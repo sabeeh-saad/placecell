@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-21",
+  "scope": "Day 2 evaluation machinery and offline development baseline; live mission quality remains unassessed",
+  "runtime_base_commit": "c09c41ded0b0a07b60b5139acbaf53d8d4ec1965",
+  "source_state": "Local Day 2 changes identified by hashes; planning-only history stays local",
+  "sources_sha256": {
+    "src/placecell/mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+    "src/placecell/missions.py": "7552832286175643d3b043d0d51d1acb83dc247959844d966d385dd033b10a90",
+    "tests/test_mission_evaluation.py": "d53fd53451c841279066b30152f0fda2f3783bdf7c6bb95aba6428461639bceb",
+    "pyproject.toml": "5236a878b811360ad421002a03560ae5bd97def93b31d502810f080acaf7e608",
+    "evaluation/missions/baseline-v1.json": "5ac552960f59ab5446c7b8d037232a0bd37111d6f12b73c6cec13e6ee47ee1bb",
+    "evaluation/missions/scripted-replies-v1.json": "4885ea2263452fed6a4426baafe13bc020911e4a4662721fd82d59d2d15909ee"
+  },
+  "artifacts_sha256": {
+    "simulation/artifacts/day-02/report-final.json": "e336f9b875430ac3bac77fe0bfe41b79879f2ec4e778d10e1f7c4e13c084287c",
+    "simulation/artifacts/day-02/trials-final.json": "22f6a1da0e7d29b478383b4a809ebfa6ba17649c8ef1dcfe8e7c22fc464bb3ef",
+    "simulation/artifacts/day-02/resources-final.json": "c97e70cbb36e1b9fa122251e23442b556c42e90fba53de4395378464fb1fa46f",
+    "simulation/artifacts/day-02/tests.xml": "439460c335cd02bc99e5ba3036377fa662b53de8cd8e39c5b02ebaa5e990e281",
+    "simulation/artifacts/day-02/annotation-worklist.json": "0d997b57373edafa2a3fe93f2a41bbe70a8289861aafe8e8fbcaae8c0e05afaf",
+    "simulation/artifacts/day-02/installed-cli-dataset.json": "4ccfe50e74c011caf3231ebfc2e48f1a8538f87e72f87b57b80bbff8ba58a3c9",
+    "simulation/artifacts/day-02/placecell-day2-baseline.py": "52dcd01cf1d3c9c53890d2300060430b874310ecd0d3f64d84a8e2b09e9654c7",
+    "simulation/artifacts/day-02/placecell-day2-worksheet.py": "bdc29690b5165392fef66b414f9bbc8e59d0b2f7d57a408d1d3a99d6027fd387"
+  },
+  "dataset": {
+    "id": "mission-baseline-v1",
+    "sha256": "5ac552960f59ab5446c7b8d037232a0bd37111d6f12b73c6cec13e6ee47ee1bb",
+    "label_status": "draft, assistant-authored synthetic contract cases",
+    "development_cases": 24,
+    "held_out_cases": 0,
+    "recording_groups": 1,
+    "recording_sessions": 6,
+    "recording_frames": 60,
+    "frames_with_depth": 54,
+    "approved_visual_case_labels": 0
+  },
+  "protocol": {
+    "version": 1,
+    "case_matching": "case ID and exact dataset hash",
+    "plan_matching": "Ordered, repeated visits preserved; explicitly listed aliases normalized for case/whitespace only",
+    "split_policy": "Whole declared layouts and recording identities; no per-frame random split",
+    "missing_trials": "Fail in the denominator; no silent dropping",
+    "execution_not_run": "Unassessed; missing Gazebo-runner execution is failed",
+    "physical_target_scoring": "Dispatch and confirmation IDs, independently of plan descriptions",
+    "cost_policy": "Unknown remains null; known subtotal is separate",
+    "latency": "Wall-clock per-stage timing including failed/timeout trials; nearest-rank percentiles"
+  },
+  "baseline": {
+    "run_id": "day-02-offline-20260921-02",
+    "runner": "scripted",
+    "claim": "Scripted software check; not model accuracy",
+    "plan": {
+      "eligible": 24,
+      "assessed": 24,
+      "passed": 24,
+      "failed": 0,
+      "unassessed": 0,
+      "pass_rate": 1.0
+    },
+    "execution": {
+      "eligible": 24,
+      "assessed": 0,
+      "passed": 0,
+      "failed": 0,
+      "unassessed": 24,
+      "pass_rate": null
+    },
+    "mission_completion": {
+      "eligible": 10,
+      "assessed": 0,
+      "passed": 0,
+      "failed": 0,
+      "unassessed": 10,
+      "pass_rate": null
+    },
+    "appropriate_abstention": {
+      "eligible": 14,
+      "assessed": 0,
+      "passed": 0,
+      "failed": 0,
+      "unassessed": 14,
+      "pass_rate": null
+    },
+    "plan_latency": {
+      "count": 24,
+      "p50_ms": 0.017995000234805048,
+      "p95_ms": 0.09046700142789632,
+      "p99_ms": 0.0967050000326708
+    },
+    "model_api_calls": 0,
+    "total_cost_usd": 0.0,
+    "resources": {
+      "scope": "Single offline evaluator process, including Python startup; not ROS/Gazebo or live inference",
+      "platform": "Linux",
+      "python": "3.12.3",
+      "exit_code": 0,
+      "wall_time_s": 0.31217409300006693,
+      "user_cpu_s": 1.147749,
+      "system_cpu_s": 0.038058,
+      "max_rss_kib_linux": 38300,
+      "model_api_calls": 0,
+      "output_files_bytes": 27957
+    }
+  },
+  "validation": {
+    "new_evaluator_tests": 60,
+    "full_suite_tests": 781,
+    "failures": 0,
+    "errors": 0,
+    "full_suite_seconds": 61.25,
+    "total_coverage_percent": 95.44,
+    "new_module_coverage_percent_rounded": 97,
+    "ruff_check": "passed",
+    "ruff_format": "passed",
+    "strict_mypy": "passed on 60 source files",
+    "installed_cli": "Editable install without network/dependencies; dataset validation through placecell-evaluate-missions passed",
+    "coverage_note": "Dotted-module coverage selection triggered a NumPy reimport error in this environment. Normal package-wide coverage passed; no repository coverage file modified."
+  },
+  "reference_resource_status": {
+    "cpu_quota": 8,
+    "container_memory_gib": 16,
+    "per_run_artifact_ceiling_gib": 20,
+    "basis": "Engineering ceilings defined in the local qualification contract; Day 1 used the CPU/RAM quotas for bounded Gazebo checks. Day 2 measurements above cover only the evaluator process.",
+    "disk_cap_enforced": false,
+    "long_run_retention_qualified": false,
+    "ingestion_age_budget": "pending measured provider workload"
+  },
+  "outstanding": [
+    "Human review of the 24 draft instruction labels and actual image/instance annotations",
+    "Independent held-out layouts/sessions and frozen human-reviewed labels before model tuning",
+    "Agreed model API budget and a real-model baseline",
+    "Actual grounded Gazebo mission trials; importer is not an automatic ROS trace exporter",
+    "Measured ingestion-work age budget and endurance resource qualification"
+  ],
+  "release_qualification": "unassessed"
+}

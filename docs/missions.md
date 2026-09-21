@@ -8,6 +8,10 @@ and simulated transport, not real-model language accuracy or live robot reliabil
 
 ## Agents and execution
 
+Use the [mission evaluation guide](mission-evaluation.md) for labelled cases and repeatable
+plan/outcome scoring. Its scripted baseline checks software contracts; live-model mission
+accuracy and visual grounding remain separate evaluations.
+
 [![PlaceCell architecture: planning and review agents pass ordered goals to a mission controller; each goal is retrieved, visually checked, navigated to with Nav2, and verified on arrival, with persistent memory, conversation context, and ROS feedback.](assets/mission-architecture.png)](assets/mission-architecture.png)
 
 [View full-size diagram](assets/mission-architecture.png) · [Editable HTML source](assets/mission-architecture.html)
