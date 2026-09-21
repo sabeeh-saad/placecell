@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-21",
+  "purpose": "Day 1 reference setup; not production or real-model mission qualification",
+  "runtime_base_commit": "6f29b73fafa33f359ea13d42bb45ce563d0d52f8",
+  "working_tree_at_validation": "Day 1 changes were uncommitted when validated; file hashes identify the tested content",
+  "files_sha256": {
+    "simulation/Dockerfile": "1227d659db99931e98c6632c20226438a807faee7ef469851670ff2f27309452",
+    "simulation/compose.yaml": "7d635d7f2ba28e7925d6457691946fa767c956623f59cf39c3f7b83c4ee64b9d",
+    "simulation/sim": "8c3c3e15bb1117aba1aca77e04b369583c26f986fe08cc046f5888e0ba6f1da9",
+    "simulation/config/placecell.yaml": "b3910341e18db23c6b89123db87dd7f93c0b2546e34887bd060ca308d00ab407",
+    "simulation/config/missions.yaml": "21a1a980ace054a2163c26e9c86d524f5d801ec3da54907dfed57051b9be83c7",
+    "simulation/config/nav2.yaml": "afd9aaf573a8631a285295e729bb0e616c28b707b562a4e2619ad4ffd658f9eb",
+    "simulation/launch/office.launch.py": "d5ef0b8a875d0dfbf80d3cb17d35864ce409e478339009bc0295d11c9eabaf54",
+    "simulation/launch/navigation.launch.py": "5232fed82be26a4700ecaaa309a442534026cada7e0b2f5c9d2585a8f24b9422",
+    "simulation/worlds/office.sdf": "59e3e52e1a2b61a4af13346f387f4da69490df808d3400c18b4de396ab41aae9",
+    "simulation/models/robot/robot.urdf.xacro": "f81a53f71b49622817f222e006c791225e6bbd0af950fe2948092bc32a3ba96f",
+    "simulation/scripts/smoke_test.py": "41ec7742eaae425883ce27b9425a592f96b07de0a315d63a4ca4395a9d7fc331",
+    "simulation/scripts/pipeline_test.py": "e35ac9d9831b132a1ba6b776e85f6f1089cf3814f8f69b9561b452b9ed3d7aa5"
+  },
+  "python_source_manifest_sha256": "e8f3200e33e3657f652147a30e3e4a92f51299b26d37838c216cdbc690a2c5d5",
+  "source_manifest_artifact": "simulation/artifacts/day-01-20260921/source-sha256.json",
+  "local_check_scripts_sha256": {
+    "simulation/artifacts/day-01-20260921/placecell-day1-profile-check.py": "98c26a8535ef1cbc57e8e6141f00537fe4a95981a1615f4779687e581c749d34",
+    "simulation/artifacts/day-01-20260921/placecell-day1-startup.py": "4aeefcfaceafdcc9c08d3947ee343b6c928d1e83f5534cb33f09de9c715e9f9e",
+    "simulation/artifacts/day-01-20260921/placecell-day1-launcher-check.py": "79e929a1ba33cec66e10b5690f9afd244ea89a3f5a66309e6ed355d3a0ff3aac",
+    "simulation/artifacts/day-01-20260921/placecell-day1-recordings.py": "6621cfff117bdeae61e3a6d61b4817fed5a895c330177e43b7c652ee34f6e9db"
+  },
+  "environment": {
+    "host_os": "Ubuntu 24.04.5 LTS",
+    "host_architecture": "x86_64",
+    "cpu": "Intel Core Ultra 9 285H",
+    "logical_cpus": 16,
+    "ram_kib": 65248908,
+    "free_disk_gib_at_inventory": 369.9,
+    "other_workloads_running": true,
+    "image_id": "sha256:f1dc29c81ab6093ebb6d4bd9c18474d4fea44f3e34e6c8dcf7addf906db0472a",
+    "image_created": "2026-09-16T14:17:16.361254769+02:00",
+    "image_source": "Existing image with current repository src/placecell and simulation mounted read-only; not a fresh image build",
+    "container_python": "3.12.3",
+    "packages": {
+      "numpy": "1.26.4",
+      "lancedb": "0.38.0",
+      "pyarrow": "21.0.0",
+      "Pillow": "10.2.0",
+      "PyYAML": "6.0.1"
+    },
+    "ros_packages": {
+      "ros-jazzy-navigation2": "1.3.13-1noble.20260905.072714",
+      "ros-jazzy-nav2-bringup": "1.3.13-1noble.20260907.023821",
+      "ros-jazzy-rclpy": "7.1.12-1noble.20260902.053513",
+      "ros-jazzy-ros-gz": "1.0.24-1noble.20260905.090616",
+      "ros-jazzy-gz-sim-vendor": "0.0.13-1noble.20260905.073557"
+    },
+    "gazebo_run_limits": {
+      "cpus": 8,
+      "memory_gib": 16,
+      "shm_mib": 512,
+      "network": "none",
+      "duration_timeout_s_per_nav_check": 360
+    },
+    "ros_profile_run_limits": {
+      "cpus": 4,
+      "memory_gib": 8,
+      "network": "none"
+    }
+  },
+  "resources": {
+    "monthly_model_budget": "undecided by maintainer",
+    "paid_model_calls_today": 0,
+    "provider_access_today": "not contacted or verified",
+    "initial_artifact_allowance_gib_per_run": 20,
+    "allowance_status": "Provisional, not an implemented disk cap. Day 2 must measure and freeze acceptance budgets."
+  },
+  "recording_inventory": {
+    "search_scope": "This checkout simulation/artifacts/*/recording/observations.jsonl; no external recording directories supplied",
+    "sessions": [
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T114803Z-614374/recording/observations.jsonl",
+        "manifest_sha256": "3926d99f5897163631a11e12fdf2368cf6785228080be064021453a6f949f91a",
+        "frames": 8,
+        "depth_frames": 8,
+        "valid_images": 8,
+        "map_ids": [
+          "office-v1"
+        ],
+        "errors": [],
+        "result": "passed"
+      },
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T115127Z-618782/recording/observations.jsonl",
+        "manifest_sha256": "ce1a15c610d1644f3d0f8a5048a386a8b2134ca5bfc768053ea1a5c36f6a346d",
+        "frames": 10,
+        "depth_frames": 10,
+        "valid_images": 10,
+        "map_ids": [
+          "office-v1"
+        ],
+        "errors": [],
+        "result": "passed"
+      },
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T120808Z-638672/recording/observations.jsonl",
+        "manifest_sha256": "c298e0f056c4b6a78720513c55e048f622c3d257a3badc6fe28bf163c022994d",
+        "frames": 10,
+        "depth_frames": 9,
+        "valid_images": 10,
+        "map_ids": [
+          "office-v1"
+        ],
+        "errors": [],
+        "result": "passed"
+      },
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T121130Z-642627/recording/observations.jsonl",
+        "manifest_sha256": "609a33a4a458a8f2d61bcf6de476d0563685a082b5b0325681439b65e6b7bad6",
+        "frames": 11,
+        "depth_frames": 7,
+        "valid_images": 11,
+        "map_ids": [
+          "office-v1"
+        ],
+        "errors": [],
+        "result": "passed"
+      },
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T121717Z-648876/recording/observations.jsonl",
+        "manifest_sha256": "7fa27cdb281356d6d533a709793cd129bc3efbc202df50463605073e96772d81",
+        "frames": 12,
+        "depth_frames": 11,
+        "valid_images": 12,
+        "map_ids": [
+          "office-v1"
+        ],
+        "errors": [],
+        "result": "passed"
+      },
+      {
+        "manifest": "simulation/artifacts/pipeline-11/recording/observations.jsonl",
+        "manifest_sha256": "c77fcb47ce4cb43a4bf3c593f6f8634213ad7b44c16590c0803c643639a16811",
+        "frames": 9,
+        "depth_frames": 9,
+        "valid_images": 9,
+        "map_ids": [
+          "office-v1"
+        ],
+        "errors": [],
+        "result": "passed"
+      }
+    ],
+    "session_count": 6,
+    "frames": 60,
+    "depth_frames": 54,
+    "checks": "Parsed portable recordings, checked identity/order using read_recording, verified referenced images with Pillow; counted depth presence, not sensor accuracy",
+    "independent_human_labels": "None identified in the inspected artifact tree; annotation inventory still required",
+    "split": "All existing office sessions treated as development/baseline; no held-out split declared",
+    "limitations": "One office map with repeated frames; not six independent environments. Videos alone are not aligned RGB-D evaluation data. Raw artifacts are local and ignored by Git."
+  },
+  "validation": {
+    "targeted_regressions": {
+      "result": "passed",
+      "tests": 136,
+      "seconds": 6.42,
+      "command": ".venv/bin/pytest tests/test_missions.py tests/test_navigation.py tests/test_nav2.py tests/test_ros2_bridge.py tests/test_simulation_control.py",
+      "mode": "Scripted providers and simulated transport; rerun outside filesystem sandbox after sandbox run stalled"
+    },
+    "ros_parameter_profile": {
+      "result": "passed",
+      "explicit_parameters_checked": 55,
+      "checks": [
+        "Actual rclpy parameter-file precedence",
+        "Known names and declared parameter types",
+        "Required navigation/mission/localization/verification settings",
+        "Planner/reviewer construction without API calls"
+      ]
+    },
+    "mission_node_startup": {
+      "result": "passed",
+      "checks": [
+        "Real node initializes and exposes configured ROS parameters",
+        "Mission context SQLite file created",
+        "Duplicate launcher exits 73",
+        "SIGINT shutdown exits zero with no active goal"
+      ],
+      "limits": "Network disabled, no cameras or Nav2 server; does not test a live-model mission"
+    },
+    "launcher_boundary": {
+      "result": "passed",
+      "checks": [
+        "No-key launch fails before Docker",
+        "Credential value absent from arguments and output",
+        "Correct profile order",
+        "Overrides preserve quoting",
+        "Nonblocking no-fork lock"
+      ]
+    },
+    "gazebo_sensors": {
+      "result": "passed",
+      "report": {
+        "rgb_size": [
+          640,
+          480
+        ],
+        "camera_frame": "camera_optical_frame",
+        "depth_valid_fraction": 0.9833333333333333,
+        "lidar_samples": 360,
+        "simulation_clock_advances": true,
+        "rgbd_accepted_by_placecell": true
+      }
+    },
+    "gazebo_nav2": {
+      "result": "passed",
+      "report": {
+        "mode": "navigation",
+        "passed": true,
+        "localization_ready": true,
+        "observation_pose": {
+          "x": 0.9410770989932451,
+          "y": -0.008314604517072575,
+          "yaw": 0.059940267365862464
+        },
+        "departure_pose": {
+          "x": -0.9427096628752359,
+          "y": 0.3073736133871764,
+          "yaw": -3.0768351097148354
+        },
+        "total_distance_m": 2.930666518540352,
+        "statuses": []
+      },
+      "limits": "Two real Nav2 goals using AMCL; no mission planner or visual grounding in this check"
+    },
+    "bash_syntax": "passed",
+    "ruff_lint": "passed",
+    "ruff_format": "passed",
+    "git_diff_check": "passed"
+  },
+  "issues_found_and_rechecked": [
+    "Startup test found the extra flock parent exited on SIGINT; launcher now uses --no-fork and the real-node startup/shutdown check passed again.",
+    "First environment probe requested an absent gz-harmonic metapackage; corrected to the installed ROS Gazebo vendor package. Parameter assertions had passed; complete corrected probe passed."
+  ],
+  "unassessed": [
+    "Live planning/review tool-calling quality and chained visual missions",
+    "Independent human labels and held-out multi-layout trials",
+    "Frozen latency, CPU/RAM/storage and cost acceptance thresholds",
+    "Long-duration memory/retention behavior",
+    "Fresh image build and clean operator onboarding",
+    "Physical-robot qualification"
+  ]
+}

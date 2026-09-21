@@ -1,0 +1,28 @@
+# Load after placecell.yaml. This profile is opt-in and makes paid model calls.
+# Reference candidate only: live planning/review quality is not yet qualified.
+placecell:
+  ros__parameters:
+    mission_enabled: true
+    mission_model: google/gemini-2.5-flash
+    mission_base_url: https://openrouter.ai/api/v1
+    mission_review_model: google/gemini-2.5-flash
+    mission_review_base_url: https://openrouter.ai/api/v1
+    mission_request_timeout_s: 30.0
+    mission_max_destinations: 8
+    mission_conversation_id: office-reference-operator
+    mission_context_path: /home/simulator/placecell-missions/missions.sqlite3
+    # Keep this run separate from the existing single-goal tests.
+    db_path: /home/simulator/placecell-missions/db
+    collection: office_missions
+    keyframe_dir: /home/simulator/placecell-missions/keyframes
+    corrections_path: /home/simulator/placecell-missions/corrections.jsonl
+    # Explicit candidate and arrival verification, including object identity.
+    verification_model: google/gemini-2.5-flash
+    verification_base_url: https://openrouter.ai/api/v1
+    object_arrival_model: google/gemini-2.5-flash
+    object_search_enabled: false
+    # No extra question-answering/maintenance model calls in this profile.
+    chat_model: ""
+    consolidate_interval_s: 0.0
+    # Capture is opt-in; a recording directory must be new on every node start.
+    recording_dir: ""

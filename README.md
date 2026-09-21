@@ -224,6 +224,7 @@ See [memory operations](docs/operations.md) for retention, upgrades, and recover
 
 - [Navigation and speech](docs/navigation.md): robot prerequisites, commands, and arrival checks.
 - [Agent missions](docs/missions.md): planning, review, conversation context, and ROS feedback.
+- [Reference deployment](docs/reference-deployment.md): the mission profile, operator walkthrough, and validation limits.
 - [Image and caption retrieval](docs/multimodal.md): providers, re-embedding, and retrieval evaluation.
 - [Object memory](docs/objects.md): instance association and RGB-D change tracking.
 - [Object approach planning](docs/approach.md): selecting checked stopping poses near objects.

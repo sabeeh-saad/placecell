@@ -4,6 +4,9 @@ Status: **proposed and unassessed**, 18 September 2026. This document defines wh
 be demonstrated; it does not certify the current alpha or turn a deadline into a guarantee.
 Implementation sequencing is in the [30-day roadmap](roadmap.md).
 
+The [Day 1 reference deployment](reference-deployment.md) specifies the initial configuration
+and workflow. Its offline/setup evidence does not mark the acceptance gates below as passed.
+
 ## Release claim and supported profile
 
 The one-month objective is operationally reliable PlaceCell software for one documented

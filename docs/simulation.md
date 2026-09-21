@@ -6,6 +6,11 @@ camera → memory → semantic command → Nav2 → visual arrival test. No phys
 is required. Sensor and navigation checks need no API key; the complete perception
 test uses hosted models. All world geometry is bundled; no CLIP weights are downloaded.
 
+For interactive multi-goal instructions, use the separate
+[mission reference profile and walkthrough](reference-deployment.md). The existing
+`check-pipeline` test remains a single-goal test; `start-nav` alone does not start PlaceCell
+or its planning agents.
+
 ![RGB camera view of the printer and desk in the bundled Gazebo office](assets/gazebo-camera.png)
 
 The image above is an actual 320 × 240 camera capture from the original headless smoke test.

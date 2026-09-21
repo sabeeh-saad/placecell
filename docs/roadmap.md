@@ -13,6 +13,12 @@ acceptance targets, evidence requirements and release blockers. It must remain e
 that physical-robot behavior is unqualified. Simulation results cannot establish braking,
 contact behavior, physical sensor performance or hardware reliability.
 
+Day 1, 21 September: the [mission reference deployment](reference-deployment.md) now defines
+the opt-in profile, operator workflow and available local recordings. Validation is tracked
+in the [Day 1 record](validation/day-01.json). The monthly model budget is undecided;
+compute/storage allowances are provisional until Day 2 measurements. No live-model
+mission quality or production qualification is claimed by these setup checks.
+
 ## Scope for this month
 
 The supported reference is a single robot, one aligned RGB-D stream, trusted localization
