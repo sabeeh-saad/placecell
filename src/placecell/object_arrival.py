@@ -14,7 +14,7 @@ from typing import Literal, Protocol
 import numpy as np
 
 from placecell.depth import ObjectPosition
-from placecell.errors import ValidationError
+from placecell.errors import FailureStage, TargetValidationError, ValidationError
 from placecell.memory import Evidence, EvidenceKind, Memory
 from placecell.object_types import ObjectRecord, ObjectView
 from placecell.objects import ObjectTracker
@@ -63,6 +63,8 @@ class ObjectArrivalVerdict:
     result: Literal["matched", "missing", "ambiguous", "unobserved", "unavailable"]
     reason: str
     position: ObjectPosition | None = None
+    failure_stage: FailureStage = ""
+    checked_generation: int | None = None
 
 
 class ObjectArrivalVerifier:
@@ -75,37 +77,44 @@ class ObjectArrivalVerifier:
         policy: ObjectArrivalPolicy | None = None,
         *,
         clock: Callable[[], float] = time.time,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.tracker, self.comparator = tracker, comparator
         self.policy, self.clock = policy or ObjectArrivalPolicy(), clock
+        self.monotonic = monotonic
+
+    def _rivals(self, record: ObjectRecord) -> tuple[Memory, ...]:
+        journal = self.tracker.store.objects
+        records = journal.records(
+            robot_id=record.robot_id, camera_id=record.camera_id, frame_id=record.frame_id, map_id=record.map_id
+        )
+        if len(records) > 1000:
+            raise TargetValidationError("arrival comparison exceeds the object scope limit", "retrieval")
+        # Labels can change (printer/copier). Appearance rivals must not be excluded by a label.
+        return tuple(
+            view.memory
+            for other in records
+            if other.id != record.id
+            for view in journal.views(other.id, include_crops=False, limit=4)
+        )
 
     def capture(self, identity: str) -> ObjectReference:
         journal = self.tracker.store.objects
         with self.tracker.store.transaction():
             record = journal.get(identity)
             if record is None or record.status != "present" or record.misses:
-                raise ValidationError("object reference is unavailable")
+                raise TargetValidationError("object reference is unavailable", "retrieval")
             views = tuple(v for v in journal.views(identity, limit=4) if v.crop_png and v.memory.localization_checked)
             if not views:
-                raise ValidationError("object reference needs localized saved crops")
-            records = journal.records(
-                robot_id=record.robot_id, camera_id=record.camera_id, frame_id=record.frame_id, map_id=record.map_id
-            )
-            if len(records) > 1000:
-                raise ValidationError("arrival comparison exceeds the object scope limit")
-            rivals = tuple(
-                view.memory
-                for other in records
-                if other.id != identity and other.label == record.label
-                for view in journal.views(other.id, include_crops=False, limit=4)
-            )
-            return ObjectReference(record, views, rivals)
+                raise TargetValidationError("object reference needs localized saved crops", "retrieval")
+            return ObjectReference(record, views, self._rivals(record))
 
     def available(self, reference: ObjectReference) -> bool:
         current = self.tracker.store.objects.get(reference.record.id)
         return bool(
             current is not None
             and current.status != "ambiguous"
+            and current.first_seen == reference.record.first_seen
             and (current.robot_id, current.camera_id, current.frame_id, current.map_id, current.label)
             == (
                 reference.record.robot_id,
@@ -152,10 +161,18 @@ class ObjectArrivalVerifier:
         self, reference: ObjectReference, observation: Observation, canceled: Callable[[], bool] = lambda: False
     ) -> ObjectArrivalVerdict:
         p, record = self.policy, reference.record
+        deadline = self.monotonic() + p.max_observation_age_s - (self.clock() - observation.timestamp)
 
         def check() -> None:
-            if canceled() or self.clock() < observation.timestamp or not self.available(reference):
-                raise ValidationError("object arrival check canceled or reference removed")
+            if canceled():
+                raise TargetValidationError("object arrival check canceled", "execution")
+            if not 0 <= self.clock() - observation.timestamp <= p.max_observation_age_s or self.monotonic() > deadline:
+                raise TargetValidationError("object arrival observation expired or clock changed", "geometry")
+            if not self.available(reference):
+                raise TargetValidationError("object arrival reference removed or identity changed", "retrieval")
+            current = self.tracker.store.objects.get(record.id)
+            if current is None or max(current.last_seen, current.last_miss) > observation.timestamp:
+                raise TargetValidationError("newer object evidence supersedes this arrival image", "geometry")
 
         if (
             not observation.localization_checked
@@ -164,7 +181,9 @@ class ObjectArrivalVerifier:
             != (record.robot_id, record.camera_id, record.frame_id, record.map_id)
             or observation.timestamp <= record.last_seen
         ):
-            raise ValidationError("object arrival needs a fresh localized observation in the original scope")
+            raise TargetValidationError(
+                "object arrival needs a fresh localized observation in the original scope", "geometry"
+            )
 
         check()
         fresh = self.tracker.detect_views(observation)
@@ -191,27 +210,45 @@ class ObjectArrivalVerifier:
 
         if not scored or scored[0][0] < p.min_similarity:
             if absent():
-                return ObjectArrivalVerdict("missing", "The previously occupied region is visible and empty.")
-            return ObjectArrivalVerdict("unobserved", "The selected object was not observed clearly in this view.")
+                return ObjectArrivalVerdict(
+                    "missing", "The previously occupied region is visible and empty.", failure_stage="geometry"
+                )
+            return ObjectArrivalVerdict(
+                "unobserved",
+                "The selected object was not observed clearly in this view.",
+                failure_stage="identity" if scored else "geometry",
+            )
         score, index = scored[0]
         candidate = fresh[index]
-        alternative = max(scored[1][0] if len(scored) > 1 else -1, self._similarity(candidate, reference.rivals))
-        if score - alternative < p.similarity_margin:
+
+        def ambiguous() -> bool:
+            with self.tracker.store.transaction():
+                rivals = reference.rivals + self._rivals(record)
+            alternative = max(scored[1][0] if len(scored) > 1 else -1, self._similarity(candidate, rivals))
+            return score - alternative < p.similarity_margin
+
+        if ambiguous():
             return ObjectArrivalVerdict(
-                "ambiguous", "Similar objects cannot be distinguished. Please identify the target."
+                "ambiguous",
+                "Similar objects cannot be distinguished. Please identify the target.",
+                failure_stage="identity",
             )
 
         position = observation.depth.locate(candidate.box) if observation.depth else None
         moved = False
         if position_known and position is not None and record.position is not None:
             if position.uncertainty_m > p.max_uncertainty_m:
-                return ObjectArrivalVerdict("unavailable", "The fresh object position is too uncertain.")
+                return ObjectArrivalVerdict(
+                    "unavailable", "The fresh object position is too uncertain.", failure_stage="geometry"
+                )
             distance = position.distance(record.position)
             nearby = max(p.nearby_m, position.uncertainty_m + record.position.uncertainty_m)
             if distance > nearby:
                 if score < p.moved_similarity or distance > p.max_move_m or not absent():
                     return ObjectArrivalVerdict(
-                        "ambiguous", "Appearance suggests a match, but movement is unconfirmed."
+                        "ambiguous",
+                        "Appearance suggests a match, but movement is unconfirmed.",
+                        failure_stage="geometry",
                     )
                 moved = True
         elif not any(
@@ -220,7 +257,9 @@ class ObjectArrivalVerifier:
             and candidate.box.overlap(view.box) >= p.min_overlap
             for view in reference.views
         ):
-            return ObjectArrivalVerdict("unavailable", "Reliable depth or a matching recorded viewpoint is required.")
+            return ObjectArrivalVerdict(
+                "unavailable", "Reliable depth or a matching recorded viewpoint is required.", failure_stage="geometry"
+            )
 
         check()
         verdict = self.comparator.compare(tuple(view.crop_png for view in reference.views), candidate.crop_png)
@@ -228,10 +267,18 @@ class ObjectArrivalVerifier:
         if verdict.result not in {"matched", "not_matched", "uncertain"} or not verdict.reason.strip():
             raise ValidationError("invalid object comparison verdict")
         if verdict.result == "uncertain":
-            return ObjectArrivalVerdict("ambiguous", verdict.reason)
+            return ObjectArrivalVerdict("ambiguous", verdict.reason, failure_stage="identity")
         if verdict.result != "matched":
-            return ObjectArrivalVerdict("unobserved", verdict.reason)
+            return ObjectArrivalVerdict("unobserved", verdict.reason, failure_stage="identity")
         reason = "Saved views and fresh appearance/geometry agree. "
         if moved:
             reason += "The previous location is confirmed empty. "
-        return ObjectArrivalVerdict("matched", reason + verdict.reason, position)
+        with self.tracker.store.transaction():
+            check()
+            if ambiguous():
+                return ObjectArrivalVerdict(
+                    "ambiguous", "New object evidence prevents a unique identity match.", failure_stage="identity"
+                )
+            return ObjectArrivalVerdict(
+                "matched", reason + verdict.reason, position, checked_generation=self.tracker.store.objects.generation
+            )

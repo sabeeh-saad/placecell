@@ -26,6 +26,8 @@ jobs:
         run: simulation/sim check-operator
       - name: Validate cancellation ownership and latency under ROS callback load
         run: simulation/sim check-cancel
+      - name: Validate sensor and clock faults through the ROS node
+        run: simulation/sim check-sensors
       - name: Start the office
         run: simulation/sim start
       - name: Validate sensors, movement and command timeout

@@ -32,7 +32,9 @@ from placecell import (
     ToolCall,
 )
 from placecell.command_identity import CommandJournal, CommandScope
+from placecell.navigation import Resolution
 from placecell.providers import HashingEmbedder
+from placecell.providers.chat import OpenAICompatibleChat
 from placecell.ros2.operator import OperatorInterface
 
 
@@ -120,14 +122,14 @@ class ContractCheck:
         finally:
             self.probe.destroy_client(client)
 
-    def late_snapshot(self, bridge, state):
+    def late_snapshot(self, bridge, state, name="operator_contract"):
         # With the periodic writer stopped, receipt must come from DDS retained history.
         bridge._timer.cancel()
         bridge.publish_snapshot()
         messages = []
         sub = self.probe.create_subscription(
             String,
-            "/operator_contract/mission_snapshot",
+            f"/{name}/mission_snapshot",
             lambda msg: messages.append(json.loads(msg.data)),
             self.retained,
         )
@@ -341,6 +343,118 @@ class ContractCheck:
                         process.wait(timeout=5)
                     assert process.returncode == 0, log_path.read_text()
 
+    def provider_contracts(self):
+        _, controller, nav, tasks, _ = self.server("model_contract_operator")
+        pub = self.probe.create_publisher(String, "/model_contract_operator/command_json", 1)
+        self.until(lambda: pub.get_subscription_count() > 0)
+
+        class ReplyTransport:
+            def __init__(self, arguments, refusal=None):
+                self.arguments, self.refusal, self.calls = arguments, refusal, 0
+
+            def post_json(self, *_):
+                self.calls += 1
+                return (
+                    200,
+                    {},
+                    {
+                        "choices": [
+                            {
+                                "finish_reason": "tool_calls",
+                                "message": {
+                                    "content": None,
+                                    "refusal": self.refusal,
+                                    "tool_calls": [
+                                        {
+                                            "id": "plan",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "propose_navigation_plan",
+                                                "arguments": self.arguments,
+                                            },
+                                        }
+                                    ],
+                                },
+                            }
+                        ]
+                    },
+                )
+
+        valid = json.dumps({"decision": "ready", "destinations": ["printer", "cupboard"], "message": "Visit both"})
+        cases = [
+            ("duplicate decision", '{"decision":"reject",' + valid[1:], None),
+            ("refused response", valid, "Provider refused"),
+            ("unsupported action", valid[:-1] + ',"action":"drive"}', None),
+            ("oversized response", "x" * 65537, None),
+        ]
+        for name, arguments, refusal in cases:
+            transport = ReplyTransport(arguments, refusal)
+            reviewer = ScriptedModel(reviewer=True)
+            controller._mission_planner = MissionPlanner(
+                OpenAICompatibleChat("fixture", transport=transport), PlanReviewAgent(reviewer)
+            )
+            pub.publish(
+                String(data=json.dumps({"schema_version": 1, "command": "instruction", "text": "Visit printer"}))
+            )
+            self.until(lambda: tasks)
+            tasks.pop(0)()
+            state = self.snapshot("model_contract_operator")
+            assert state["status"]["state"] == "rejected" and state["status"]["message"] and not state["busy"]
+            assert transport.calls == 1 and reviewer.calls == 0 and not nav.sent
+            self.checks.append(f"provider contract over ROS: {name} rejects without motion")
+        transport = ReplyTransport(valid)
+        controller._mission_planner = MissionPlanner(
+            OpenAICompatibleChat("fixture", transport=transport), PlanReviewAgent(ScriptedModel(reviewer=True))
+        )
+        pub.publish(String(data=json.dumps({"schema_version": 1, "command": "instruction", "text": "Visit both"})))
+        self.until(lambda: tasks)
+        tasks.pop(0)()
+        nav.sent[0][2](NavigationEvent("succeeded"))
+        tasks.pop(0)()
+        nav.sent[1][2](NavigationEvent("succeeded"))
+        assert self.snapshot("model_contract_operator")["status"]["state"] == "succeeded" and len(nav.sent) == 2
+        self.checks.append("provider contract over ROS: valid structured response completes ordered visits")
+
+    def target_attribution(self):
+        name = "target_contract_operator"
+        bridge, controller, nav, tasks, _ = self.server(name)
+        controller._mission_planner = None
+        original = controller._resolver.resolve
+        events = []
+        self.probe.create_subscription(
+            String, f"/{name}/navigation_status", lambda msg: events.append(json.loads(msg.data)), 10
+        )
+        pub = self.probe.create_publisher(String, f"/{name}/command_json", 1)
+        self.until(lambda: pub.get_subscription_count() > 0 and bridge._status.get_subscription_count() > 0)
+        for stage in ("retrieval", "identity", "geometry", "execution"):
+            # Resolution is scripted here; core fixtures exercise real target checks.
+            controller._resolver.resolve = (
+                original
+                if stage == "execution"
+                else lambda command, stage=stage: Resolution(
+                    "not_found", "Controlled target refusal", failure_stage=stage
+                )
+            )
+            pub.publish(
+                String(data=json.dumps({"schema_version": 1, "command": "instruction", "text": "go to printer"}))
+            )
+            self.until(lambda: tasks)
+            tasks.pop(0)()
+            if stage == "execution":
+                assert len(nav.sent) == 1
+                nav.sent[-1][2](NavigationEvent("failed", "Controlled navigation failure"))
+            state = "failed" if stage == "execution" else "not_found"
+            self.until(
+                lambda state=state, stage=stage: (
+                    events and events[-1]["state"] == state and events[-1]["failure_stage"] == stage
+                )
+            )
+            snapshot = self.snapshot(name)
+            retained = self.late_snapshot(bridge, state, name)
+            assert snapshot["status"]["failure_stage"] == retained["status"]["failure_stage"] == stage
+            assert not snapshot["busy"] and not tasks
+            self.checks.append(f"target failure stage over ROS status, service and retained snapshot: {stage}")
+
     def close(self):
         self.executor.shutdown()
         for node in [*self.nodes, self.probe]:
@@ -360,6 +474,8 @@ def main():
     try:
         check.run()
         check.identity(args.output)
+        check.provider_contracts()
+        check.target_attribution()
         check.production_node(args.output)
         report["passed"] = True
     except Exception:

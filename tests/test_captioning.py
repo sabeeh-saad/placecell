@@ -14,7 +14,7 @@ JPEG_HEADER = b"\xff\xd8\xff\xe0placeholder"
 
 
 def _reply(text: object) -> tuple[int, dict[str, str], dict]:
-    return 200, {}, {"choices": [{"message": {"role": "assistant", "content": text}}]}
+    return 200, {}, {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": text}}]}
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def test_captioner_sends_the_image_as_a_data_url_and_returns_clean_text(image: P
     request = transport.requests[0]
     assert request["url"] == "https://x/v1/chat/completions"
     assert request["headers"]["Authorization"] == "Bearer k"
-    parts = request["payload"]["messages"][0]["content"]
+    parts = request["payload"]["messages"][1]["content"]
     assert parts[0]["type"] == "text" and "robot" in parts[0]["text"]
     assert parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,/9j/")
     assert parts[1]["image_url"]["detail"] == "high"
@@ -61,7 +61,7 @@ def test_captioner_handles_content_parts_and_rejects_bad_replies(image: Path) ->
     with pytest.raises(ProviderError, match="malformed"):
         parse_text({"choices": []})
     with pytest.raises(ProviderError, match="malformed"):
-        parse_text({"choices": [{"message": {"content": 42}}]})
+        parse_text({"choices": [{"finish_reason": "stop", "message": {"content": 42}}]})
     with pytest.raises(ProviderError, match="quota"):
         OpenAICompatibleCaptioner("vlm", transport=FakeTransport([(402, {}, {"error": {"message": "quota"}})])).caption(
             [Evidence(EvidenceKind.FRAME, str(image))]

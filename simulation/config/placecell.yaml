@@ -9,6 +9,8 @@ placecell:
     # Wait longer without accepting a different capture timestamp.
     rgbd_wait_s: 1.0
     localization_required: true
+    # Source and monotonic receipt age for validated RGB/TF and aligned depth.
+    sensor_max_age_s: 5.0
     embed_backend: openrouter
     embed_model: google/gemini-embedding-2
     embed_dimension: 768
@@ -29,6 +31,7 @@ placecell:
     # Cloud calls take wall time; the simulator continues publishing throughout.
     navigation_lookup_timeout_s: 90.0
     navigation_arrival_timeout_s: 90.0
+    navigation_max_observation_age_s: 5.0
     verification_request_timeout_s: 30.0
     object_arrival_request_timeout_s: 30.0
     min_interval_s: 8.0

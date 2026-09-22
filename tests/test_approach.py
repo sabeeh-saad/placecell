@@ -280,7 +280,7 @@ def test_object_command_checks_planning_changes_and_verifies_arrival_at_new_pose
     commands.observe(obs)  # The old viewpoint cannot verify arrival at the new pose.
     assert commands.needs_observation and not tasks
     commands.observe(replace(obs, pose=destination.pose))
-    tasks.pop()()
+    assert not tasks  # An unavailable reference is refused before scheduling provider work.
     assert events[-1].state == "destination_unverified" and not commands.busy
     assert events[-1].object_result == "unavailable"  # An object goal needs its own arrival verifier.
     store.close()

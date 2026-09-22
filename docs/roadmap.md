@@ -79,6 +79,40 @@ an intervening stop prevents pending admission from starting work. The
 at 2.26 ms p99. Deliberate repeated visits remain supported. Crash reservations are never
 replayed; this does not reconcile a surviving Nav2 goal. Day 10 is model/input hardening.
 
+Day 10, 22 September: [model/input contracts](model-input-contracts.md) now reject duplicate
+JSON decisions, refusal-plus-positive responses, incomplete replies, unsupported actions,
+extra visual fields and oversized content. HTTP reads and model task data are bounded;
+observation/history text stays separate from trusted instructions. The
+[Day 10 record](validation/day-10.json) preserves eight reproduced regressions, 1,080
+passing tests, 180/180 fault runs across 60 cases and 19 ROS operator checks. The controlled
+cancellation benchmark passed at 2.58 ms p99. Live-model semantic robustness remains unqualified.
+
+Day 11, 22 September: [sensor and clock contracts](sensor-clock-contracts.md) now require
+live camera/depth provenance for affected goals and retain trust-loss history across
+recovery. Invalid timestamps and TF are refused; backward/source-clock changes latch a
+fault until a fresh run. The [Day 11 record](validation/day-11.json) contains six reproduced
+regressions, 1,145 passing tests, 219/219 fault executions across 73 scenarios, 13 real-DDS
+sensor checks and 19 operator checks. The controlled cancellation check passed at 7.75 ms
+p99 against its 500 ms target. Physical behavior and full sensor-load qualification remain
+open. Day 12 is target freshness and identity.
+
+Day 12, 22 September: [target freshness and identity](target-freshness.md) now remain checked
+through choice, dispatch and fresh arrival verification. Late images/verdicts, deleted
+references and newly competing lookalikes cannot silently confirm a target. Failures retain
+retrieval, identity, geometry or execution attribution alongside their uncertainty. The
+[Day 12 record](validation/day-12.json) preserves nine reproduced regressions, 1,184 passing
+tests, 246/246 fault executions across 82 scenarios, 23 ROS operator checks and 13 sensor
+checks. Controlled cancellation remained below the 500 ms target at 2.84 ms p99. Synthetic
+identity checks do not qualify live-model recognition. Day 13 bounds memory and history.
+
+Checkpoint after Day 12, 22 September: the [Gazebo integration run](gazebo-checkpoint.md)
+exercised real RGB-D/AMCL/Nav2 with live providers and separate deterministic fault
+fixtures. It repaired two packet-loss issues, but the live printer-then-home mission
+stopped with identity ambiguity after reaching the printer. Continuous object identity
+and complete trace retention remain blockers; passing unit checks do not override these
+integration findings. Resolve these findings before treating the accumulated work as
+qualified or proceeding to the next release gate.
+
 ## Scope for this month
 
 The supported reference is a single robot, one aligned RGB-D stream, trusted localization

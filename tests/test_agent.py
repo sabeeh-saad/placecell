@@ -167,7 +167,7 @@ def _reply(
     msg: dict[str, Any] = {"role": "assistant", "content": content}
     if tool_calls is not None:
         msg["tool_calls"] = tool_calls
-    return 200, {}, {"choices": [{"message": msg}]}
+    return 200, {}, {"choices": [{"finish_reason": "tool_calls" if tool_calls else "stop", "message": msg}]}
 
 
 def test_chat_adapter_encodes_history_and_decodes_tool_calls() -> None:

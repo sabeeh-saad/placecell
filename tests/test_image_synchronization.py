@@ -64,6 +64,27 @@ def test_static_calibration_and_depth_before_rgb_work():
     assert pending.pop(1) == (rgb, False)
 
 
+def test_dropped_depth_frame_does_not_hide_a_newer_complete_capture():
+    pending = PendingImages(wait_s=1)
+    old, current = message(10), message(11)
+    pending.add(old, False, 0)
+    pending.add(current, False, 0.2)
+    pending.add_depth(message(11))
+    pending.add_depth(message(11), calibration=True)
+    assert pending.pop(0.5) is None  # Still allow the earlier pair to arrive.
+    assert pending.pop(1.1) == (current, False)
+    assert pending.pop(2) is None
+
+
+def test_no_newer_complete_capture_keeps_bounded_scene_only_fallback():
+    pending = PendingImages(wait_s=1)
+    old, current = message(10), message(11)
+    pending.add(old, False, 0)
+    pending.add(current, False, 0.2)
+    pending.add_depth(message(11))  # Calibration is missing for both.
+    assert pending.pop(1.1) == (old, False)
+
+
 @pytest.mark.parametrize("options", [{"wait_s": -1}, {"max_skew_s": float("nan")}, {"capacity": 0}])
 def test_invalid_synchronization_bounds_are_rejected(options):
     with pytest.raises(ValidationError):

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add bounded live-provider and deterministic-provider Gazebo mission checkpoints, including duplicate commands, stops, sensor loss and changed targets.
+- Prefer newer complete RGB-D captures after a dropped pair's wait expires; keep recent depth trust until its existing freshness deadline without refreshing it from RGB-only frames.
+- Recheck target references immediately before dispatch and after arrival checks; bound arrival capture age through queueing and provider work, including paused source time.
+- Compare current and pre-departure lookalikes across category labels, reject conflicting object-to-scene fallback, and invalidate identity verdicts when evidence changes during final checks.
+- Expose retrieval, identity, geometry and execution failure stages in operator status, snapshots, mission history and traces; add target regressions and nine repeatable fault scenarios.
+- Guard navigation with live sensor freshness and trust generations; lost/recovered localization or camera/depth cannot turn an interrupted mission into success.
+- Latch backward/source-clock changes, block new captures/goals until a fresh run, validate capture-time TF and image timestamps, and use steady RGB-D waits.
+- Add 13 sensor-provenance fault scenarios and an isolated DDS sensor/clock check through the production node, included in CI.
+- Reject ambiguous or malformed provider replies: duplicate JSON fields, refusals beside decisions, missing completion evidence, unsupported actions, extra visual fields and oversized content.
+- Bound HTTP responses and model task data, validate retry/timeouts, and keep observation text separate from trusted model instructions. Live-model semantic robustness remains unqualified.
+- Add 14 provider-contract fault scenarios, malformed-response checks over ROS, and regressions proving late invalid/failed model replies cannot revive stopped work.
 - Add version 2 scoped command IDs, durable bounded retry suppression, conflicting-reuse refusal and command receipts. Preserve deliberate repeated visits and legacy input.
 - Bind identified stop/choice commands to the current request; keep text stop available during journal admission and prevent a pending write from starting work after stop.
 - Exercise command expiry, capacity, clock rollback, concurrent claims, crash reservations and real DDS retries/restart; active Nav2 reconciliation remains separate work.

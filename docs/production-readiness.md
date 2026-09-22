@@ -98,6 +98,27 @@ target at 2.26 ms p99 for the controlled workload. Journal restart suppression i
 from Nav2 goal reconciliation; legacy input, replaced/restored journals, physical motion
 and candidate release qualification retain their documented limits.
 
+Day 10 repairs eight reproduced model/input boundary failures and adds strict bounded
+decision parsing, completion/refusal checks and untrusted-observation data separation.
+The [contract](model-input-contracts.md) and [validation record](validation/day-10.json)
+describe 60 fault scenarios, malformed-response refusal over ROS and continued cancellation
+under blocked providers. Scripted protocol checks do not qualify live-model instruction
+following, unsupported-action detection or resistance to misleading observations; those
+remain held-out evaluation requirements under Gate 2.
+
+Day 11 adds [sensor and clock contracts](sensor-clock-contracts.md): live RGB/TF and aligned
+depth requirements for affected goals, trust generations that survive recovery between
+polls, and a latched clock-reset fault. The [Day 11 record](validation/day-11.json) includes
+regressions and real DDS sensor/clock input through the production node. Clock-reset
+recovery requires confirmed Nav2 quiescence and a fresh collection/keyframe directory;
+automatic post-crash ownership recovery, physical sensor timing and endurance remain open.
+
+Day 12 adds [target freshness and identity checks](target-freshness.md), including current
+references at dispatch/completion, capture-age limits through provider work, live lookalike
+comparisons and explicit failure-stage attribution. The [Day 12 record](validation/day-12.json)
+keeps synthetic object cases, deterministic faults and ROS delivery checks separate from
+live-model identity accuracy and held-out mission qualification.
+
 Release blockers include any observed:
 
 - Goal execution before required plan review, localization or destination checks.

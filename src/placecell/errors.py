@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
+FailureStage = Literal["", "retrieval", "identity", "geometry", "execution"]
+
 
 class PlacecellError(Exception):
     """Base class for all placecell errors."""
@@ -9,6 +13,14 @@ class PlacecellError(Exception):
 
 class ValidationError(PlacecellError, ValueError):
     """A value violates the data model (empty id, negative radius, wrong vector shape, ...)."""
+
+
+class TargetValidationError(ValidationError):
+    """A target check failed at a known stage; preserve attribution across workers."""
+
+    def __init__(self, message: str, failure_stage: FailureStage) -> None:
+        super().__init__(message)
+        self.failure_stage = failure_stage
 
 
 class FrameMismatchError(ValidationError):

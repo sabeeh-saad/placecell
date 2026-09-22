@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import math
 import os
 from pathlib import Path
@@ -18,7 +19,36 @@ _JPEG_FORMATS = ("jpeg", "jpg")
 _CHANNELS = {"mono8": 1, "8UC1": 1, "rgb8": 3, "bgr8": 3, "8UC3": 3, "rgba8": 4, "bgra8": 4, "8UC4": 4}
 
 
+def image_dimensions(message: Any, *, compressed: bool = False) -> tuple[int, int]:
+    """Validate bounded RGB input before it can refresh live sensor health."""
+    if not message.header.frame_id or not 0 < len(message.data) <= 16_000_000:
+        raise ValidationError("camera frame and bounded nonempty image data are required")
+    if compressed:
+        if not any(tag in message.format.lower() for tag in _JPEG_FORMATS):
+            raise ValidationError("compressed camera input must be JPEG")
+        try:
+            from PIL import Image
+
+            with Image.open(io.BytesIO(bytes(message.data))) as image:
+                width, height = image.size
+                if image.format != "JPEG" or width * height > 4_000_000:
+                    raise ValidationError("camera JPEG exceeds image bounds")
+                image.load()
+        except (ImportError, OSError, ValueError) as e:
+            raise ValidationError(f"camera JPEG could not be validated: {e}") from e
+    else:
+        width, height = message.width, message.height
+        channels = _CHANNELS.get(message.encoding, 0)
+        if not channels or message.step < width * channels or len(message.data) != height * message.step:
+            raise ValidationError("camera encoding, stride and buffer dimensions must agree")
+    if min(width, height) <= 0 or width * height > 4_000_000:
+        raise ValidationError("camera dimensions exceed image bounds")
+    return int(width), int(height)
+
+
 def stamp_to_seconds(sec: int, nanosec: int) -> float:
+    if type(sec) is not int or type(nanosec) is not int or sec < 0 or not 0 <= nanosec < 1_000_000_000:
+        raise ValidationError("sensor timestamp must be a nonnegative normalized ROS stamp")
     return sec + nanosec * 1e-9
 
 
@@ -31,6 +61,9 @@ def pose_from_transform(
     tx: float, ty: float, qx: float, qy: float, qz: float, qw: float, frame_id: str = "map", map_id: str = ""
 ) -> Pose:
     """The planar pose of a child frame from a `geometry_msgs/Transform` parent->child."""
+    norm = sum(v * v for v in (qx, qy, qz, qw))
+    if not math.isfinite(norm) or not math.isclose(norm, 1.0, abs_tol=0.01):
+        raise ValidationError("pose quaternion must be normalized")
     return Pose(tx, ty, yaw_from_quaternion(qx, qy, qz, qw), frame_id, map_id)
 
 

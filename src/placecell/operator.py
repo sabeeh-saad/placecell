@@ -10,17 +10,9 @@ from typing import Any
 from placecell.command_identity import CommandScope, IdentifiedCommand
 from placecell.errors import ValidationError
 from placecell.navigation import Destination, NavigationSnapshot, NavigationUpdate, parse_movement
+from placecell.providers._contracts import strict_json
 
 OPERATOR_SCHEMA_VERSION = 1
-
-
-def _unique_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for name, value in pairs:
-        if name in result:
-            raise ValidationError("Command JSON must not contain duplicate fields.")
-        result[name] = value
-    return result
 
 
 def parse_operator_command(payload: str) -> str | IdentifiedCommand:
@@ -28,7 +20,7 @@ def parse_operator_command(payload: str) -> str | IdentifiedCommand:
     if not isinstance(payload, str) or not 1 <= len(payload) <= 16384:
         raise ValidationError("Command JSON must contain 1..16384 characters.")
     try:
-        value = json.loads(payload, object_pairs_hook=_unique_fields)
+        value = strict_json(payload, max_chars=16384)
     except (ValueError, RecursionError) as e:
         raise ValidationError("Command must be a valid JSON object with unique fields.") from e
     if (
@@ -119,6 +111,7 @@ def navigation_data(update: NavigationUpdate) -> dict[str, Any]:
         "choices": [{"option": i, **_describe(d)} for i, d in enumerate(update.choices, 1)],
         "distance_remaining": distance if distance is not None and math.isfinite(distance) else None,
         "object_result": update.object_result,
+        "failure_stage": update.failure_stage,
         "search_attempt": update.search_attempt,
         "mission_id": update.mission_id,
         "mission_step": update.mission_step,

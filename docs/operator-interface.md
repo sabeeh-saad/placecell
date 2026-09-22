@@ -6,6 +6,10 @@ available. All names below assume the default node name `/placecell`; ROS remapp
 namespaces apply normally. This interface is for the reference deployment's trusted local
 ROS graph.
 
+Sensor/localization loss interrupts the current mission and never resumes it automatically.
+Backward/source-clock changes block new captures and goals until a fresh run is started.
+See [sensor/clock outcomes and recovery](sensor-clock-contracts.md) before repeating a command.
+
 Version 2 adds [durable command identity and bounded retries](command-identity.md),
 targeted stop/choice commands and `/placecell/command_receipt`. Use it for clients that
 need to retry uncertain delivery. The version 1 examples below retain their original behavior.
@@ -26,6 +30,9 @@ booleans and floating-point versions are rejected. `text` must be nonblank and c
 most 2,000 characters; `option` must be an integer from 1 through 3. Duplicate or unknown
 fields, unsupported commands/versions, malformed JSON and envelopes longer than 16,384
 characters produce an `invalid` status without reaching a model or changing the mission.
+Non-finite JSON numbers and nesting beyond 32 levels are also invalid. Model responses
+have separate [strict decision contracts](model-input-contracts.md); invalid plans report
+`rejected`, and invalid candidate verification cannot create a destination.
 
 For example:
 
@@ -123,6 +130,10 @@ stream with depth 10. Its JSON retains every previous field and adds:
 - `schema_version: 1`, `type: "navigation_status"`.
 - `instance_id`: the same ID as the snapshot.
 - `sequence`: a strictly increasing status event number within that instance.
+- `failure_stage`: `retrieval`, `identity`, `geometry`, `execution` or an empty string when
+  no failure stage is reported. It is also retained in snapshots, history and traces;
+  use it with `state` and `object_result`, not as a separate success flag. See the
+  [target-freshness contract](target-freshness.md#failure-attribution).
 
 The existing fields are `request_id`, `state`, `message`, `destination`, `choices`,
 `distance_remaining`, `object_result`, `search_attempt`, `mission_id`, `mission_step` and
@@ -162,6 +173,8 @@ time, read-only services, multi-step completion, invalid inputs, cancellation, n
 behavior, durable command retries/restart and the actual PlaceCell node with navigation enabled/disabled. Navigation and
 model results in the multi-step cases are scripted. This is operator-contract evidence;
 it does not establish real-model mission quality, Gazebo movement or physical stopping.
+Day 12 also verifies all four failure stages across live status, snapshot service and
+retained DDS history, using scripted target-resolution and transport failures.
 
 Day 8 adds `simulation/sim check-cancel` for actual ROS actions and cancellation timing.
 Each command subscription now has its own callback group; steady deadline timers remain

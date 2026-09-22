@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
 from placecell.errors import ProviderError, ValidationError
+from placecell.providers._contracts import completion_message, completion_text, strict_json
 from placecell.providers._http import Endpoint, RetryPolicy, Transport
-from placecell.providers.captioning import parse_text
 
 
 @dataclass(frozen=True)
@@ -103,10 +103,14 @@ class VisionVerifier:
             }
         )
         try:
-            if response["choices"][0].get("finish_reason", "stop") != "stop":
-                raise ValueError("incomplete verification response")
-            value = json.loads(parse_text(response))
-            if not isinstance(value, dict) or value.get("result") not in {"matched", "not_matched", "uncertain"}:
+            text = completion_text(completion_message(response), max_chars=16384)
+            assert text is not None
+            value = strict_json(text, max_chars=16384)
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"result", "reason"}
+                or value.get("result") not in ("matched", "not_matched", "uncertain")
+            ):
                 raise ValueError("unknown verdict")
             reason = value.get("reason")
             if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:

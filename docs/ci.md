@@ -75,6 +75,7 @@ reports even when a check fails. A nonzero subprocess exit or timeout fails the 
 simulation/sim build
 simulation/sim check-operator
 simulation/sim check-cancel
+simulation/sim check-sensors
 simulation/sim start
 simulation/sim check
 simulation/sim start-nav
@@ -88,6 +89,17 @@ late subscribers, paused simulated time, cancellation, durable ID retries/confli
 scope/expiry refusal and node startup. Multi-goal model
 and navigation results are scripted. Its artifacts are saved under a unique
 `simulation/artifacts/check-operator-*` directory.
+Day 10 adds malformed provider replies through the actual chat decoder, their visible
+ROS refusal state, and a valid two-goal control. See [model/input contracts](model-input-contracts.md).
+Day 12 adds delivery checks for retrieval, identity, geometry and execution attribution
+through status, snapshot services and retained history. Target regressions and nine new
+fault scenarios run in the existing Python suite. See [target freshness](target-freshness.md).
+
+`check-sensors` sends RGB-D, localization, TF and `/clock` through the production node
+in a disposable container with networking disabled. It checks loss, skew, malformed and
+repeated timestamps, delayed TF, recovery and a backward clock reset. Destination selection
+and action results are scripted; provider calls are blocked. Reports are retained under
+`simulation/artifacts/check-sensors-*`. See [sensor/clock contracts](sensor-clock-contracts.md).
 
 `check-cancel` uses real command topics and a controlled `NavigateToPose` action server,
 with network access disabled, eight CPUs and 16 GiB RAM. It checks cancellation with

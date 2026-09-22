@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import re
 import time
 from pathlib import Path
@@ -13,6 +12,7 @@ from placecell.depth import Box
 from placecell.errors import ProviderError, ValidationError
 from placecell.memory import Evidence
 from placecell.object_types import Detection
+from placecell.providers._contracts import completion_message, completion_text, strict_json
 from placecell.providers._http import Endpoint, RetryPolicy, Transport
 from placecell.providers.gemini import GEMINI_BASE_URL
 from placecell.verification import SceneVerdict
@@ -82,11 +82,28 @@ class GeminiObjectDetector:
             }
         )
         try:
-            candidate = body["candidates"][0]
-            if candidate.get("finishReason") != "STOP":
+            candidates = body["candidates"]
+            if not isinstance(candidates, list) or len(candidates) != 1:
+                raise ValueError("expected exactly one detector candidate")
+            candidate = candidates[0]
+            if candidate.get("finishReason") != "STOP" or body.get("promptFeedback", {}).get("blockReason"):
                 raise ValueError("incomplete detector output")
             parts = candidate["content"]["parts"]
-            return json.loads("".join(part["text"] for part in parts if "text" in part and not part.get("thought")))
+            if (
+                not isinstance(parts, list)
+                or len(parts) > 64
+                or any(
+                    not isinstance(part, dict)
+                    or not isinstance(part.get("text"), str)
+                    or set(part) - {"text", "thought", "thoughtSignature"}
+                    or type(part.get("thought", False)) is not bool
+                    for part in parts
+                )
+            ):
+                raise ValueError("unsupported detector content")
+            if sum(len(part["text"]) for part in parts) > 65536:
+                raise ValueError("detector output exceeds its size limit")
+            return strict_json("".join(part["text"] for part in parts if not part.get("thought")))
         except (AttributeError, KeyError, IndexError, TypeError, ValueError) as e:
             raise ProviderError("invalid or incomplete object detection response") from e
 
@@ -104,11 +121,12 @@ class GeminiObjectDetector:
                 "items": {
                     "type": "object",
                     "properties": {
-                        "label": {"type": "string"},
-                        "description": {"type": "string"},
+                        "label": {"type": "string", "minLength": 1, "maxLength": 100},
+                        "description": {"type": "string", "minLength": 1, "maxLength": 500},
                         "box_2d": {"type": "array", "items": {"type": "integer"}, "minItems": 4, "maxItems": 4},
                     },
                     "required": ["label", "description", "box_2d"],
+                    "additionalProperties": False,
                 },
             },
         )
@@ -117,8 +135,14 @@ class GeminiObjectDetector:
                 raise ValueError("invalid detections")
             result = []
             for item in value:
+                if not isinstance(item, dict) or set(item) != {"label", "description", "box_2d"}:
+                    raise ValueError("missing or unknown detection fields")
                 coordinates = item["box_2d"]
-                if len(coordinates) != 4 or any(type(v) is not int for v in coordinates):
+                if (
+                    not isinstance(coordinates, list)
+                    or len(coordinates) != 4
+                    or any(type(v) is not int for v in coordinates)
+                ):
                     raise ValueError("invalid bounds")
                 ymin, xmin, ymax, xmax = (v / 1000 for v in coordinates)
                 if not isinstance(item["label"], str) or not isinstance(item["description"], str):
@@ -144,10 +168,12 @@ class GeminiObjectDetector:
                 "type": "object",
                 "properties": {"result": {"type": "string", "enum": ["absent", "occluded", "present", "uncertain"]}},
                 "required": ["result"],
+                "additionalProperties": False,
             },
         )
         if (
             not isinstance(value, dict)
+            or set(value) != {"result"}
             or not isinstance(value.get("result"), str)
             or value["result"] not in {"absent", "occluded", "present", "uncertain"}
         ):
@@ -174,16 +200,19 @@ class GeminiObjectDetector:
                 "type": "object",
                 "properties": {
                     "result": {"type": "string", "enum": ["matched", "not_matched", "uncertain"]},
-                    "reason": {"type": "string"},
+                    "reason": {"type": "string", "minLength": 1, "maxLength": 1000},
                 },
                 "required": ["result", "reason"],
+                "additionalProperties": False,
             },
         )
         if (
             not isinstance(value, dict)
+            or set(value) != {"result", "reason"}
             or value.get("result") not in ("matched", "not_matched", "uncertain")
             or not isinstance(value.get("reason"), str)
-            or not 0 < len(value["reason"].strip()) <= 1000
+            or not value["reason"].strip()
+            or len(value["reason"]) > 1000
         ):
             raise ProviderError("invalid object comparison response")
         return SceneVerdict(value["result"], value["reason"])
@@ -244,9 +273,8 @@ class ChatObjectDetector(GeminiObjectDetector):
             }
         )
         try:
-            choice = body["choices"][0]
-            if choice.get("finish_reason") != "stop":
-                raise ValueError("incomplete detector output")
-            return json.loads(choice["message"]["content"])
+            response_text = completion_text(completion_message(body))
+            assert response_text is not None
+            return strict_json(response_text)
         except (AttributeError, KeyError, IndexError, TypeError, ValueError) as e:
             raise ProviderError("invalid or incomplete object detection response") from e
