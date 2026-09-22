@@ -62,8 +62,10 @@ including an incorrectly confident estimate or a map changed without updating `m
 The action adapter uses asynchronous goal, feedback, result and cancellation interfaces
 shared by Humble and Jazzy. Nav2 handles path planning, obstacle avoidance and recovery
 through its configured [NavigateToPose action](https://api.nav2.org/actions/humble/navigatetopose.html).
-The adapter also reads newer result error fields when available. Real robot commissioning
-is still required; automated tests use an injected action client, not a live Nav2 server.
+The adapter also reads newer result error fields when available. Unit tests use injected
+transport; the Day 8 [cancellation check](cancellation-ownership.md) uses real ROS actions
+with a controlled server. Separate Gazebo checks exercise Nav2. Physical commissioning
+and post-crash active-goal reconciliation remain outstanding.
 
 Install with the Python interpreter matching your sourced ROS distribution:
 

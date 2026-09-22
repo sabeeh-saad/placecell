@@ -21,6 +21,7 @@ from typing import Any
 
 from placecell.agent import Agent
 from placecell.approach import ApproachPlanner, ApproachPolicy
+from placecell.command_identity import CommandJournal, CommandScope
 from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.depth import DepthSnapshot
@@ -31,7 +32,6 @@ from placecell.memory import Pose
 from placecell.mission_context import MissionContext
 from placecell.missions import MissionPlanner, PlanReviewAgent
 from placecell.navigation import (
-    Destination,
     DestinationResolver,
     NavigationCommands,
     NavigationPolicy,
@@ -42,6 +42,7 @@ from placecell.object_arrival import ObjectArrivalPolicy, ObjectArrivalVerifier
 from placecell.object_search import ObjectSearch, ObjectSearchPolicy
 from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
 from placecell.observer import Observer
+from placecell.operator import navigation_payload as navigation_payload
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
 from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
 from placecell.recordings import RecordingWriter
@@ -55,8 +56,10 @@ from placecell.ros2.bridge import (
     update_localization,
 )
 from placecell.ros2.depth import PendingImages, aligned_snapshot
-from placecell.ros2.navigation import Nav2Navigator, create_navigator
+from placecell.ros2.navigation import Nav2Navigator, create_navigation_timers, create_navigator
+from placecell.ros2.operator import OperatorInterface
 from placecell.store import CollectionInfo, VectorStore
+from placecell.tracing import TraceStore
 from placecell.verification import VisionVerifier
 
 
@@ -154,6 +157,19 @@ def build_mission_planner(parameters: dict[str, Any], api_key: str | None) -> Mi
     return MissionPlanner(planner, PlanReviewAgent(reviewer), max_destinations=parameters["mission_max_destinations"])
 
 
+def build_trace_store(parameters: dict[str, Any]) -> TraceStore | None:
+    path = parameters["mission_trace_path"]
+    if not path:
+        return None
+    return TraceStore(
+        path,
+        max_events=parameters["mission_trace_max_events"],
+        max_bytes=parameters["mission_trace_max_bytes"],
+        queue_size=parameters["mission_trace_queue_size"],
+        secrets=[os.environ.get(value, "") for key, value in parameters.items() if key.endswith("api_key_env")],
+    )
+
+
 def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[Any]) -> str:
     return json.dumps(
         {
@@ -177,46 +193,6 @@ def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[
                 }
                 for r in evidence
             ],
-        }
-    )
-
-
-def navigation_payload(update: NavigationUpdate) -> str:
-    def describe(destination: Destination) -> dict[str, Any]:
-        p = destination.pose
-        return {
-            "label": destination.label,
-            "source": destination.source,
-            "memory_id": destination.memory.id if destination.memory else None,
-            "object_id": destination.object_id,
-            "goal_kind": (
-                "object_search"
-                if destination.approach and destination.approach.region
-                else "object_approach"
-                if destination.approach
-                else "destination"
-            ),
-            "target": destination.target,
-            "x": p.x,
-            "y": p.y,
-            "yaw": p.yaw,
-            "frame_id": p.frame_id,
-            "map_id": p.map_id,
-        }
-
-    return json.dumps(
-        {
-            "request_id": update.request_id,
-            "state": update.state,
-            "message": update.message,
-            "destination": describe(update.destination) if update.destination else None,
-            "choices": [{"option": i, **describe(d)} for i, d in enumerate(update.choices, 1)],
-            "distance_remaining": update.distance_remaining,
-            "object_result": update.object_result,
-            "search_attempt": update.search_attempt,
-            "mission_id": update.mission_id,
-            "mission_step": update.mission_step,
-            "mission_destinations": list(update.mission_destinations),
         }
     )
 
@@ -520,12 +496,20 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self.create_subscription(String, "~/correct", self._on_correct, 10)
             self.create_subscription(String, "~/refine", self._on_refine, 10)
             self._answers = self.create_publisher(String, "~/answer", 10)
-            self._navigation_status = self.create_publisher(String, "~/navigation_status", 10)
             self._commands: NavigationCommands | None = None
             self._navigator: Nav2Navigator | None = None
             self._command_tasks: BoundedTasks | None = None
             self._mission_context: MissionContext | None = None
+            self._mission_traces: TraceStore | None = None
+            self._command_journal: CommandJournal | None = None
             if p["navigation_enabled"]:
+                self._command_journal = CommandJournal(
+                    p["command_journal_path"] or ":memory:",
+                    CommandScope(p["robot_id"], p["map_id"], p["mission_conversation_id"]),
+                    retry_window_s=p["command_retry_window_s"],
+                    max_records=p["command_max_records"],
+                )
+                self._mission_traces = build_trace_store(p)
                 if p["mission_enabled"]:
                     self._mission_context = MissionContext(
                         p["mission_context_path"] or ":memory:",
@@ -637,6 +621,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     arrival_timeout_s=p["navigation_arrival_timeout_s"],
                     mission_planner=build_mission_planner(p, api_key),
                     mission_context=self._mission_context,
+                    trace_store=self._mission_traces,
                     search=ObjectSearch(
                         approach,
                         ObjectSearchPolicy(
@@ -649,10 +634,8 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     if p["object_search_enabled"] and approach is not None
                     else None,
                 )
-                self.create_timer(0.5, self._navigator.poll)
-                self.create_timer(0.2, self._commands.poll)
-            # Volatile, depth-one commands are never replayed from durable ingestion work.
-            self.create_subscription(String, "~/command", self._on_command, 1)
+                create_navigation_timers(self, self._navigator, self._commands)
+            self._operator = OperatorInterface(self, self._commands, journal=self._command_journal)
             if p["curator_interval_s"] > 0:
                 self.create_timer(p["curator_interval_s"], self._curate)
             if self._consolidator is not None:
@@ -767,7 +750,14 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "mission_request_timeout_s": 8.0,
                 "mission_max_destinations": 8,
                 "mission_context_path": "~/.placecell/missions.sqlite3",
+                "mission_trace_path": "",
+                "mission_trace_max_events": 10000,
+                "mission_trace_max_bytes": 16777216,
+                "mission_trace_queue_size": 256,
                 "mission_conversation_id": "default",
+                "command_journal_path": "~/.placecell/commands.sqlite3",
+                "command_retry_window_s": 86400.0,
+                "command_max_records": 10000,
                 "verification_model": "",
                 "verification_base_url": "",
                 "verification_request_timeout_s": 8.0,
@@ -940,15 +930,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             return self._command_tasks is not None and self._command_tasks.submit(function)
 
         def _publish_navigation(self, update: NavigationUpdate) -> None:
-            self._navigation_status.publish(String(data=navigation_payload(update)))
-
-        def _on_command(self, msg: Any) -> None:
-            if self._commands is None:
-                self._publish_navigation(
-                    NavigationUpdate("", "disabled", "Set navigation_enabled to use movement commands.")
-                )
-            else:
-                self._commands.handle(msg.data)
+            self._operator.publish(update)
 
         def stop_navigation(self) -> None:
             if self._commands is not None:
@@ -1042,6 +1024,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self.get_logger().info(
                 f"ingestion: {stats}, dropped={self._worker.dropped}, objects={self._store.objects.count()}"
             )
+            if self._mission_traces is not None:
+                health = self._mission_traces.health()
+                self.get_logger().info(f"mission traces: {health}")
+                if health["dropped_events"] or health["write_errors"] or not health["writer_alive"]:
+                    self.get_logger().warning("Mission trace capture is incomplete; inspect trace health counters.")
 
         def destroy_node(self) -> bool:
             self.stop_navigation()
@@ -1053,6 +1040,10 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self._store.close()
                 if self._mission_context is not None:
                     self._mission_context.close()
+            if self._mission_traces is not None and not self._mission_traces.close():
+                self.get_logger().warning("Mission trace writer did not finish before the shutdown deadline.")
+            if self._command_journal is not None:
+                self._command_journal.close()
             return bool(super().destroy_node())
 
     import signal
@@ -1067,9 +1058,9 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
         signal.signal(sig, lambda *_: stop.set())
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = PlacecellNode()
-    # TF uses its own reentrant callback group. A second executor thread lets transforms
-    # arrive while camera/footprint callbacks wait; ordinary node callbacks remain serialized.
-    executor = MultiThreadedExecutor(num_threads=2)
+    # Leave room for commands, action results and steady deadlines while camera/TF work
+    # is active. Commands and deadline timers have separate callback groups.
+    executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
     try:
         while not stop.is_set() and rclpy.ok():

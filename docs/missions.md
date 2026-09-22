@@ -94,6 +94,11 @@ It adds:
 - `mission_destinations`: the reviewed ordered descriptions.
 
 Each step has its own `request_id`, also separating late feedback from previous goals.
+
+For persistent diagnostic evidence beyond live status, enable [mission tracing](mission-tracing.md).
+It links these IDs to planning/review, retrieval candidates, visual checks and action results,
+with stage durations and reported provider usage. The reference mission profile enables it;
+export a report by mission ID after a failure or before removing the simulation container.
 The current destination includes its map pose, target, memory/object IDs and source.
 Subscribers can combine the goal index and destination list to display pending goals.
 For example, an abbreviated event during the second goal is:
@@ -112,7 +117,10 @@ For example, an abbreviated event during the second goal is:
 New states are `planning`, `planned`, `clarification_required` and `step_succeeded`.
 `step_succeeded` completes an intermediate visit; only the last visit produces mission
 `succeeded`. Existing resolution, motion, arrival and failure states continue to apply.
-This topic is a live event stream, not a latched mission snapshot service.
+This topic remains a live event stream. Reconnecting clients can read
+`/placecell/get_mission_snapshot` or subscribe to the retained `/placecell/mission_snapshot`
+topic without replaying a command. The [operator interface](operator-interface.md) specifies
+the versioned JSON command/status payloads, snapshot fields and delivery semantics.
 
 Each next goal is resolved against current memory when its turn begins. An earlier lookup
 is not reused throughout a long mission. Memory goals advance only after fresh arrival

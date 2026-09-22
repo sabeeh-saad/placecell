@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from placecell.errors import ProviderError, RateLimitedError, ValidationError
+from placecell.tracing import current_trace, provider_usage, trace_span
 
 
 class Transport(Protocol):
@@ -116,8 +117,24 @@ class Endpoint:
 
     def post(self, payload: Mapping[str, Any]) -> Any:
         """POST until a 200 comes back or the retry budget is spent. Returns the decoded body."""
+        context = current_trace()
+        if context:
+            context.store.register_secrets(
+                [
+                    value.removeprefix("Bearer ")
+                    for key, value in self.headers.items()
+                    if key.casefold() in {"authorization", "x-api-key", "x-goog-api-key"}
+                ]
+            )
+        with trace_span("provider_request", model=payload.get("model"), usage=provider_usage(None)) as details:
+            return self._post(payload, details)
+
+    def _post(self, payload: Mapping[str, Any], details: dict[str, Any]) -> Any:
         for attempt in range(self.retry.attempts):
+            details["attempts"] = attempt + 1
             status, headers, body = self.transport.post_json(self.url, self.headers, payload, self.timeout_s)
+            details["http_status"] = status
+            details["usage"] = provider_usage(body)
             if status == 200:
                 return body
             if status == 429 or status >= 500:

@@ -1,14 +1,15 @@
 # PlaceCell: 30-day production-readiness plan
 
 Baseline: [v0.1.0-alpha.1](https://github.com/sabeeh-saad/placecell/releases/tag/v0.1.0-alpha.1).
-Updated 18 September 2026 after the maintainer prioritized production readiness within
-one month. This replaces the previous feature-expansion plan.
+Started 18 September 2026 after the maintainer prioritized production readiness within
+one month; sequencing reviewed on 22 September (Day 7). This replaces the previous
+feature-expansion plan.
 
 Validation resources: **Gazebo and saved recordings; no physical robot**. The objective is
 to qualify the existing software for a narrow, documented reference deployment. A one-month
 deadline is the target, not evidence that the software meets its release criteria.
 
-The [production-readiness contract](production-readiness.md) defines scope, proposed
+The [production-readiness contract](production-readiness.md) defines scope, frozen
 acceptance targets, evidence requirements and release blockers. It must remain explicit
 that physical-robot behavior is unqualified. Simulation results cannot establish braking,
 contact behavior, physical sensor performance or hardware reliability.
@@ -31,6 +32,52 @@ fixed a late Nav2 success advancing a mission after transport timeout. The
 [Day 3 record](validation/day-03.json) records 36 scenarios and validation evidence.
 These sequential software checks do not satisfy live ROS/Gazebo fault coverage, concurrent
 race testing, physical stopping measurements or post-crash active-goal reconciliation.
+
+Day 4, 21 September: [persistent mission tracing](mission-tracing.md) links instructions,
+plans/reviews, candidates and visual checks to Nav2 events and outcomes. Capture has bounded
+storage and a background writer; export includes unknown usage, retention/loss counters and
+unfinished spans. The [Day 4 record](validation/day-04.json) documents the software suite,
+trace checks in the fault runner and network-disabled real-ROS checks. Physical behavior,
+live provider quality and endurance remain unqualified.
+
+Day 5, 22 September: the [operator contract](operator-interface.md) defines strict versioned
+JSON commands, additive status metadata and an atomic current-state snapshot, available
+through a retained ROS topic and a read-only service. Reconnect checks cover live DDS
+retention, paused simulated time, scripted multi-goal/cancellation outcomes and node startup.
+The [Day 5 record](validation/day-05.json) records software evidence. Durable command
+deduplication and post-crash active-goal reconciliation remain separate qualification work.
+
+Day 6, 22 September: [CI](ci.md) now runs without source-path filters, covers wheel/source
+installation in separate environments across the supported Python matrix, and includes
+offline ROS operator checks before the Gazebo sensor/navigation checks. Test reports are
+retained on failures. The [Day 6 record](validation/day-06.json) distinguishes local Python
+3.12/container validation from the hosted matrix, which awaits a pushed commit and CI run.
+
+Day 7, 22 September: the [readiness review](readiness-review.md) records 24/24 scripted
+planning cases and 108/108 fault runs across 36 scenarios, audits Days 1–6 evidence and
+ranks nine remaining blockers. The [Day 7 record](validation/day-07.json) preserves hashes,
+gate status and dependencies. No release gate is fully satisfied. The remaining order is
+ownership/cancellation, command identity, input/sensor/identity faults, then recovery and
+bounded operation; label/runner preparation must proceed alongside these repairs.
+
+Day 8, 22 September: [cancellation and ownership](cancellation-ownership.md) now preserve
+intent when a terminal result overtakes a timeout callback, isolate stale trip callbacks,
+and issue cancel requests before stop-status persistence. Steady deadline timers and
+separate callback groups work with paused simulation time. The
+[Day 8 record](validation/day-08.json) reports 928 tests, 138/138 fault runs across 46 cases,
+and 100 controlled ROS cancellation trials at 1.38 ms p99 (500 ms target), with complete
+trace capture after fixing a harness shutdown issue. This is not
+physical stopping or full RGB-D workload qualification. Startup reconciliation is specified
+but remains a Day 15 implementation/release blocker; Day 9 is command identity and retries.
+
+Day 9, 22 September: [version 2 command identity](command-identity.md) now provides scoped
+durable reservations, retry suppression, conflicting-ID refusal, bounded retention and
+targeted stop/choice commands. Legacy text stop remains schedulable during JSON admission;
+an intervening stop prevents pending admission from starting work. The
+[Day 9 record](validation/day-09.json) reports 969 tests, 138/138 existing fault runs,
+14 real-ROS operator checks including journal restart, and 100 legacy-stop latency trials
+at 2.26 ms p99. Deliberate repeated visits remain supported. Crash reservations are never
+replayed; this does not reconcile a surviving Nav2 goal. Day 10 is model/input hardening.
 
 ## Scope for this month
 
@@ -83,17 +130,23 @@ ordinary CI. Done when release checks cannot silently omit an affected integrati
 Keep evidence for every failure. Done when weeks 2–4 have a concrete repair order, and
 missing data or compute/model budgets are recorded as dependencies rather than assumed.
 
+Completed: see the [ranked blockers and exit criteria](readiness-review.md#ranked-blockers-and-exit-criteria).
+Data review, provider spending and the endurance resource window remain explicit dependencies.
+
 ## Week 2: Harden execution and destination grounding
 
 **Day 8 — Verify cancellation and goal ownership.** Cover stop during planning, submission,
 navigation and arrival checks, including missing cancellation acknowledgements. Done when
 stale callbacks cannot restart movement or release uncertain Nav2 ownership incorrectly.
 Measure cancel-request latency independently of physical stopping.
+Define startup admission with uncertain pre-crash Nav2 ownership now; Day 15 must prove
+reconciliation or controlled refusal. Expand the scenario/invariant matrix with each repair.
 
 **Day 9 — Handle duplicates and late events.** Introduce or validate stable event IDs at
 supported input boundaries, scoped deduplication and terminal-state rules. Preserve deliberate
 repeated visits. Done when replayed transport messages cannot duplicate a trip and the
 limits of legacy text-only input are documented.
+Include retention, conflicting ID reuse and scope/restart behavior in the identity contract.
 
 **Day 10 — Harden model/input contracts.** Exercise invalid fields, overlong inputs,
 unsupported actions, untrusted text in observations and provider errors. Keep cancellation
@@ -117,12 +170,15 @@ resolve a follow-up to the wrong destination.
 **Day 14 — Run the execution gate.** Repeat the fault matrix, deterministic mission runs and
 held-out cases affected by fixes. Done when all critical execution invariants pass or their
 failures remain explicit release blockers. Reserve unfinished repairs before new work.
+The minimum remains 100 separately specified cases and 1,000 deterministic executions;
+repeat counts, planning-only cases and unrelated unit tests cannot replace case diversity.
 
 ## Week 3: Prove recovery and operational behavior
 
 **Day 15 — Test crash/restart recovery.** Interrupt processes around persistence and model
 work. Verify acknowledged state, retained evidence, job recovery and no automatic movement
 replay. Done when repeated crash points have machine-readable recovery reports.
+Include a Nav2 goal surviving controller termination, using Day 8's startup ownership rule.
 
 **Day 16 — Test backup, restore and upgrades.** Back up consistent state plus images, restore
 into a fresh instance, and exercise the supported migration/rollback path. Corruption must
@@ -137,6 +193,9 @@ outcomes are visible, cancellation remains responsive and recovery does not crea
 configuration against independent labels and compare caption/image/combined retrieval.
 Record versions, repetitions, uncertainty, cost and latency. Done when results measure real
 model behavior; scripted responses cannot substitute for this gate. Calls require a budget.
+Prepare human labels, independent grouped splits, the live trial adapter and a budget/stop
+policy alongside Week 2. If they are unavailable, advance offline recovery/diagnostics work
+and keep Gate 2 unassessed; do not substitute scripted or development cases.
 
 **Day 19 — Run multi-layout Gazebo missions.** Vary object placements, appearances and routes
 across held-out layouts, including multi-goal and ambiguous missions. Simulator labels are
@@ -153,6 +212,8 @@ with fixed input rates, retention limits and resource budgets. Combine a longer 
 workload with repeated Gazebo missions, reporting their durations separately. Use scripted
 providers for continuous fault/load checks; retain separate live-provider trials. Done when
 resource, error, timing and recovery evidence is being captured for later review.
+Start only after critical execution repairs, enforceable retention, a measured accepted-work
+age limit and an agreed workload/resource window. A shorter run cannot satisfy Gate 4.
 
 ## Week 4: Fix evidence-backed gaps and qualify a release
 

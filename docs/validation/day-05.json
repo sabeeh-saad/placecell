@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-22",
+  "scope": "Day 5 versioned operator command/status contract and read-only current mission snapshot",
+  "runtime_base_commit": "eb0ba8719b170d76fb7fb64dcb5cdd55163c2126",
+  "source_state": "Local Day 4 and Day 5 working tree identified by hashes; no Day 5 commit or push performed",
+  "sources_sha256": {
+    "src/placecell/operator.py": "87b7e8437fc9e9aba4b566fa0e00b4489ab2bcfa646d7c459e641ac9e52471f2",
+    "src/placecell/ros2/operator.py": "b220600c7b949da37f33e7535d10f3cf3ee097ff8fa89181650e8ff60be6f79b",
+    "src/placecell/navigation.py": "438afd087a3cc1af2b6ccb4cfdda01ac7e6140f6cac290e63b6fde29d92d94e4",
+    "src/placecell/ros2/node.py": "54ad776d69c2ef11043dad8b2864b5f2866cbc19023a5d62d876f2b741c68dbd",
+    "src/placecell/__init__.py": "c6508e702c386c6ea34350cbe89a90cea0540ef638f88b96bdc96d1421bba048",
+    "tests/test_operator.py": "204bd6b6c2e6421ab53b59cb11c689739f7f1f3ed71767435032b4602d239a7b",
+    "tests/test_ros2_operator.py": "5657e3b5109436c28e8b6d070cbc3fa5f0c70afb137bb7bd1d65e27cac4667db",
+    "simulation/scripts/operator_test.py": "97caa878d7409ac87983945b674114f088bd201fbcc7448e2373af51c13598b1",
+    "docs/operator-interface.md": "8c6b3389eb3038bbf8bcc42be516005aa997db163774fd00c502adb82d7d2ecb",
+    "pyproject.toml": "13779bd81575dc035461764100715d751f4215bd184159326eba284c7a9a593c",
+    "src/placecell/tracing.py": "c43a68020962acd4b0dd227f2d3fcb65184b58700ee02056e53037dcebcf8098",
+    "src/placecell/missions.py": "0237a5204bae7377590101709f377a9ab0bfc74bcc19e53f23231bfb1a31e10c",
+    "src/placecell/fault_injection.py": "db8a314f52b367d8c756128447739a13179bcad36332a07f4b6447b3817a6bfd",
+    "src/placecell/ros2/navigation.py": "e90e52e02db12b77a9d3d2ee644638e435faffd9ff702e132aa7e3cda82a8cff",
+    "src/placecell/providers/_http.py": "6e6e4eeae64f0e8cdc20dad2ec45fd21132474578f694548acc00640de649c97"
+  },
+  "artifacts_sha256": {
+    "simulation/artifacts/day-05/coverage.json": "4ea3b9399ef7a00f7609e508bdeab62aad0e6153343f12938f62a3b308603f4b",
+    "simulation/artifacts/day-05/faults.json": "79815ed857beaef7b5bb34bf11fe5c36da5e35b10eed173a50747ef2e25acddb",
+    "simulation/artifacts/day-05/ros/node-False.log": "c9265c4e298a709410d07e152221ffb24f66cc0fe7dbbd1d459c85a98511dc7c",
+    "simulation/artifacts/day-05/ros/node-True.log": "0eb4c45ae20a317fa24de221e2e965f81164b133a61f1866afdbadaea046fe33",
+    "simulation/artifacts/day-05/ros/report.json": "acd2b3f1495f53044ea45fe9e6261e39d72a56ac565220f52f7e31d7487b9acd",
+    "simulation/artifacts/day-05/tests.xml": "716f58e3be6f21bb215a2dbdd3f2973ae99f98fb92a58ef1688dccce53163fa0"
+  },
+  "implementation": {
+    "operator_schema_version": 1,
+    "commands": {
+      "legacy": "~/command: std_msgs/msg/String, existing text grammar",
+      "versioned": "~/command_json: strict instruction/text, choose/option and stop envelopes",
+      "qos": "Reliable, volatile, keep-last depth 1 for both inputs",
+      "limits": {
+        "envelope_characters": 16384,
+        "instruction_characters": 2000,
+        "choice_range": [
+          1,
+          3
+        ]
+      },
+      "deduplication": "No client command IDs or durable retry guarantee; remains a separate roadmap item"
+    },
+    "status": "Existing fields retained; adds schema_version, type, controller instance_id and monotonic event sequence",
+    "snapshot": {
+      "topic": "~/mission_snapshot: reliable, transient-local, keep-last depth 1",
+      "service": "~/get_mission_snapshot: std_srvs/srv/Trigger; success indicates a completed read",
+      "refresh_period_s": 0.2,
+      "clock": "Steady clock, independent of paused simulated ROS time",
+      "consistency": "State copied under the controller RLock; reads neither poll nor dispatch commands",
+      "retention": "Most recent mission-state outcome in memory for controller lifetime; rejected commands do not replace it",
+      "restart": "New instance ID and idle state; no command or mission replay; no post-crash Nav2 ownership reconciliation"
+    },
+    "regressions_fixed": [
+      "Single-goal choices now expire on poll and are cleared visibly on stop",
+      "Choice selection rejects the exact expiry boundary consistently with polling",
+      "Arrival verification now has an explicit status for snapshot readers"
+    ]
+  },
+  "validation": {
+    "targeted_tests": {
+      "passed": 180,
+      "duration_s": 12.86
+    },
+    "tests": {
+      "total": 906,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "duration_s": 96.529,
+      "command": "COVERAGE_FILE=/tmp/placecell-day5.coverage timeout 300 .venv/bin/pytest --cov=placecell --cov-report=term --cov-report=json:simulation/artifacts/day-05/coverage.json --junitxml=simulation/artifacts/day-05/tests.xml",
+      "execution": "Outside filesystem sandbox after targeted storage-backed runs stalled inside it"
+    },
+    "coverage_percent": 95.82839279939635,
+    "operator_coverage_percent": {
+      "src/placecell/operator.py": 100.0,
+      "src/placecell/ros2/operator.py": 100.0
+    },
+    "ruff_check": "passed",
+    "ruff_format_check": "passed",
+    "mypy_strict": "passed (65 source files)",
+    "git_diff_check": "passed",
+    "fault_campaign": {
+      "command": ".venv/bin/placecell-check-faults --repeat 3 --output simulation/artifacts/day-05/faults.json",
+      "cases": 36,
+      "repetitions": 3,
+      "results": {
+        "runs": 108,
+        "passed": 108,
+        "failed": 0,
+        "wall_duration_ms": 44555.064261000094
+      },
+      "paid_api_calls": 0,
+      "claim": "Sequential scripted software repeatability"
+    },
+    "ros_check": {
+      "image": "placecell-sim:jazzy",
+      "image_id": "sha256:f1dc29c81ab6093ebb6d4bd9c18474d4fea44f3e34e6c8dcf7addf906db0472a",
+      "source_mounts": "Current src/placecell and simulation/scripts mounted read-only; existing image not rebuilt",
+      "resources": {
+        "cpus": 8,
+        "memory_gib": 16,
+        "network": "none",
+        "ros_domain_id": 86
+      },
+      "entrypoint": "source /opt/ros/jazzy/setup.bash; timeout 120 /opt/placecell-venv/bin/python /checks/operator_test.py --output /out",
+      "result": {
+        "passed": true,
+        "checks": [
+          "snapshot refresh continues while simulated time is paused",
+          "late subscriber recovers planning without replay or model work",
+          "invalid command is visible without replacing active mission state",
+          "late subscriber recovers complete multi-goal outcome",
+          "stop retains ownership and late success cannot advance the mission",
+          "new controller has a new instance and does not receive old retained commands",
+          "production node snapshot and service: navigation_enabled=False",
+          "production node snapshot and service: navigation_enabled=True"
+        ],
+        "scope": "Real ROS topics, QoS and services; scripted navigation"
+      }
+    }
+  },
+  "limitations": [
+    "No paid API calls; no live model-quality qualification.",
+    "Real ROS 2 DDS topics and services with scripted navigation; no Gazebo movement or physical stopping qualification.",
+    "Snapshot is controller state, not proof of physical robot motion or post-crash Nav2 goal ownership.",
+    "Retained delivery and a nominal 0.2-second refresh do not establish latency under load.",
+    "Full suite run on local Python 3.12.3; no new Python 3.10/3.11 matrix run in this increment."
+  ]
+}

@@ -1,0 +1,745 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-22",
+  "created_at": "2026-09-22T08:32:46.520732+00:00",
+  "scope": "Day 7 readiness evidence review; offline reruns, blocker ranking and remaining sequencing",
+  "git_head": "abfe375a5c01a8e7bb6d7815ed051680d1a67f52",
+  "source_state": "Local uncommitted Days 4\u20137 working tree identified by hashes; no Day 7 commit or push",
+  "day7_runtime_changes": false,
+  "sources_sha256": {
+    "src/placecell/__init__.py": "c6508e702c386c6ea34350cbe89a90cea0540ef638f88b96bdc96d1421bba048",
+    "src/placecell/agent.py": "eb9af5659ac3a4d878807d5bb0220af51c6602b565d80c9e068a3a1c9af85799",
+    "src/placecell/approach.py": "b19aa2a01b11dcda99094f9265ebbb849519010675034a8d3ba03e6b93f21933",
+    "src/placecell/chat.py": "e85e28f43263a6fcbdac8d669b830d246529aacec5d79f83545923653df6db97",
+    "src/placecell/consolidation.py": "23033a699a82933fbc38ca57b6681d74498dbe9300a1d013facdc78940bffcb6",
+    "src/placecell/corrections.py": "11e6b2714cc22165c4dd951ed59304c7e20105b4821d7b22c52d081f4cdf98a1",
+    "src/placecell/depth.py": "0a76ec0b9ef533a99025fb3dcd7276f63aca8d8ed1bcd690312f1695b2149e63",
+    "src/placecell/errors.py": "2dd925ab5cef9a1904564b62b0ae333f9efdee2e19ca5dbf3a550de5cda1d451",
+    "src/placecell/evaluation.py": "dcd8e4e80cb1dc588ad31ecf5256465827fa901e3622920f64e5417cff711ee3",
+    "src/placecell/fault_injection.py": "db8a314f52b367d8c756128447739a13179bcad36332a07f4b6447b3817a6bfd",
+    "src/placecell/lifecycle.py": "940b76b672ba864906df126810f9c0914c8c293269330837e20674b0afee7bea",
+    "src/placecell/localization.py": "d7c8ff8a8b350973dcacdb5625e48ac1cfdd55a5b427f2440fadbcae7f9edb03",
+    "src/placecell/memory.py": "5254b5f47691a435954d2ccc1b89dafc8c99118e8b28b7672edb04c4cab1001c",
+    "src/placecell/migrate.py": "46d1e4eff55bbb9ad5dcb00e1f5d55a2019c2610a85ec5ab8aed820c30ad535d",
+    "src/placecell/mission_context.py": "044d45cc2fc6d7f17c13f12ce2ae1b6dcc2c51fcb3f9be8fd1a44cc7296f474c",
+    "src/placecell/mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+    "src/placecell/missions.py": "0237a5204bae7377590101709f377a9ab0bfc74bcc19e53f23231bfb1a31e10c",
+    "src/placecell/navigation.py": "438afd087a3cc1af2b6ccb4cfdda01ac7e6140f6cac290e63b6fde29d92d94e4",
+    "src/placecell/object_arrival.py": "900bca7e23f8cb70cf18e1a241ae736b9062d0ce331ef3da71b5f7e6d0a6329c",
+    "src/placecell/object_evaluation.py": "374a99700563884cae9e231bb715227b43915ef4a6ac9fa06b0b4e9b26822179",
+    "src/placecell/object_search.py": "7d970c0783d36f245a9218c952194a687d1e30711661ee10aa9d11fb7fe70286",
+    "src/placecell/object_types.py": "1f0100479bbb9bb8692e34a322a0859a05821a777697908d9cec4b1572282404",
+    "src/placecell/objects.py": "89100b0e217aac0dc160a5eb0c2ad6e769f1f31975e19c7655ccd0ee4078da05",
+    "src/placecell/observer.py": "6e3669b09583eb40d51ce0d79c7008c220809cf6dafd48e78f85da24cf0b2e2a",
+    "src/placecell/operator.py": "87b7e8437fc9e9aba4b566fa0e00b4489ab2bcfa646d7c459e641ac9e52471f2",
+    "src/placecell/pipeline.py": "69210df11bc30e0f89896f552ac143d57a417fee3f8535efe99eb19ffeb5deac",
+    "src/placecell/providers/__init__.py": "a8c6d4daa5119f3b92fa6b8833152143b122ef43df459bb780a54872bfc56b9d",
+    "src/placecell/providers/_http.py": "6e6e4eeae64f0e8cdc20dad2ec45fd21132474578f694548acc00640de649c97",
+    "src/placecell/providers/base.py": "85e63d710fcb861876c3f1f73c5c5923afdb2dae78f72f7dc8f03e67a1688bca",
+    "src/placecell/providers/captioning.py": "6631813e84bb50d21de4e6592cb6cee6befacededbf1588053ef5921c406c048",
+    "src/placecell/providers/chat.py": "42abfd773e19695203448773b14af289f587693b96aa7a2890725404ab660e01",
+    "src/placecell/providers/clip.py": "4af556a1b0f808bbf15323e3c79a1a1b4c743dba5ccdf759f7df62f6f0f81e1d",
+    "src/placecell/providers/embedding.py": "ea2c50e76c9d3b9df4134374c13c0f8f914649af790fc8881aaccfc32841908e",
+    "src/placecell/providers/gemini.py": "7b612e927131d2e97721686dcc8956b53d78e566eabb15faaaac316f81cf54ea",
+    "src/placecell/providers/hashing.py": "e798dad790d74c76732169f84f27e89d27ae2881f8ca57e2d442b71e75572f71",
+    "src/placecell/providers/object_detection.py": "43c217c9a34300d014a26bb76e016764789983c86acfda0a52ad1e58e73e69c9",
+    "src/placecell/providers/openai_compatible.py": "89900bd84cf77e7fcc39bbc9ad3b460faf94f34f2ec86c70f0f95fcbb7a6a437",
+    "src/placecell/providers/openrouter.py": "333319f1b4aaaef099a5f32b5b59dd5ac5102123ad02191b208902bc06742757",
+    "src/placecell/recordings.py": "52ff54579bd16151c1c373c9a58d29ac806e44346a134ceaf3c29e1957b64522",
+    "src/placecell/refinement.py": "8c814c06b9f951ac52e590b332545a3f0762bf8560eec87a55aecaf5d79d3142",
+    "src/placecell/retrieval.py": "215ebccf4cfab9f055302a3c6975f840eb58d3d98090452c6dc3e2f8c2a6bdbf",
+    "src/placecell/ros2/__init__.py": "940365c14b76882518d9a28665cbc1d8c9b8ea899aabfc14a8db3c33f15f8db1",
+    "src/placecell/ros2/approach.py": "580c3afec4e1d53411f647794b8f59c0ddfe425c274040aa4b3e083d5ae11afa",
+    "src/placecell/ros2/bridge.py": "228902d34cb4f7d5e9969341634928ce091d554869a8d10415bb0206e8b85174",
+    "src/placecell/ros2/depth.py": "e6221ae223b2b7b2a2809f57ec395b308e24852bfc2dff1d2f9638e275ff058b",
+    "src/placecell/ros2/navigation.py": "e90e52e02db12b77a9d3d2ee644638e435faffd9ff702e132aa7e3cda82a8cff",
+    "src/placecell/ros2/node.py": "54ad776d69c2ef11043dad8b2864b5f2866cbc19023a5d62d876f2b741c68dbd",
+    "src/placecell/ros2/operator.py": "b220600c7b949da37f33e7535d10f3cf3ee097ff8fa89181650e8ff60be6f79b",
+    "src/placecell/ros2/speech.py": "8d36d5dd7b9c80035ae980102cc4597d7c81a7fcf93f99284c9a71119a394b3f",
+    "src/placecell/sources/__init__.py": "c47d4e85dec0f6b068ead36c31e842a27b21609fb6450b2e2ea3252f921bb613",
+    "src/placecell/sources/pose_log.py": "7386c8a53f10ac52c6d37ddbc7100f1e3cea9a8972ecba8bc405c8e17e4b16b0",
+    "src/placecell/sources/video.py": "4769ad5ce3cf3668de1b3aa6e98e080ba872691a386875096da25bbe9433652f",
+    "src/placecell/speech.py": "a4e80bb56a3ed7f01341b45798f9bf558ff2ebf0c532da7a1594918b136830e1",
+    "src/placecell/store/__init__.py": "226f74ed34c4b6ef38462f4f710e4b2fc4629a562fd2fc1bd5dcf40ea63f5971",
+    "src/placecell/store/base.py": "0751bcb6cdd5973431ee9d0506ed9e0050b2dc28f02e80341dbfb4b357b56a2b",
+    "src/placecell/store/codec.py": "2f2c647ffcd07909c35b9a43081d594ebff367de19869d28ef7e8882b923c108",
+    "src/placecell/store/in_memory.py": "928a5f85939a0950ed9ffd671c8cd5c62dcdb8d79004b70721cf1095b14c82f9",
+    "src/placecell/store/jobs.py": "f0a1137b6919f53305429911595137ced10d9c8c2058c0800dc3f7c64c58f22e",
+    "src/placecell/store/lancedb_store.py": "337cf924b1ef82833874c19eec10e71f92ce13035ba72dd746664894d82d6761",
+    "src/placecell/store/objects.py": "b3f78b6f099f18159609d17fbb853f2556ff72e08151fda971dac289e1aa54f5",
+    "src/placecell/store/refinements.py": "3f78bccbf0d1ae9d72477fe770c5e154ce0a956b9bc9b576467ad396e7de32e8",
+    "src/placecell/store/state.py": "f32294e839ff74ed306355e4b4c6d76e0ed75dee61a13ee026978fa8b579acc7",
+    "src/placecell/trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+    "src/placecell/tracing.py": "c43a68020962acd4b0dd227f2d3fcb65184b58700ee02056e53037dcebcf8098",
+    "src/placecell/verification.py": "2203d1e6b17b3a5c637257cb45f9a528f30bcd0dd92f148411071ee9f2585cb0",
+    "evaluation/missions/baseline-v1.json": "5ac552960f59ab5446c7b8d037232a0bd37111d6f12b73c6cec13e6ee47ee1bb",
+    "evaluation/missions/scripted-replies-v1.json": "4885ea2263452fed6a4426baafe13bc020911e4a4662721fd82d59d2d15909ee",
+    "docs/readiness-review.md": "b2b230491b46d471e147b1ca57e32cf86566fc56205839f176811d11d6407f5a",
+    "docs/roadmap.md": "661888e9411483ec87d1a4e34435ab42937ab14941098762eb48840c390f9767",
+    "docs/production-readiness.md": "cfc4d6311dd7ee1a8ebece13f5a5f4be6fda196bc23f86751c5fe5415c28b2b5",
+    "docs/reference-deployment.md": "ffa590f5a841b284119b62d9f312e312efd2a636e293ef460bd5b47eb15ef118",
+    "docs/mission-evaluation.md": "0e34932164f8c3c2630581f6c38825b0fec716a4d0999a1a8ffaea9db8f99286",
+    "docs/validation/day-01.json": "4367e52ac2b2911f61d25c7629e021fb537865a74502ddb7375e3563b81f8397",
+    "docs/validation/day-02.json": "f1c95fbeb624999803eaa8c7e716c69ee4aca527e44ef863af166773d998f435",
+    "docs/validation/day-03.json": "c3ff4f1dec5840a55970ae4b76e8cf7e692a899499e8dabc9efddf29245eb6a8",
+    "docs/validation/day-04.json": "384fb8ae6e7e362e479051599e1d3e056652f447ca1ab402bcbeeeded3a4f660",
+    "docs/validation/day-05.json": "1c346816aac3f4b251acfa6f9357f8ce1c2bd5f4049ddd92156c0728c7b4e03c",
+    "docs/validation/day-06.json": "ec1c8140a7aae6b918822e0a618be5323ead2cab4ffbccef1beb8f5bc302eebb"
+  },
+  "artifacts_sha256": {
+    "simulation/artifacts/day-07/baseline.json": "d3a7a09dc81026af9b3f41c14221e75c6ac7ba197dde66d2ccb6051352314bfb",
+    "simulation/artifacts/day-07/dataset.json": "4ccfe50e74c011caf3231ebfc2e48f1a8538f87e72f87b57b80bbff8ba58a3c9",
+    "simulation/artifacts/day-07/evidence-audit.json": "bf838664e39db492b08464010c4308b75ea5cfdff77140d6f3c6e622e1179a0d",
+    "simulation/artifacts/day-07/faults.json": "b6e960fedf8b9d89ac41dcec2ef2444bf59359af9c7759fe39950fdf692d0f26",
+    "simulation/artifacts/day-07/held-out-check.json": "01c2f003ece05af52ddd921a2af1b5db7eebc04c09994f3f92be4cbd9d999134",
+    "simulation/artifacts/day-07/scripted-split-guard.json": "c1510d7e2389fb2d58745303edfd8abeb0372bc808a225399f98d92fa51992c4",
+    "simulation/artifacts/day-07/trials.json": "65cacc6a31762690cf32f5299c99782d346906258b7e6541ba1db3edbadac0f1"
+  },
+  "fresh_checks": {
+    "dataset": {
+      "dataset_id": "mission-baseline-v1",
+      "dataset_sha256": "5ac552960f59ab5446c7b8d037232a0bd37111d6f12b73c6cec13e6ee47ee1bb",
+      "label_status": "draft",
+      "cases": 24,
+      "splits": {
+        "development": 24,
+        "held_out": 0
+      }
+    },
+    "baseline": {
+      "run_id": "day-07-offline-01",
+      "runner": "scripted",
+      "claim": "Scripted software check; not model accuracy",
+      "plan": {
+        "eligible": 24,
+        "assessed": 24,
+        "passed": 24,
+        "failed": 0,
+        "unassessed": 0,
+        "pass_rate": 1.0
+      },
+      "execution": {
+        "eligible": 24,
+        "assessed": 0,
+        "passed": 0,
+        "failed": 0,
+        "unassessed": 24,
+        "pass_rate": null
+      },
+      "configuration": {
+        "planner": "MissionPlanner",
+        "reviewer": "PlanReviewAgent",
+        "model": "scripted",
+        "network_calls": 0,
+        "robot_calls": 0,
+        "python": "3.12.3",
+        "implementation_sha256": {
+          "mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+          "missions.py": "0237a5204bae7377590101709f377a9ab0bfc74bcc19e53f23231bfb1a31e10c"
+        },
+        "replies_sha256": "4885ea2263452fed6a4426baafe13bc020911e4a4662721fd82d59d2d15909ee"
+      }
+    },
+    "faults": {
+      "summary": {
+        "runs": 108,
+        "passed": 108,
+        "failed": 0,
+        "wall_duration_ms": 33517.144793000625
+      },
+      "unique_scenarios": 36,
+      "repeat": 3,
+      "configuration": {
+        "repeat": 3,
+        "case_ids": [
+          "control_ordered_mission",
+          "control_visual_arrival",
+          "planner_timeout",
+          "planner_malformed",
+          "planner_late",
+          "review_timeout",
+          "review_late",
+          "review_malformed",
+          "review_reject",
+          "review_stop",
+          "nav_unavailable",
+          "nav_rejected",
+          "nav_send_error",
+          "nav_late_acceptance",
+          "nav_late_acceptance_success",
+          "nav_lost_result",
+          "nav_timeout_late_success",
+          "nav_timeout_visual_success",
+          "nav_cancel_delayed",
+          "nav_cancel_rejected",
+          "localization_stale_before",
+          "localization_stale_motion",
+          "localization_paused_clock",
+          "visual_lookup_timeout",
+          "arrival_missing_camera",
+          "arrival_stale_camera",
+          "arrival_untrusted_pose",
+          "arrival_verifier_timeout",
+          "storage_instruction",
+          "storage_read",
+          "storage_dispatch",
+          "storage_motion",
+          "storage_step",
+          "depth_missing",
+          "depth_stale",
+          "storage_interrupted"
+        ],
+        "lookup_timeout_s": 5,
+        "arrival_timeout_s": 3,
+        "nav_response_timeout_s": 2,
+        "nav_trip_timeout_s": 10
+      },
+      "paid_api_calls": 0
+    },
+    "held_out_guard": {
+      "exit_code": 1,
+      "expected_refusal": true,
+      "reason": "no cases in held_out; do not substitute development data",
+      "report_created": false
+    },
+    "failures": []
+  },
+  "reused_day6": {
+    "source_hashes_matched": 74,
+    "runtime_python_files": 65,
+    "artifact_hashes_matched": 28,
+    "tests": {
+      "total": 911,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "duration_s": 88.717,
+      "command": "COVERAGE_FILE=/tmp/placecell-day6.coverage timeout 300 .venv/bin/pytest --cov=placecell --cov-report=term --cov-report=json:simulation/artifacts/day-06/coverage.json --junitxml=simulation/artifacts/day-06/tests.xml"
+    },
+    "coverage_percent": 95.82839279939635,
+    "operator_checks_passed": 8,
+    "wheel_and_sdist_python312": "passed",
+    "gazebo_sensor_and_direct_nav2_checks": "passed",
+    "rationale": "Recorded sources and artifacts match. Day 7 only changes documentation and adds review artifacts. Reuse local software smoke evidence, not candidate qualification.",
+    "not_rerun_day7": true,
+    "limitations": [
+      "Hosted matrix not run",
+      "Python 3.10/3.11 not locally validated",
+      "Gazebo direct goals are not language-to-grounded complete missions"
+    ]
+  },
+  "historical_evidence_audit": {
+    "created_at": "2026-09-22T08:23:53.115547+00:00",
+    "git_head": "abfe375a5c01a8e7bb6d7815ed051680d1a67f52",
+    "records": [
+      {
+        "record": "docs/validation/day-01.json",
+        "sha256": "4367e52ac2b2911f61d25c7629e021fb537865a74502ddb7375e3563b81f8397",
+        "files_sha256": {
+          "total": 12,
+          "matched": 10,
+          "changed": [
+            "simulation/sim",
+            "simulation/config/missions.yaml"
+          ],
+          "missing": []
+        },
+        "local_check_scripts_sha256": {
+          "total": 4,
+          "matched": 4,
+          "changed": [],
+          "missing": []
+        },
+        "source_manifest": {
+          "path": "simulation/artifacts/day-01-20260921/source-sha256.json",
+          "expected_digest": "e8f3200e33e3657f652147a30e3e4a92f51299b26d37838c216cdbc690a2c5d5",
+          "encoding": "json.dumps(parsed_manifest, sort_keys=True), UTF-8, no trailing newline",
+          "canonical_sha256": "e8f3200e33e3657f652147a30e3e4a92f51299b26d37838c216cdbc690a2c5d5",
+          "canonical_matches": true,
+          "raw_file_sha256": "c20769aaf6cc984f8a40982e02811d70a992e68c67cfe08f532924b0848b1a12",
+          "raw_file_digest_differs_due_to_formatting": true
+        }
+      },
+      {
+        "record": "docs/validation/day-02.json",
+        "sha256": "f1c95fbeb624999803eaa8c7e716c69ee4aca527e44ef863af166773d998f435",
+        "sources_sha256": {
+          "total": 6,
+          "matched": 4,
+          "changed": [
+            "src/placecell/missions.py",
+            "pyproject.toml"
+          ],
+          "missing": []
+        },
+        "artifacts_sha256": {
+          "total": 8,
+          "matched": 8,
+          "changed": [],
+          "missing": []
+        }
+      },
+      {
+        "record": "docs/validation/day-03.json",
+        "sha256": "c3ff4f1dec5840a55970ae4b76e8cf7e692a899499e8dabc9efddf29245eb6a8",
+        "sources_sha256": {
+          "total": 11,
+          "matched": 5,
+          "changed": [
+            "src/placecell/fault_injection.py",
+            "src/placecell/navigation.py",
+            "src/placecell/ros2/navigation.py",
+            "pyproject.toml",
+            ".github/workflows/ci.yml",
+            "docs/fault-injection.md"
+          ],
+          "missing": []
+        },
+        "artifacts_sha256": {
+          "total": 4,
+          "matched": 4,
+          "changed": [],
+          "missing": []
+        }
+      },
+      {
+        "record": "docs/validation/day-04.json",
+        "sha256": "384fb8ae6e7e362e479051599e1d3e056652f447ca1ab402bcbeeeded3a4f660",
+        "sources_sha256": {
+          "total": 12,
+          "matched": 8,
+          "changed": [
+            "src/placecell/navigation.py",
+            "src/placecell/ros2/node.py",
+            "pyproject.toml",
+            "docs/mission-tracing.md"
+          ],
+          "missing": []
+        },
+        "artifacts_sha256": {
+          "total": 8,
+          "matched": 8,
+          "changed": [],
+          "missing": []
+        }
+      },
+      {
+        "record": "docs/validation/day-05.json",
+        "sha256": "1c346816aac3f4b251acfa6f9357f8ce1c2bd5f4049ddd92156c0728c7b4e03c",
+        "sources_sha256": {
+          "total": 15,
+          "matched": 14,
+          "changed": [
+            "pyproject.toml"
+          ],
+          "missing": []
+        },
+        "artifacts_sha256": {
+          "total": 6,
+          "matched": 6,
+          "changed": [],
+          "missing": []
+        }
+      },
+      {
+        "record": "docs/validation/day-06.json",
+        "sha256": "ec1c8140a7aae6b918822e0a618be5323ead2cab4ffbccef1beb8f5bc302eebb",
+        "sources_sha256": {
+          "total": 74,
+          "matched": 74,
+          "changed": [],
+          "missing": []
+        },
+        "artifacts_sha256": {
+          "total": 28,
+          "matched": 28,
+          "changed": [],
+          "missing": []
+        }
+      }
+    ],
+    "day6_runtime_files": 65,
+    "runtime_not_in_day6_manifest": [],
+    "missing_day6_runtime": [],
+    "recording_manifests": [
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T114803Z-614374/recording/observations.jsonl",
+        "sha256": "3926d99f5897163631a11e12fdf2368cf6785228080be064021453a6f949f91a",
+        "matches_day1": true,
+        "registered_development": true,
+        "frames": 8,
+        "depth_frames_from_day1": 8
+      },
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T115127Z-618782/recording/observations.jsonl",
+        "sha256": "ce1a15c610d1644f3d0f8a5048a386a8b2134ca5bfc768053ea1a5c36f6a346d",
+        "matches_day1": true,
+        "registered_development": true,
+        "frames": 10,
+        "depth_frames_from_day1": 10
+      },
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T120808Z-638672/recording/observations.jsonl",
+        "sha256": "c298e0f056c4b6a78720513c55e048f622c3d257a3badc6fe28bf163c022994d",
+        "matches_day1": true,
+        "registered_development": true,
+        "frames": 10,
+        "depth_frames_from_day1": 9
+      },
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T121130Z-642627/recording/observations.jsonl",
+        "sha256": "609a33a4a458a8f2d61bcf6de476d0563685a082b5b0325681439b65e6b7bad6",
+        "matches_day1": true,
+        "registered_development": true,
+        "frames": 11,
+        "depth_frames_from_day1": 7
+      },
+      {
+        "manifest": "simulation/artifacts/check-pipeline-20260916T121717Z-648876/recording/observations.jsonl",
+        "sha256": "7fa27cdb281356d6d533a709793cd129bc3efbc202df50463605073e96772d81",
+        "matches_day1": true,
+        "registered_development": true,
+        "frames": 12,
+        "depth_frames_from_day1": 11
+      },
+      {
+        "manifest": "simulation/artifacts/pipeline-11/recording/observations.jsonl",
+        "sha256": "c77fcb47ce4cb43a4bf3c593f6f8634213ad7b44c16590c0803c643639a16811",
+        "matches_day1": true,
+        "registered_development": true,
+        "frames": 9,
+        "depth_frames_from_day1": 9
+      }
+    ],
+    "recording_scope": "Six recordings registered by the frozen development dataset; manifest hashes/counts rechecked, media/depth validity reused from Day 1, no new image annotation.",
+    "reuse_decision": "Day 6 local software/package/ROS/Gazebo results remain applicable to unchanged recorded sources; earlier modified-source results retained as historical evidence only. This is not candidate or live-model qualification."
+  },
+  "gates": [
+    {
+      "gate": 1,
+      "name": "Execution correctness",
+      "status": "partial",
+      "blockers": [
+        "R1",
+        "R2",
+        "R3",
+        "R4"
+      ],
+      "evidence": "108/108 fresh runs, 36 unique scenarios; races and latency unqualified."
+    },
+    {
+      "gate": 2,
+      "name": "Language, grounding and outcomes",
+      "status": "unassessed",
+      "blockers": [
+        "R3",
+        "R5"
+      ],
+      "evidence": "24 scripted plans; zero held-out cases; no live campaign."
+    },
+    {
+      "gate": 3,
+      "name": "Persistence and recovery",
+      "status": "partial",
+      "blockers": [
+        "R1",
+        "R6"
+      ],
+      "evidence": "SQLite interruption/storage faults; full recovery drills missing."
+    },
+    {
+      "gate": 4,
+      "name": "Endurance and bounded resources",
+      "status": "unassessed",
+      "blockers": [
+        "R7"
+      ],
+      "evidence": "No qualifying 24-hour run; ingestion-age limit open."
+    },
+    {
+      "gate": 5,
+      "name": "Deployment and operation",
+      "status": "partial",
+      "blockers": [
+        "R8"
+      ],
+      "evidence": "Local installs, traces, snapshots; diagnostics/operator drill incomplete."
+    },
+    {
+      "gate": 6,
+      "name": "Release evidence and decision",
+      "status": "blocked",
+      "blockers": [
+        "R9"
+      ],
+      "evidence": "No candidate/hosted matrix or complete qualification report."
+    }
+  ],
+  "blockers": [
+    {
+      "id": "R1",
+      "rank": 1,
+      "title": "Cancellation and goal ownership",
+      "days": [
+        8,
+        15
+      ],
+      "gates": [
+        1,
+        3
+      ],
+      "kind": "implementation_and_evidence",
+      "finding": "Nav2 trip ownership is in memory; startup idle does not establish termination of a pre-crash goal. Sequential checks do not qualify races or cancellation latency.",
+      "exit_criteria": "Define ownership/startup admission on Day 8; prove real ROS callback handling, uncertain-goal refusal and wall-clock cancel-request p99 <=500 ms under declared load. Prove crash reconciliation/refusal on Day 15.",
+      "evidence": [
+        "src/placecell/ros2/navigation.py",
+        "src/placecell/navigation.py",
+        "docs/operator-interface.md"
+      ],
+      "owner": "Implementation task",
+      "status": "open"
+    },
+    {
+      "id": "R2",
+      "rank": 2,
+      "title": "Command identity and retry handling",
+      "days": [
+        9
+      ],
+      "gates": [
+        1
+      ],
+      "kind": "implementation",
+      "finding": "Version 1 JSON has no caller command ID; status sequence is not input deduplication.",
+      "exit_criteria": "Versioned identity and scope/restart/retention policy; retries cannot duplicate trips, conflicting ID reuse rejects visibly, deliberate repeated visits remain valid.",
+      "evidence": [
+        "src/placecell/operator.py",
+        "docs/operator-interface.md"
+      ],
+      "owner": "Implementation task",
+      "status": "open"
+    },
+    {
+      "id": "R3",
+      "rank": 3,
+      "title": "Input, sensor provenance and identity",
+      "days": [
+        10,
+        11,
+        12
+      ],
+      "gates": [
+        1,
+        2
+      ],
+      "kind": "evidence",
+      "finding": "Offline capture-pose and synchronizer faults do not establish full-node TF/clock fault behavior or live visual identity quality.",
+      "exit_criteria": "Exercise actual ROS sensor/clock/TF faults and malformed/untrusted inputs; invalid provenance cannot admit a goal, missing identity cannot produce success; attribute each failure.",
+      "evidence": [
+        "docs/fault-injection.md",
+        "src/placecell/fault_injection.py"
+      ],
+      "owner": "Implementation task",
+      "status": "open"
+    },
+    {
+      "id": "R4",
+      "rank": 4,
+      "title": "Execution qualification matrix",
+      "days": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "gates": [
+        1
+      ],
+      "kind": "evidence",
+      "finding": "36 unique sequential scenarios; unit-test and planning-only totals are not mapped qualification cases.",
+      "exit_criteria": "At least 100 separately specified cases and 1000 deterministic executions plus required ROS integrations; no unresolved critical invariant failure.",
+      "evidence": [
+        "simulation/artifacts/day-07/faults.json",
+        "docs/production-readiness.md"
+      ],
+      "owner": "Implementation task",
+      "status": "open"
+    },
+    {
+      "id": "R5",
+      "rank": 5,
+      "title": "Held-out labels and live model campaign",
+      "days": [
+        18,
+        19
+      ],
+      "gates": [
+        2
+      ],
+      "kind": "dependency_and_runner",
+      "finding": "No approved held-out cases or qualified live trial adapter; budget undecided. Six registered recordings share one development group.",
+      "exit_criteria": "Prepare now: >=200 human-reviewed held-out cases across >=3 independent layouts/sessions and >=50 complete Gazebo missions. Agree budget/stop policy, build scoring adapter; meet 95% feasible completion/95% appropriate abstention with zero observed wrong-destination/wrong-instance events.",
+      "evidence": [
+        "evaluation/missions/baseline-v1.json",
+        "docs/mission-evaluation.md",
+        "simulation/artifacts/day-07/dataset.json"
+      ],
+      "owner": "Implementation task; maintainer for labels, budget and resource decisions",
+      "status": "open"
+    },
+    {
+      "id": "R6",
+      "rank": 6,
+      "title": "Persistent state and recovery",
+      "days": [
+        15,
+        16
+      ],
+      "gates": [
+        3
+      ],
+      "kind": "evidence",
+      "finding": "SQLite interruption is partial evidence; consistent multi-store backup/restore, corruption and upgrade drills are missing. Current mission storage is inside a disposable container.",
+      "exit_criteria": "Preserve acknowledged work and live images across declared crashes; restore a consistent backup in a fresh instance and demonstrate integrity, corruption refusal and upgrade/rollback without movement replay.",
+      "evidence": [
+        "docs/reference-deployment.md",
+        "docs/fault-injection.md"
+      ],
+      "owner": "Implementation task",
+      "status": "open"
+    },
+    {
+      "id": "R7",
+      "rank": 7,
+      "title": "Retention, overload and endurance",
+      "days": [
+        13,
+        17,
+        21,
+        22,
+        23
+      ],
+      "gates": [
+        4
+      ],
+      "kind": "implementation_and_dependency",
+      "finding": "Mission context bounds prompt reads, not persisted event retention. Global disk enforcement, accepted-work-age budget and 24-hour evidence are missing.",
+      "exit_criteria": "Enforce 20 GiB run bound and retention preserving live evidence; freeze measured ingestion age and agreed resource window; >=24h software load plus separately reported Gazebo duration meeting all resource/recovery limits.",
+      "evidence": [
+        "src/placecell/mission_context.py",
+        "docs/reference-deployment.md",
+        "docs/production-readiness.md"
+      ],
+      "owner": "Implementation task; maintainer for labels, budget and resource decisions",
+      "status": "open"
+    },
+    {
+      "id": "R8",
+      "rank": 8,
+      "title": "Diagnostics and operating boundaries",
+      "days": [
+        20,
+        24,
+        25,
+        26
+      ],
+      "gates": [
+        5
+      ],
+      "kind": "evidence",
+      "finding": "Local installs/snapshots are demonstrated; diagnostic/recovery drills and dependency/command/data boundary review remain.",
+      "exit_criteria": "Fresh-environment startup/shutdown, failure/restore and onboarding; pre-motion readiness checks, dependency findings assessed and shareable reports reviewed.",
+      "evidence": [
+        "docs/ci.md",
+        "docs/reference-deployment.md",
+        "docs/production-readiness.md"
+      ],
+      "owner": "Implementation task",
+      "status": "open"
+    },
+    {
+      "id": "R9",
+      "rank": 9,
+      "title": "Candidate and hosted checks",
+      "days": [
+        27,
+        28,
+        29,
+        30
+      ],
+      "gates": [
+        6
+      ],
+      "kind": "release_evidence",
+      "finding": "Changes are local and hosted Python 3.10/3.11/3.12 workflows have not run for them. No qualified candidate.",
+      "exit_criteria": "One candidate commit with passing hosted matrix, package and ROS/Gazebo checks, checksummed gate evidence and explicit reuse decisions; retain prerelease if any gate remains unmet.",
+      "evidence": [
+        "docs/validation/day-06.json",
+        ".github/workflows/ci.yml",
+        ".github/workflows/simulation.yml"
+      ],
+      "owner": "Implementation task",
+      "status": "open"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "D1",
+      "owner": "Maintainer / human annotator",
+      "needed_before": "Live-model tuning and Days 18\u201319",
+      "status": "open",
+      "decision": "Human review of development labels plus >=200 independent held-out instruction/perception labels across >=3 layouts/sessions; keep office development group out of held-out."
+    },
+    {
+      "id": "D2",
+      "owner": "Maintainer",
+      "needed_before": "Any paid model campaign",
+      "status": "undecided",
+      "decision": "Approve provider/model configuration, per-run and total spending, stop policy and treatment of unavailable usage. No spending authorized by Day 7."
+    },
+    {
+      "id": "D3",
+      "owner": "Implementation task",
+      "needed_before": "Days 18\u201319",
+      "status": "not_implemented",
+      "decision": "Actual mission-to-trial adapter with independent physical target labels; diagnostic trace export alone is insufficient."
+    },
+    {
+      "id": "D4",
+      "owner": "Implementation task and maintainer",
+      "needed_before": "Day 21",
+      "status": "open",
+      "decision": "Measure/freeze accepted-work age for selected workload; enforce storage retention, reserve host window and 8 CPU / 16 GiB / 20 GiB limits; declare Gazebo mission duration. No endurance run scheduled."
+    },
+    {
+      "id": "D5",
+      "owner": "Maintainer / implementation task",
+      "needed_before": "Candidate acceptance",
+      "status": "pending_publication",
+      "decision": "Publish tested increment when requested, run hosted workflows and assess required-check settings; no push in Day 7."
+    }
+  ],
+  "release_decision": "Remain prerelease; no gate fully satisfied. Missing evidence is not a pass.",
+  "paid_api_calls": 0,
+  "endurance_started": false,
+  "validation_scope": "Documentation/evidence changes only; fresh baseline/fault reruns plus source/artifact audit. Full Day 6 suite reused, not rerun.",
+  "presentation": {
+    "path": "/home/sabeeh.saad/.codex/visualizations/2026/09/22/01a0c7f5-852c-7062-b946-5c4b0584b984/day-7-readiness.canvas.tsx",
+    "sha256": "c2bca4e1b0243d9f5e326e91fd0efb9ec7a81e103920c77622155c24a473e663",
+    "checks": "TSX transpilation and SDK export verification passed; not host-render verified",
+    "content": "Embedded snapshot of Day 7 gate/blocker/dependency registry; no network calls"
+  },
+  "review_checks": {
+    "source_hashes": 78,
+    "artifact_hashes": 7,
+    "all_hashes_match": true,
+    "gate_blocker_mapping": "passed",
+    "evidence_paths": "passed",
+    "local_document_links": 32,
+    "git_diff_check": "passed",
+    "runtime_unchanged_from_day6": true
+  }
+}

@@ -196,11 +196,12 @@ def test_nav2_factory_stamps_the_pose_and_preserves_heading(monkeypatch):
     action_type = Obj(Goal=lambda: Obj(pose=Obj(header=Obj(), pose=Obj(position=Obj(), orientation=Obj()))))
     monkeypatch.setitem(sys.modules, "nav2_msgs.action", Obj(NavigateToPose=action_type))
 
-    def action_client(node, action, name):
+    def action_client(node, action, name, **kwargs):
         assert action is action_type and name == "robot/navigate_to_pose"
         return client
 
     monkeypatch.setitem(sys.modules, "rclpy.action", Obj(ActionClient=action_client))
+    monkeypatch.setitem(sys.modules, "rclpy.callback_groups", Obj(ReentrantCallbackGroup=object))
     node = Obj(get_clock=lambda: Obj(now=lambda: Obj(to_msg=lambda: "stamp")))
     navigator = create_navigator(node, "robot/navigate_to_pose", 10, 600)
     navigator.send(

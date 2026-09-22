@@ -38,6 +38,7 @@ from placecell.ros2.navigation import Nav2Navigator
 from placecell.ros2.node import navigation_payload
 from placecell.store.base import CollectionInfo
 from placecell.store.in_memory import InMemoryStore
+from placecell.tracing import TraceStore, read_trace
 from placecell.verification import SceneVerdict
 
 
@@ -132,9 +133,11 @@ class _Verifier:
     def __init__(self) -> None:
         self.calls = 0
         self.error: Exception | None = None
+        self.before: Callable[[], None] = lambda: None
 
     def verify(self, target: str, image_url: str) -> SceneVerdict:
         self.calls += 1
+        self.before()
         if self.error:
             raise self.error
         return SceneVerdict("matched", "Scripted match; no visual model was called.")
@@ -152,6 +155,7 @@ class _Rig:
         self.embedder = HashingEmbedder(64)
         self.store = InMemoryStore(CollectionInfo("faults", self.embedder.model_name, self.embedder.dimension))
         self.context = _Context(directory / "context.sqlite3")
+        self.traces = TraceStore(directory / "traces.sqlite3", queue_size=1024)
         self.client = _Client()
         self.tasks: list[Callable[[], None]] = []
         self.events: list[dict[str, Any]] = []
@@ -180,6 +184,7 @@ class _Rig:
             self.publish,
             mission_planner=MissionPlanner(self.model, PlanReviewAgent(self.reviewer)),
             mission_context=self.context,
+            trace_store=self.traces,
             clock=lambda: self.elapsed,
             observation_clock=lambda: self.stamp,
             localization_ready=self.gate.ready,
@@ -265,6 +270,7 @@ class _Rig:
         # Pending fake goals are evidence, not real robot jobs. Do not alter reported state during teardown.
         self.context.close()
         self.store.close()
+        self.traces.close()
 
 
 def _model_fault(rig: _Rig, fault: str) -> None:
@@ -277,7 +283,7 @@ def _model_fault(rig: _Rig, fault: str) -> None:
         model.reply = ChatReply(
             None, (ToolCall("fixture", "review_navigation_plan", {"decision": "reject", "message": "Rejected."}),)
         )
-    elif fault == "review_stop":
+    elif fault.endswith("_stop"):
         model.before = lambda: rig.commands.handle("stop")
     else:
 
@@ -287,11 +293,87 @@ def _model_fault(rig: _Rig, fault: str) -> None:
 
         model.before = expire
     rig.start()
-    expected = "canceled" if fault == "review_stop" else "not_found" if fault.endswith("late") else "rejected"
+    expected = "canceled" if fault.endswith("_stop") else "not_found" if fault.endswith("late") else "rejected"
     rig.checkpoint("fault handled", expected, 0, False)
     rig.check("faulty provider called", model.calls, 1)
     if fault.startswith("planner"):
         rig.check("review never started", rig.reviewer.calls, 0)
+
+
+def _cancellation_boundary(rig: _Rig, fault: str) -> None:
+    """Force callback interleavings without relying on scheduler timing."""
+    visual = fault.startswith("arrival_") or fault in {"lookup_stop", "nav_timeout_visual_result_race"}
+    if visual:
+        evidence = rig.memory_destination()
+    if fault == "lookup_stop":
+        rig.verifier.before = lambda: rig.commands.handle("stop")
+    rig.start()
+    if fault == "lookup_stop":
+        rig.checkpoint("stop during candidate verification", "canceled", 0, False)
+        return
+    if fault.startswith("arrival_"):
+        rig.client.accept()
+        rig.finish()
+        rig.checkpoint("waiting for image", "awaiting_observation", 1, True)
+        if fault == "arrival_wait_stop":
+            rig.commands.handle("stop")
+        else:
+            rig.advance(0.1)
+            rig.verifier.before = lambda: rig.commands.handle("stop")
+            rig.commands.observe(
+                Observation("fault-robot", "front", rig.stamp, rig.pose, evidence, localization_checked=True)
+            )
+            rig.drain()
+        rig.checkpoint("arrival canceled", "canceled", 1, False)
+    elif fault == "nav_stop_before_acceptance":
+        rig.commands.handle("stop")
+        rig.checkpoint("stop with no handle", "canceling", 1, True)
+        rig.commands.handle("go to cupboard")
+        rig.checkpoint("replacement refused", "busy", 1, True)
+        handle = rig.client.accept()
+        rig.check("late handle canceled", handle.cancel_calls, 1)
+        handle.ack.set_result(SimpleNamespace(goals_canceling=[1]))
+        rig.checkpoint("ack is not terminal", "canceling", 1, True)
+        rig.finish(5)
+        rig.checkpoint("terminal releases ownership", "canceled", 1, False)
+    elif fault == "nav_unpolled_late_acceptance":
+        rig.advance(3)
+        handle = rig.client.accept()
+        rig.check("deadline enforced at acceptance without poll", handle.cancel_calls, 1)
+        rig.finish()
+        rig.checkpoint("late success does not advance", "canceled", 1, False)
+    else:
+        response_race = fault == "nav_response_result_race"
+        if not response_race:
+            rig.client.accept()
+        rig.advance(11)
+        if fault == "nav_unpolled_late_success":
+            rig.finish()
+        else:
+            emit = rig.navigator._emit
+            interleaved = False
+
+            def result_first(trip: Any, event: Any) -> None:
+                nonlocal interleaved
+                if not interleaved and event.state in {"canceling", "uncertain"}:
+                    interleaved = True
+                    if response_race:
+                        handle = _Handle(True)
+                        handle.result.set_result(SimpleNamespace(status=4, result=SimpleNamespace(error_code=0)))
+                        rig.client.handles.append(handle)
+                        rig.client.responses[-1].set_result(handle)
+                    else:
+                        rig.finish()
+                emit(trip, event)
+
+            rig.navigator._emit = result_first  # type: ignore[method-assign]
+            rig.navigator.poll()
+            rig.check("result raced ahead of cancellation event", interleaved, True)
+        rig.checkpoint("terminal carries intent", "destination_unverified" if visual else "canceled", 1, False)
+    rig.check("no queued next destination", len(rig.tasks), 0)
+    rig.check(
+        "no mission or step success", any(e["state"] in {"succeeded", "step_succeeded"} for e in rig.events), False
+    )
 
 
 def _navigation_fault(rig: _Rig, fault: str) -> None:
@@ -540,11 +622,26 @@ CASES = (
             ("planner_timeout", "Planning provider raises TimeoutError"),
             ("planner_malformed", "Planning provider returns no structured tool call"),
             ("planner_late", "Planning reply arrives after the lookup deadline is polled"),
+            ("planner_stop", "Stop during planning; late model reply cannot dispatch"),
             ("review_timeout", "Review provider raises TimeoutError"),
             ("review_late", "Review reply arrives after the lookup deadline is polled"),
             ("review_malformed", "Review provider returns no structured tool call"),
             ("review_reject", "Independent reviewer rejects a valid plan"),
             ("review_stop", "Stop arrives during plan review"),
+        )
+    ),
+    *(
+        FaultCase(name, "mission_callback_boundary", description, _cancellation_boundary)
+        for name, description in (
+            ("lookup_stop", "Stop during candidate image verification"),
+            ("arrival_wait_stop", "Stop while waiting for a fresh arrival image"),
+            ("arrival_verification_stop", "Stop during arrival verification; late verdict is discarded"),
+            ("nav_stop_before_acceptance", "Stop before a goal handle exists; late acceptance is canceled"),
+            ("nav_unpolled_late_acceptance", "Goal response expires while poll is delayed"),
+            ("nav_unpolled_late_success", "Trip deadline expires before a result without an intervening poll"),
+            ("nav_timeout_result_race", "Successful result beats delivery of the timeout cancellation event"),
+            ("nav_timeout_visual_result_race", "Visual-goal success beats the timeout event; no arrival check starts"),
+            ("nav_response_result_race", "Late acceptance has an already-complete success before timeout delivery"),
         )
     ),
     *(
@@ -623,6 +720,35 @@ def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
                 except Exception as exc:
                     error = f"{type(exc).__name__}: {exc}"
                 try:
+                    flushed = rig.traces.flush()
+                    trace = read_trace(rig.traces.path)
+                    if rig.events:
+                        rig.check("trace writer flushed", flushed, True)
+                        rig.check("trace events captured", bool(trace["events"]), True)
+                        rig.check("trace reports last status", trace["summary"]["last_status"]["state"], rig.state)
+                        rig.check(
+                            "trace preserves every published status",
+                            [event["data"]["state"] for event in trace["events"] if event["stage"] == "status"],
+                            [event["state"] for event in rig.events],
+                        )
+                        rig.check(
+                            "trace dispatch attempts",
+                            sum(event["stage"] == "nav2.dispatch" for event in trace["events"]),
+                            len(rig.client.goals),
+                        )
+                        rig.check(
+                            "trace cancel requests",
+                            sum(event["stage"] == "nav2.cancel_requested" for event in trace["events"]),
+                            sum(handle.cancel_calls for handle in rig.client.handles),
+                        )
+                        rig.check(
+                            "trace event loss",
+                            sum(
+                                rig.traces.health()[key]
+                                for key in ("dropped_events", "write_errors", "trimmed_events", "truncated_events")
+                            ),
+                            0,
+                        )
                     result = {
                         "case_id": case.id,
                         "iteration": iteration,
@@ -640,6 +766,7 @@ def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
                         "scripted_model_calls": rig.model.calls + rig.reviewer.calls,
                         "scripted_visual_calls": rig.verifier.calls,
                         "injected_storage_errors": rig.context.faults,
+                        "trace": trace,
                         "simulated_elapsed_s": rig.elapsed,
                     }
                 finally:

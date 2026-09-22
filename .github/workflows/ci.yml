@@ -1,13 +1,23 @@
 name: ci
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -23,13 +33,50 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
-      - run: pytest --cov --cov-report=term-missing
+      - run: pytest --cov --cov-report=term-missing --cov-report=json:coverage.json --junitxml=tests.xml
       - name: Offline fault contracts
         if: always()
         run: python -m placecell.fault_injection --output fault-report.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: fault-report-python-${{ matrix.python-version }}
-          path: fault-report.json
+          name: checks-python-${{ matrix.python-version }}
+          path: |
+            fault-report.json
+            coverage.json
+            tests.xml
+          if-no-files-found: warn
+
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Build wheel and source distribution
+        run: |
+          python -m pip install build==1.6.1
+          python -m build
+      - name: Stage dependencies for offline installation
+        run: >-
+          python -m pip download --only-binary=:all: --dest package-deps
+          'numpy>=1.24' 'setuptools>=68' wheel
+      - name: Install and exercise both distributions in clean environments
+        run: >-
+          python scripts/check_distribution.py --dist-dir dist --wheelhouse package-deps
+          --output package-checks
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: package-python-${{ matrix.python-version }}
+          path: |
+            dist/
+            package-checks/
           if-no-files-found: warn

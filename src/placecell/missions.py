@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from placecell.chat import ChatMessage, ChatModel
 from placecell.errors import ProviderError, ValidationError
+from placecell.tracing import trace_event, trace_span, traced
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +52,10 @@ def _tool(name: str, description: str, properties: dict[str, Any]) -> dict[str, 
 
 
 def _decision(model: ChatModel, system: str, data: dict[str, Any], tool: dict[str, Any]) -> dict[str, Any]:
-    reply = model.complete([ChatMessage("system", system), ChatMessage("user", json.dumps(data))], [tool])
+    with trace_span(
+        "model_call", model=getattr(model, "model_name", type(model).__name__), decision_tool=tool["function"]["name"]
+    ):
+        reply = model.complete([ChatMessage("system", system), ChatMessage("user", json.dumps(data))], [tool])
     if len(reply.tool_calls) != 1 or reply.tool_calls[0].name != tool["function"]["name"]:
         raise ProviderError("mission agent must return exactly one structured decision")
     arguments = reply.tool_calls[0].arguments
@@ -99,6 +103,7 @@ class PlanReviewAgent:
     def __init__(self, model: ChatModel) -> None:
         self._model = model
 
+    @traced("plan_review")
     def review(self, instruction: str, plan: MissionPlan, context: Sequence[dict[str, Any]] = ()) -> MissionPlan:
         tool = _tool(
             "review_navigation_plan",
@@ -121,6 +126,7 @@ class PlanReviewAgent:
         reviewed = MissionPlan(
             "ready" if decision == "approve" else decision, plan.destinations if decision == "approve" else (), message
         )
+        trace_event("plan.reviewed", decision=decision, message=message, destinations=reviewed.destinations)
         return reviewed
 
 
@@ -132,6 +138,7 @@ class MissionPlanner:
             raise ValidationError("mission destination limit must be within 1..20")
         self._model, self._reviewer, self._limit = model, reviewer, max_destinations
 
+    @traced("planning")
     def plan(
         self,
         instruction: str,
@@ -163,6 +170,13 @@ class MissionPlanner:
         if not isinstance(destinations, list) or len(destinations) > self._limit:
             raise ProviderError("mission agent exceeded the destination limit or returned an invalid list")
         plan = MissionPlan(result["decision"], tuple(destinations), result["message"])
+        trace_event(
+            "plan.proposed",
+            decision=plan.decision,
+            destinations=plan.destinations,
+            message=plan.message,
+            context_events=len(context),
+        )
         if canceled():
             raise ValidationError("mission planning canceled or expired")
         if plan.decision != "ready":

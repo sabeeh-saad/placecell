@@ -11,6 +11,13 @@ placecell:
     mission_max_destinations: 8
     mission_conversation_id: office-reference-operator
     mission_context_path: /home/simulator/placecell-missions/missions.sqlite3
+    command_journal_path: /home/simulator/placecell-missions/commands.sqlite3
+    command_retry_window_s: 86400.0
+    command_max_records: 10000
+    mission_trace_path: /home/simulator/placecell-missions/traces.sqlite3
+    mission_trace_max_events: 10000
+    mission_trace_max_bytes: 16777216
+    mission_trace_queue_size: 256
     # Keep this run separate from the existing single-goal tests.
     db_path: /home/simulator/placecell-missions/db
     collection: office_missions

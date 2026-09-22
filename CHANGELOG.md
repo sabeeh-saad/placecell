@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Add version 2 scoped command IDs, durable bounded retry suppression, conflicting-reuse refusal and command receipts. Preserve deliberate repeated visits and legacy input.
+- Bind identified stop/choice commands to the current request; keep text stop available during journal admission and prevent a pending write from starting work after stop.
+- Exercise command expiry, capacity, clock rollback, concurrent claims, crash reservations and real DDS retries/restart; active Nav2 reconciliation remains separate work.
+- Preserve cancellation intent atomically with terminal Nav2 results, enforce deadlines even when polling is delayed, and prevent stale trip callbacks from canceling a replacement trip.
+- Send cancellation before stop-status persistence; isolate ROS commands/action callbacks and use steady-clock deadline timers with a four-thread executor.
+- Add controlled ROS action/latency checks to CI and expand offline fault coverage to 46 scenarios. Define the startup ownership contract; crash reconciliation remains outstanding.
+- Run Python and ROS/Gazebo CI for all pull requests and main pushes, with merge-queue/manual triggers; add offline ROS operator checks and retain test reports on failure.
+- Build wheel/source distributions and validate both in separate clean environments across the Python CI matrix, including installed entry points, memory, mission evaluation, fault checks and trace export.
+- Add strict version 1 JSON commands, versioned status events, and a retained mission snapshot with a read-only ROS service for reconnecting operators. Preserve text commands and expose controller instance/event ordering.
+- Keep rejected inputs from replacing mission state; report arrival verification explicitly and clear single-goal choices on stop or expiry.
+- Add optional persistent mission traces with correlated planning/review, retrieval and visual checks, Nav2 events, stage timings and reported provider usage; enable bounded trace capture in the reference mission profile.
+- Add a read-only trace exporter and trace completeness checks to the offline fault suite. Diagnostic write failures and queue overflow remain separate from navigation decisions.
 - Add an offline fault runner covering planning, review, visual verification, localization, Nav2, context persistence and interrupted SQLite writes, with per-case JSON reports and CI artifacts.
 - Preserve transport-initiated cancellation in the mission controller: a late Nav2 success after a timeout no longer launches the next destination.
 

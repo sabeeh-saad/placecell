@@ -9,7 +9,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -25,6 +25,16 @@ from placecell.pipeline import Observation
 from placecell.providers.captioning import data_url
 from placecell.retrieval import RankedMemory, Recall
 from placecell.store.base import Filter, VectorStore
+from placecell.tracing import (
+    TraceContext,
+    TraceStore,
+    bind_trace,
+    current_trace,
+    trace_event,
+    trace_scope,
+    trace_span,
+    traced,
+)
 from placecell.verification import ObjectSceneVerifier, SceneVerdict, SceneVerifier
 
 
@@ -113,6 +123,20 @@ class Resolution:
     choices: tuple[Destination, ...] = ()
 
 
+def _trace_destination(destination: Destination | None) -> dict[str, object] | None:
+    if destination is None:
+        return None
+    return {
+        "label": destination.label,
+        "target": destination.target,
+        "source": destination.source,
+        "pose": asdict(destination.pose),
+        "memory_id": destination.memory.id if destination.memory else None,
+        "object_id": destination.object_id,
+        "object_revision": destination.object_revision,
+    }
+
+
 def load_named_places(path: str | Path) -> dict[str, Pose]:
     """Load operator-defined navigation poses: {name: {x, y, yaw, frame_id, map_id}}."""
     try:
@@ -164,6 +188,7 @@ class DestinationResolver:
         self._approach = approach
         self._object_arrival = object_arrival
 
+    @traced("approach_planning")
     def prepare_destination(self, destination: Destination, canceled: Callable[[], bool]) -> Destination:
         if not destination.object_id:
             return destination
@@ -203,7 +228,15 @@ class DestinationResolver:
                 )
         return verdict
 
+    @traced("destination_lookup")
     def resolve(self, command: MovementCommand) -> Resolution:
+        trace_event(
+            "lookup.request",
+            target=command.destination,
+            map_id=self._origin.map_id,
+            frame_id=self._origin.frame_id,
+            robot_id=self._scope.robot_id,
+        )
         if command.kind != "go":
             raise ValidationError("only a go command has a destination")
         command = replace(command, destination=" ".join(command.destination.casefold().split()).removeprefix("the "))
@@ -226,7 +259,25 @@ class DestinationResolver:
             object_result = self._resolve_object(command.destination)
             if object_result is not None:
                 return object_result
-        hits = self._recall.similar(command.destination, k=self._policy.candidates, where=self._scope)
+        with trace_span("memory_retrieval"):
+            hits = self._recall.similar(command.destination, k=self._policy.candidates, where=self._scope)
+        trace_event(
+            "retrieval.candidates",
+            channel="scene",
+            candidates=[
+                {
+                    "memory_id": h.memory.id,
+                    "similarity": h.similarity,
+                    "image_similarity": h.image_similarity,
+                    "caption_similarity": h.caption_similarity,
+                    "confidence": h.confidence,
+                    "view_timestamp": h.memory.view_timestamp,
+                    "pose": asdict(h.memory.pose),
+                    "localization_checked": h.memory.localization_checked,
+                }
+                for h in hits
+            ],
+        )
         now, p = self._clock(), self._policy
         hits = [
             h
@@ -240,6 +291,7 @@ class DestinationResolver:
             and h.memory.localization_checked
             and h.memory.evidence is not None
         ]
+        trace_event("retrieval.eligible", channel="scene", memory_ids=[h.memory.id for h in hits], policy=asdict(p))
         if not hits:
             return Resolution(
                 "not_found", "I don't have a sufficiently recent, reliable location for that destination."
@@ -261,7 +313,9 @@ class DestinationResolver:
         for hit in candidates:
             memory = hit.memory
             assert memory.evidence is not None
-            verdict = self.verify(command.destination, data_url(memory.evidence.uri))
+            with trace_span("candidate_verification", memory_id=memory.id):
+                verdict = self.verify(command.destination, data_url(memory.evidence.uri))
+            trace_event("candidate.verdict", memory_id=memory.id, verdict=verdict.result, reason=verdict.reason)
             if verdict.result == "uncertain":
                 return Resolution(
                     "not_found", "The images do not clearly identify the destination. Please give more detail."
@@ -280,16 +334,33 @@ class DestinationResolver:
     def _resolve_object(self, target: str) -> Resolution | None:
         assert self._objects is not None
         p = self._policy
-        hits = self._objects.similar(
-            target,
-            robot_id=self._scope.robot_id or "",
-            camera_id=self._scope.camera_id or "",
-            frame_id=self._origin.frame_id,
-            map_id=self._origin.map_id,
-            k=p.candidates + 1,
-            max_age_s=p.max_age_s,
+        with trace_span("object_retrieval"):
+            hits = self._objects.similar(
+                target,
+                robot_id=self._scope.robot_id or "",
+                camera_id=self._scope.camera_id or "",
+                frame_id=self._origin.frame_id,
+                map_id=self._origin.map_id,
+                k=p.candidates + 1,
+                max_age_s=p.max_age_s,
+            )
+        trace_event(
+            "retrieval.candidates",
+            channel="object",
+            candidates=[
+                {
+                    "object_id": h.object.id,
+                    "revision": h.object.revision,
+                    "memory_id": h.view.memory.id,
+                    "similarity": h.similarity,
+                    "status": h.object.status,
+                    "misses": h.object.misses,
+                }
+                for h in hits
+            ],
         )
         hits = [h for h in hits if h.similarity >= p.min_similarity]
+        trace_event("retrieval.eligible", channel="object", object_ids=[h.object.id for h in hits], policy=asdict(p))
         if not hits:
             return None
         if len(hits) > p.verification_candidates:
@@ -297,10 +368,18 @@ class DestinationResolver:
         choices = []
         for hit in hits:
             memory = hit.view.memory
-            if isinstance(self._verifier, ObjectSceneVerifier) and memory.evidence is not None:
-                verdict = self._verifier.verify_object(target, hit.view.image_url(), data_url(memory.evidence.uri))
-            else:
-                verdict = self.verify(target, hit.view.image_url())
+            with trace_span("candidate_verification", object_id=hit.object.id, memory_id=memory.id):
+                if isinstance(self._verifier, ObjectSceneVerifier) and memory.evidence is not None:
+                    verdict = self._verifier.verify_object(target, hit.view.image_url(), data_url(memory.evidence.uri))
+                else:
+                    verdict = self.verify(target, hit.view.image_url())
+            trace_event(
+                "candidate.verdict",
+                object_id=hit.object.id,
+                memory_id=memory.id,
+                verdict=verdict.result,
+                reason=verdict.reason,
+            )
             if verdict.result == "not_matched":
                 continue
             if verdict.result == "uncertain" or hit.object.status != "present" or hit.object.misses:
@@ -388,6 +467,7 @@ class NavigationEvent:
     state: str
     message: str = ""
     distance_remaining: float | None = None
+    cancel_requested: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,6 +483,20 @@ class NavigationUpdate:
     mission_id: str = ""
     mission_step: int = 0
     mission_destinations: tuple[str, ...] = ()
+    instance_id: str = ""
+    sequence: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class NavigationSnapshot:
+    """Read-only controller state; retained outcomes never resume work after restart."""
+
+    status: NavigationUpdate
+    sequence: int
+    busy: bool
+    closed: bool
+    active_request_id: str | None
+    choice_remaining_s: float | None
 
 
 class Navigator(Protocol):
@@ -429,12 +523,16 @@ class NavigationCommands:
         search: ObjectSearch | None = None,
         mission_planner: MissionPlanner | None = None,
         mission_context: MissionContext | None = None,
+        trace_store: TraceStore | None = None,
     ) -> None:
         if not math.isfinite(request_timeout_s) or request_timeout_s <= 0:
             raise ValidationError("command timeout must be finite and positive")
         if not math.isfinite(arrival_timeout_s) or arrival_timeout_s <= 0:
             raise ValidationError("arrival timeout must be finite and positive")
-        self._resolver, self._navigator, self._submit, self._publish = resolver, navigator, submit, publish
+        self._resolver, self._navigator = resolver, navigator
+        self._submit_callback, self._publish_callback = submit, publish
+        self._trace_store = trace_store
+        self._trace_context: TraceContext | None = None
         self._timeout, self._clock = request_timeout_s, clock
         self._requested_at = self._choices_at = 0.0
         self._lock = threading.RLock()
@@ -460,13 +558,73 @@ class NavigationCommands:
         self._context = mission_context or (MissionContext() if mission_planner is not None else None)
         self._context_ok = True
         self._last_context_state: tuple[str, str] | None = None
+        self._instance_id = uuid.uuid4().hex
+        self._sequence = 0
+        self._admission_epoch = 0
+        self._snapshot_status = NavigationUpdate(
+            "", "idle", "No navigation request is active.", instance_id=self._instance_id
+        )
+
+    @property
+    def admission_epoch(self) -> int:
+        """An intervening stop invalidates commands still waiting for durable admission."""
+        with self._lock:
+            return self._admission_epoch
 
     @property
     def busy(self) -> bool:
         with self._lock:
             return self._active is not None or self._mission is not None
 
-    def _emit(self, update: NavigationUpdate) -> None:
+    def snapshot(self) -> NavigationSnapshot:
+        """Copy current state atomically without polling, dispatching or replaying commands."""
+        with self._lock:
+            remaining = max(0.0, self._timeout - (self._clock() - self._choices_at)) if self._choices else None
+            return NavigationSnapshot(
+                self._snapshot_status,
+                self._sequence,
+                self.busy,
+                self._closed,
+                self._active,
+                remaining,
+            )
+
+    def reject_command(self, message: str) -> None:
+        """Report a malformed transport envelope without changing the current mission."""
+        self._publish(NavigationUpdate(uuid.uuid4().hex, "invalid", message))
+
+    def _submit(self, task: Callable[[], None]) -> bool:
+        return self._submit_callback(bind_trace(self._trace_context, task))
+
+    def _publish(
+        self, update: NavigationUpdate, context: TraceContext | None = None, *, state_update: bool = False
+    ) -> None:
+        with self._lock:
+            self._sequence += 1
+            update = replace(update, instance_id=self._instance_id, sequence=self._sequence)
+            if state_update:
+                self._snapshot_status = update
+            self._publish_ordered(update, context)
+
+    def _publish_ordered(self, update: NavigationUpdate, context: TraceContext | None) -> None:
+        context = context or current_trace()
+        if context is None and self._trace_context and update.request_id == self._trace_context.request_id:
+            context = self._trace_context
+        if context:
+            context.emit(
+                "status",
+                state=update.state,
+                message=update.message,
+                destination=_trace_destination(update.destination),
+                choices=[_trace_destination(choice) for choice in update.choices],
+                distance_remaining=update.distance_remaining,
+                object_result=update.object_result,
+                search_attempt=update.search_attempt,
+                mission_destinations=update.mission_destinations,
+            )
+        self._publish_callback(update)
+
+    def _emit(self, update: NavigationUpdate, *, state_update: bool = True) -> None:
         if self._mission_id:
             update = replace(
                 update,
@@ -496,9 +654,13 @@ class NavigationCommands:
             except Exception as e:
                 self._context_ok = False
                 update = replace(update, message=f"{update.message} Context persistence failed: {e}")
-        self._publish(update)
+        context = self._trace_context
+        active_trace = current_trace()
+        if active_trace and update.request_id == active_trace.request_id:
+            context = active_trace
+        self._publish(update, context, state_update=state_update)
 
-    def _record_instruction(self, request_id: str, text: str) -> bool:
+    def _record_instruction(self, request_id: str, text: str, *, state_update: bool = False) -> bool:
         if self._context is None:
             return True
         try:
@@ -507,7 +669,10 @@ class NavigationCommands:
             return True
         except Exception as e:
             self._context_ok = False
-            self._publish(NavigationUpdate(request_id, "unavailable", f"Could not save the instruction context: {e}"))
+            self._publish(
+                NavigationUpdate(request_id, "unavailable", f"Could not save the instruction context: {e}"),
+                state_update=state_update,
+            )
             return False
 
     def _clear_mission(self) -> None:
@@ -522,6 +687,12 @@ class NavigationCommands:
         self._search_visited = ()
         self._search_count = self._leg = 0
         self._transport_id = request_id
+        if self._trace_context:
+            self._trace_context = replace(
+                self._trace_context,
+                request_id=request_id,
+                step=self._mission_step + 1 if self._mission or not self._mission_planner else 0,
+            )
 
     def _complete(self, update: NavigationUpdate) -> None:
         """Called under the controller lock, only after a terminal trip outcome."""
@@ -553,8 +724,43 @@ class NavigationCommands:
         self._emit(update)
         self._clear_mission()
 
-    def handle(self, text: str) -> None:
-        request_id = uuid.uuid4().hex
+    def handle(
+        self,
+        text: str,
+        *,
+        request_id: str | None = None,
+        target_request_id: str = "",
+        admission_epoch: int | None = None,
+    ) -> None:
+        """Route once; callers supplying IDs must perform their own admission/deduplication."""
+        request_id = request_id or uuid.uuid4().hex
+        with self._lock:
+            try:
+                continuation = parse_movement(text).kind in {"cancel", "choose"}
+            except ValidationError:
+                continuation = False
+            context = None
+            if self._trace_store:
+                if continuation and self._trace_context and (self.busy or self._choices):
+                    context = replace(self._trace_context, request_id=request_id)
+                else:
+                    context = self._trace_store.context(request_id, request_id)
+        with trace_scope(context):
+            trace_event("instruction", text=text)
+            if target_request_id or admission_epoch is not None:
+                with self._lock:
+                    if (target_request_id and self._snapshot_status.request_id != target_request_id) or (
+                        admission_epoch is not None and self._admission_epoch != admission_epoch
+                    ):
+                        self._publish(
+                            NavigationUpdate(request_id, "stale_command", "The target changed or a stop intervened.")
+                        )
+                        return
+                    self._handle(text, request_id)
+            else:
+                self._handle(text, request_id)
+
+    def _handle(self, text: str, request_id: str) -> None:
         command = None
         try:
             command = parse_movement(text)
@@ -579,7 +785,8 @@ class NavigationCommands:
                 return
             if self._mission is not None and (command is None or command.kind != "choose"):
                 self._emit(
-                    NavigationUpdate(request_id, "busy", "Select a destination option or stop the mission first.")
+                    NavigationUpdate(request_id, "busy", "Select a destination option or stop the mission first."),
+                    state_update=False,
                 )
                 return
             if not self._localization_ready():
@@ -589,7 +796,7 @@ class NavigationCommands:
                 return
             chosen = None
             if command is not None and command.kind == "choose":
-                if not 1 <= command.choice <= len(self._choices) or self._clock() - self._choices_at > self._timeout:
+                if not 1 <= command.choice <= len(self._choices) or self._clock() - self._choices_at >= self._timeout:
                     self._publish(
                         NavigationUpdate(
                             request_id, "invalid", "There is no matching destination option. Give a destination first."
@@ -597,10 +804,12 @@ class NavigationCommands:
                     )
                     return
                 chosen = self._choices[command.choice - 1]
-            if not self._record_instruction(request_id, text):
+            self._trace_context = current_trace()
+            if not self._record_instruction(request_id, text, state_update=True):
                 self._clear_mission()
                 self._choices = ()
                 return
+            trace_event("instruction.accepted", command_kind=command.kind if command else "mission")
             self._choices = ()
             self._reset_leg(request_id)
             if self._mission_planner is not None and chosen is None:
@@ -633,12 +842,14 @@ class NavigationCommands:
             context = self._context.recent(exclude_request_id=request_id) if self._context else []
             plan = self._mission_planner.plan(text, canceled, context=context)
         except Exception as e:
+            trace_event("plan.failed", error_type=type(e).__name__)
             with self._lock:
                 if request_id == self._active:
                     self._complete(NavigationUpdate(request_id, "rejected", f"Mission planning failed: {e}"))
             return
         with self._lock:
             if request_id != self._active:
+                trace_event("plan.discarded", reason="request no longer active")
                 return
             if canceled():
                 self._complete(
@@ -656,8 +867,10 @@ class NavigationCommands:
             self._reset_leg(request_id)
             self._emit(NavigationUpdate(request_id, "planned", plan.message))
             self._emit(NavigationUpdate(request_id, "resolving", "Looking up the first mission destination."))
-        self._resolve(request_id, MovementCommand("go", plan.destinations[0]))
+        with trace_scope(self._trace_context):
+            self._resolve(request_id, MovementCommand("go", plan.destinations[0]))
 
+    @traced("destination_resolution")
     def _resolve(self, request_id: str, command: MovementCommand, chosen: Destination | None = None) -> None:
         with self._lock:
             if request_id != self._active:
@@ -699,9 +912,11 @@ class NavigationCommands:
                         )
                         result = Resolution("resolved", message, (destination,))
         except Exception as e:
+            trace_event("lookup.failed", error_type=type(e).__name__)
             result = Resolution("not_found", f"Destination lookup failed: {e}")
         with self._lock:
             if request_id != self._active:
+                trace_event("lookup.discarded", reason="request no longer active")
                 return
             if self._clock() - self._requested_at > self._timeout:
                 result = Resolution("not_found", "Destination lookup timed out. Please repeat the command.")
@@ -717,6 +932,7 @@ class NavigationCommands:
                     self._clear_mission()
                 return
             self._destination, self._state = result.choices[0], "submitting"
+            trace_event("destination.selected", destination=_trace_destination(self._destination))
             self._search_anchor = self._destination.pose
             self._search_visited = (self._destination.pose,)
             self._emit(NavigationUpdate(request_id, "submitting", result.message, self._destination))
@@ -724,17 +940,25 @@ class NavigationCommands:
                 self._complete(NavigationUpdate(request_id, "unavailable", "Navigation stopped: context unavailable."))
                 return
             try:
-                self._navigator.send(request_id, self._destination, lambda e: self._event(request_id, e, 0))
+                self._navigator.send(
+                    request_id,
+                    self._destination,
+                    bind_trace(self._trace_context, lambda e: self._event(request_id, e, 0)),
+                )
             except Exception as e:
                 self._event(request_id, NavigationEvent("uncertain", f"Navigation transport failed: {e}"))
 
     def _event(self, request_id: str, event: NavigationEvent, leg: int | None = None) -> None:
         with self._lock:
             if request_id != self._active or (leg is not None and leg != self._leg):
+                trace_event("callback.ignored", state=event.state, reason="request or search leg no longer active")
                 return
             if self._state in {"awaiting_observation", "verifying_arrival"}:
+                trace_event(
+                    "callback.ignored", state=event.state, reason="arrival verification already owns completion"
+                )
                 return  # Late transport feedback cannot finish or restart visual verification.
-            if event.state in {"canceling", "cancel_failed", "uncertain"}:
+            if event.cancel_requested or event.state in {"canceling", "cancel_failed", "uncertain"}:
                 # Transport deadlines/errors can initiate cancellation independently.
                 # A late success must not resume the mission after that decision.
                 self._canceling = True
@@ -786,6 +1010,7 @@ class NavigationCommands:
             destination, request_id = self._destination, self._active
             if request_id is None or self._state != "awaiting_observation" or destination is None:
                 return
+            arrival_trace = self._trace_context
             memory = destination.memory
             if (
                 memory is None
@@ -798,16 +1023,48 @@ class NavigationCommands:
                 or observation.pose.distance_to(destination.pose) > 0.35
                 or observation.pose.heading_difference(destination.pose) > 0.35
             ):
+                if arrival_trace:
+                    arrival_trace.emit(
+                        "arrival.observation_rejected",
+                        robot_id=observation.robot_id,
+                        camera_id=observation.camera_id,
+                        timestamp=observation.timestamp,
+                        pose=asdict(observation.pose),
+                        localization_checked=observation.localization_checked,
+                        localization_ready=self._localization_ready(),
+                        after_timestamp=self._arrival_after,
+                        observation_clock=self._observation_clock(),
+                        destination=_trace_destination(destination),
+                    )
                 return
             self._state = "verifying_arrival"
+            self._emit(
+                NavigationUpdate(
+                    request_id,
+                    self._state,
+                    "Checking a fresh view of the destination.",
+                    destination,
+                    search_attempt=self._search_count,
+                )
+            )
+            if arrival_trace:
+                arrival_trace.emit(
+                    "arrival.observation_accepted",
+                    timestamp=observation.timestamp,
+                    pose=asdict(observation.pose),
+                    evidence_digest=observation.evidence.digest,
+                )
         try:
             # Snapshot bytes before ingestion can replace and clean up this keyframe.
             image = data_url(observation.evidence.uri)
-            if not self._submit(lambda: self._verify_arrival(request_id, destination, image, observation)):
+            if not self._submit(
+                bind_trace(arrival_trace, lambda: self._verify_arrival(request_id, destination, image, observation))
+            ):
                 raise ValidationError("the verification worker is busy")
         except Exception as e:
             self._finish_arrival(request_id, False, f"Could not inspect the arrival image: {e}")
 
+    @traced("arrival_verification")
     def _verify_arrival(self, request_id: str, destination: Destination, image: str, observation: Observation) -> None:
         with self._lock:
             if request_id != self._active or self._clock() >= self._arrival_deadline:
@@ -916,7 +1173,12 @@ class NavigationCommands:
                 self._finish_arrival(request_id, False, "Local search stopped: context unavailable.")
                 return
             try:
-                self._navigator.send(self._transport_id, goal, lambda e: self._event(request_id, e, leg))
+                trace_event(
+                    "search.destination_selected", destination=_trace_destination(goal), attempt=self._search_count
+                )
+                self._navigator.send(
+                    self._transport_id, goal, bind_trace(self._trace_context, lambda e: self._event(request_id, e, leg))
+                )
             except Exception as e:
                 self._event(request_id, NavigationEvent("uncertain", f"Search transport failed: {e}"), leg)
 
@@ -934,6 +1196,8 @@ class NavigationCommands:
                 if not matched:
                     object_result, reason = "unavailable", "The selected object reference became unavailable."
             self._state = "succeeded" if matched else "destination_unverified"
+            if self._trace_context:
+                self._trace_context.emit("arrival.verdict", matched=matched, reason=reason, object_result=object_result)
             if not matched and object_result == "ambiguous":
                 self._state = "destination_ambiguous"
             message = (
@@ -956,13 +1220,13 @@ class NavigationCommands:
         """Bound arrival waits and request cancellation if localization is lost during a trip."""
         with self._lock:
             if self._active is None:
-                if self._mission is not None and self._clock() - self._choices_at >= self._timeout:
+                if self._choices and self._clock() - self._choices_at >= self._timeout:
                     self._choices = ()
-                    self._complete(
-                        NavigationUpdate(self._transport_id, "not_found", "Mission destination choice expired.")
-                    )
+                    self._complete(NavigationUpdate(self._transport_id, "not_found", "Destination choice expired."))
                 return
             if self._state in {"planning", "resolving"} and self._clock() - self._requested_at >= self._timeout:
+                if self._trace_context:
+                    self._trace_context.emit("deadline.expired", phase=self._state, limit_s=self._timeout)
                 self._complete(
                     NavigationUpdate(
                         self._active,
@@ -992,13 +1256,19 @@ class NavigationCommands:
                         "Fresh visual evidence or localization was unavailable before the deadline.",
                     )
             elif not ready and not self._canceling:
+                if self._trace_context:
+                    self._trace_context.emit("localization.unavailable", phase=self._state)
                 self.cancel()
 
     def cancel(self) -> None:
         with self._lock:
+            self._admission_epoch += 1
+            if self._trace_context and (self._active or self._mission):
+                self._trace_context.emit("cancellation.requested", phase=self._state, transport_id=self._transport_id)
+            had_choices = bool(self._choices)
             self._choices = ()
             if self._active is None:
-                if self._mission is not None:
+                if self._mission is not None or had_choices:
                     self._complete(NavigationUpdate(self._transport_id, "canceled", "Mission canceled."))
                 else:
                     self._publish(NavigationUpdate("", "idle", "No navigation request is active."))
@@ -1009,13 +1279,16 @@ class NavigationCommands:
                 return
             self._state = "canceling"
             self._canceling = True
-            self._emit(
-                NavigationUpdate(request_id, "canceling", "Requesting cancellation from Nav2.", self._destination)
-            )
             try:
                 self._navigator.cancel(self._transport_id)
             except Exception as e:
                 self._event(request_id, NavigationEvent("uncertain", f"Cancellation could not be confirmed: {e}"))
+            # Issue the transport request before context persistence/status publication.
+            # An injected or already-complete future can finish this trip synchronously.
+            if self._active == request_id and self._state == "canceling":
+                self._emit(
+                    NavigationUpdate(request_id, "canceling", "Requesting cancellation from Nav2.", self._destination)
+                )
 
     def close(self) -> None:
         with self._lock:

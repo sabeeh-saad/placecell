@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-21",
+  "scope": "Day 4 persistent diagnostic tracing, exporter, fault-trace checks and bounded real-ROS integration",
+  "runtime_base_commit": "eb0ba8719b170d76fb7fb64dcb5cdd55163c2126",
+  "source_state": "Local Day 4 working tree identified by hashes; private planning documents remain local",
+  "sources_sha256": {
+    "src/placecell/tracing.py": "c43a68020962acd4b0dd227f2d3fcb65184b58700ee02056e53037dcebcf8098",
+    "src/placecell/trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+    "src/placecell/navigation.py": "ff46c48d824ef308c4b2493fe6cfe938029360f505954c6efc5e2f53ed0f1723",
+    "src/placecell/missions.py": "0237a5204bae7377590101709f377a9ab0bfc74bcc19e53f23231bfb1a31e10c",
+    "src/placecell/providers/_http.py": "6e6e4eeae64f0e8cdc20dad2ec45fd21132474578f694548acc00640de649c97",
+    "src/placecell/ros2/navigation.py": "e90e52e02db12b77a9d3d2ee644638e435faffd9ff702e132aa7e3cda82a8cff",
+    "src/placecell/ros2/node.py": "c6bfe4c930a2a82166681a6eacdd4023e86756a0925f282cdaea7d120e2e7130",
+    "src/placecell/fault_injection.py": "db8a314f52b367d8c756128447739a13179bcad36332a07f4b6447b3817a6bfd",
+    "tests/test_tracing.py": "fd41cc4f5b411b190472988000bf08bbf8b2c3c7164b02ab61309fd1d1d7a370",
+    "pyproject.toml": "33b803fd1c2bed57d930a6758288d05fba0bab60ef077faf1dd83c81098dea6c",
+    "simulation/config/missions.yaml": "c41895844e62451d24471a9e9bea386502580f1abc830e156d5c88f8c3d90ad5",
+    "docs/mission-tracing.md": "2053f96248bb0d7f454835d08a36323008879cff7ec69ed817faa05946dacd20"
+  },
+  "artifacts_sha256": {
+    "simulation/artifacts/day-04/report-final.json": "24f0693b6f3e97e85519ff2fb6ccabb438a4eb1687671574ab1fe015148b55d4",
+    "simulation/artifacts/day-04/coverage-final.json": "06360491a4d38af937c6e19e8509da5e296779a08b5c044330e9e70916bd0e7b",
+    "simulation/artifacts/day-04/tests-final.xml": "217bd8656ef922939e1a180a2e6fc5d0e03e53163c268a22e83fb9b78e16d373",
+    "simulation/artifacts/day-04/example-mission-trace.json": "173af408fd2eb50a45294e57ab4e9277f34c6b2167529c20511ef402c15efa8d",
+    "simulation/artifacts/day-04/ros/ros-check.json": "82337c6b66b7ffad3313bd2d4f4ddb8f5f3da59154d520471d8d866f8f02bfe2",
+    "simulation/artifacts/day-04/ros/mission_admission-trace.json": "9a06e9195f4202fc839b052427f25671ed0a18cb02e8f45301fa4d7906386871",
+    "simulation/artifacts/day-04/ros/named_pose_navigation-trace.json": "cdba4a43db8b733ecc22d9deb82d8f0ed153f386531929a80984aaee906fbfb8",
+    "simulation/artifacts/day-04/ros-check.py": "2715e2e6dacb63db3860c46fdcf6dfb8acd7a4e8241cf967606cb228182164ce"
+  },
+  "implementation": {
+    "schema": 1,
+    "storage": "Dedicated SQLite database; bounded non-waiting enqueue with background writer",
+    "default_limits": {
+      "events": 10000,
+      "database_bytes": 16777216,
+      "queue_events": 256
+    },
+    "retention": "Oldest events removed by count/payload budget; main database capped by SQLite pages; rollback journal is additional space",
+    "loss_evidence": [
+      "dropped_events",
+      "write_errors",
+      "trimmed_events",
+      "truncated_events",
+      "unclean_shutdowns",
+      "unfinished_spans"
+    ],
+    "usage": "Reported final HTTP response token counts and explicit cost_usd; missing fields stay null, retries/custom adapters may add unknown usage",
+    "credentials": "Configured credential registration/redaction, credential-field and text-pattern redaction; no HTTP bodies, headers, URLs or image bytes recorded",
+    "export": "placecell-export-trace / python -m placecell.trace_export, read-only, optional mission ID, no overwrite",
+    "ros_profile": "mission_trace_path enabled in simulation/config/missions.yaml; ROS status payload unchanged"
+  },
+  "regressions": {
+    "shutdown_idle": "Real ROS check exposed idle shutdown feedback being attached to a finished mission; fixed attribution and added a dedicated regression test",
+    "late_work": "Late model callbacks retain their original mission IDs after cancellation and a new request",
+    "blocked_writer": "A controlled blocked trace writer and full queue do not prevent the tested stop callback issuing cancellation",
+    "trace_write_failure": "Scripted two-goal mission still completes while trace writes fail; loss counters expose the diagnostic failure",
+    "ambiguity": "Selection and stop requests preserve the original mission ID and distinct request IDs",
+    "interruption": "Child process exits inside an open span; retained trace identifies an open session/unfinished span, and reopen records unclean shutdown"
+  },
+  "validation": {
+    "tests": {
+      "total": 865,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "duration_s": 63.114,
+      "command": "COVERAGE_FILE=/tmp/placecell-day4-final.coverage timeout 300 .venv/bin/pytest --cov=placecell --cov-report=term --cov-report=json:simulation/artifacts/day-04/coverage-final.json --junitxml=simulation/artifacts/day-04/tests-final.xml"
+    },
+    "coverage_percent": 95.75704418375179,
+    "trace_store_coverage_percent": 96.92737430167598,
+    "ruff_check": "passed",
+    "ruff_format_check": "passed",
+    "mypy_strict": "passed (63 source files)",
+    "installed_cli": "Offline editable install; installed exporter executed for all retained traces and a selected mission ID",
+    "fault_campaign": {
+      "command": ".venv/bin/placecell-check-faults --repeat 3 --output simulation/artifacts/day-04/report-final.json",
+      "cases": 36,
+      "repetitions": 3,
+      "results": {
+        "runs": 108,
+        "passed": 108,
+        "failed": 0,
+        "wall_duration_ms": 26147.450574000686
+      },
+      "checks": 1485,
+      "trace_events": 2850,
+      "trace_loss_observed": false,
+      "claim": "Sequential scripted software repeatability; not independent perception examples or live-motion qualification"
+    },
+    "ros_check": {
+      "image": "placecell-sim:jazzy",
+      "image_id": "sha256:f1dc29c81ab6093ebb6d4bd9c18474d4fea44f3e34e6c8dcf7addf906db0472a",
+      "source_mounts": "Current src/placecell and simulation mounted read-only; image not rebuilt",
+      "resources": {
+        "cpus": 8,
+        "memory_gib": 16,
+        "network": "none"
+      },
+      "checks": {
+        "result": "passed",
+        "cases": [
+          {
+            "case": "mission_admission",
+            "passed": true,
+            "final_state": "unavailable",
+            "events": 2,
+            "paid_model_calls": 0,
+            "trace_stages": [
+              "instruction",
+              "status"
+            ]
+          },
+          {
+            "case": "named_pose_navigation",
+            "passed": true,
+            "final_state": "unavailable",
+            "events": 15,
+            "paid_model_calls": 0,
+            "trace_stages": [
+              "approach_planning",
+              "destination.selected",
+              "destination_lookup",
+              "destination_resolution",
+              "instruction",
+              "instruction.accepted",
+              "lookup.request",
+              "navigation",
+              "status"
+            ]
+          }
+        ],
+        "network": "disabled",
+        "scope": "Real ROS node, parameter service, command/status topics and unavailable-action-server path; no Gazebo motion"
+      },
+      "parameter_overrides": "use_sim_time=false; temporary in-container database/context/keyframe/trace paths; second case mission_enabled=false",
+      "motion": "No Gazebo or active Nav2 server; real ROS admission, topics, unavailable-server result and shutdown only"
+    },
+    "remote_ci": "Not run for these local changes"
+  },
+  "paid_api_calls": 0,
+  "model_api_budget": "undecided",
+  "qualification": "unassessed",
+  "limitations": [
+    "Trace capture is best-effort diagnostic evidence, not an audit log or movement replay source",
+    "File-backed writer lock targets Linux/Unix; general node defaults keep tracing disabled",
+    "Arbitrary unlabelled sensitive text is not reliably classifiable; review exports before sharing",
+    "No measured physical stop latency, live-model quality, moving Gazebo campaign or 24-hour endurance"
+  ]
+}

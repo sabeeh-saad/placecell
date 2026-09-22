@@ -31,7 +31,7 @@ objects = ["Pillow>=10"]
 clip = ["sentence-transformers>=3.0,<6", "Pillow>=10"]
 speech = ["vosk>=0.3.45", "sounddevice>=0.4.6"]
 lancedb = ["lancedb>=0.38", "pyarrow>=16"]
-dev = ["pytest>=7", "pytest-cov>=4", "ruff==0.16.8", "mypy>=1.10", "pre-commit>=3", "Pillow>=10"]
+dev = ["pytest>=7", "pytest-cov>=4", "ruff==0.16.8", "mypy>=1.10", "pre-commit>=3", "Pillow>=10", "PyYAML>=6"]
 
 [project.scripts]
 placecell-ros2 = "placecell.ros2.node:main"
@@ -40,6 +40,7 @@ placecell-evaluate = "placecell.evaluation:main"
 placecell-evaluate-objects = "placecell.object_evaluation:main"
 placecell-evaluate-missions = "placecell.mission_evaluation:main"
 placecell-check-faults = "placecell.fault_injection:main"
+placecell-export-trace = "placecell.trace_export:main"
 
 [project.urls]
 Homepage = "https://github.com/sabeeh-saad/placecell"
@@ -70,7 +71,7 @@ warn_unreachable = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy", "rclpy.*", "sensor_msgs.*", "std_msgs.*", "tf2_ros", "tf2_ros.*", "nav2_msgs.*", "geometry_msgs.*", "vosk", "sounddevice", "sentence_transformers", "sentence_transformers.*", "PIL", "PIL.*"]
+module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy", "rclpy.*", "sensor_msgs.*", "std_msgs.*", "std_srvs.*", "tf2_ros", "tf2_ros.*", "nav2_msgs.*", "geometry_msgs.*", "vosk", "sounddevice", "sentence_transformers", "sentence_transformers.*", "PIL", "PIL.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

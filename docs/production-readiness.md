@@ -1,6 +1,8 @@
 # Production-readiness contract
 
-Status: **version 1 qualification targets frozen; evidence unassessed**, 21 September 2026.
+Status: **version 1 targets frozen; Day 8 execution evidence added, no gate fully satisfied**,
+22 September 2026. The [Day 7 review](readiness-review.md) separates partial software
+evidence from unassessed model/endurance quality and ranks the remaining release blockers.
 This document defines what must be demonstrated; it does not certify the current alpha
 or turn a deadline into a guarantee. Provider spending and the ingestion-age budget remain
 explicit open dependencies; this is not a declaration that every resource target is finalized.
@@ -67,6 +69,34 @@ interruption. Repetitions are sequential with fixed event ordering; they establi
 repeatability, not race coverage. See the [validation record](validation/day-03.json).
 These checks leave the qualification gate unassessed, including live ROS scheduling,
 actual TF outages, active-goal reconciliation after a process restart and measured stop latency.
+
+Day 4 adds correlated stage traces and read-only mission export, including incomplete
+capture indicators and usage fields that remain unknown when unreported. A blocked trace
+writer/full queue does not block the tested cancellation callback, and shutdown idle feedback
+does not overwrite a completed mission's trace. The real-ROS checks cover admission and an
+unavailable action server; they do not qualify moving Gazebo missions or stop latency under load.
+
+Day 5 adds the versioned [operator interface](operator-interface.md), retained mission state
+and a read-only snapshot service. Real ROS checks exercise late subscriptions, volatile
+command delivery and disabled/enabled node startup; controller tests cover mission/choice
+state and rejected commands. Event sequence numbers are not command deduplication keys,
+and a fresh idle snapshot is not proof that Nav2 has reconciled a pre-crash goal.
+
+Day 8 fixes concurrent timeout/result and stale-trip callback failures and expands the
+offline suite to 46 scenarios. The [cancellation contract](cancellation-ownership.md)
+documents real ROS action tests, paused-time deadlines, and 100 cancellation trials with
+a synthetic slow observation callback: 1.38 ms p99, 1.70 ms maximum against the 500 ms
+target for that workload. Full RGB-D/provider saturation and post-crash reconciliation
+remain unqualified. See the [exact sources, image and reports](validation/day-08.json).
+
+Day 9 adds [scoped command identity](command-identity.md), bounded durable reservations,
+retry/conflict receipts, targeted stop/choice commands and stop during pending admission.
+The [Day 9 record](validation/day-09.json) contains 969 passing tests, 138/138 existing
+fault runs and 14 real-ROS operator checks, including explicit retry after reopening the
+journal in a replacement controller. The legacy-stop benchmark remains below its 500 ms
+target at 2.26 ms p99 for the controlled workload. Journal restart suppression is separate
+from Nav2 goal reconciliation; legacy input, replaced/restored journals, physical motion
+and candidate release qualification retain their documented limits.
 
 Release blockers include any observed:
 

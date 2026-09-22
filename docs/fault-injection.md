@@ -5,7 +5,7 @@ destination resolver, mission controller, localization gate and Nav2 adapter. Sc
 providers and a controlled action client inject failures at their interfaces. Context uses
 a real temporary SQLite database. No API key, ROS installation or robot is needed.
 
-The suite has **36 scenarios: 34 fault cases and two successful controls**. Its checks
+The suite has **46 scenarios: 44 fault cases and two successful controls**. Its checks
 specify expected status, dispatch count and mission ownership at intermediate checkpoints,
 as well as the final outcome. A successful fault check means the software handled the
 specified failure; it does not mean a navigation mission succeeded.
@@ -70,6 +70,12 @@ The controls complete two named destinations in order and one remembered destina
 scripted candidate and fresh-arrival verification. They prevent “always refuse” behavior
 from appearing as a healthy suite.
 
+Day 8 adds ten cancellation cases: stop during planning/candidate/arrival work, stop before
+acceptance, deadlines enforced without a timely poll, and terminal results deliberately
+delivered before cancellation events. Named and memory goals keep their distinct outcomes.
+These forced callback interleavings are deterministic; threaded regressions and the
+[real ROS cancellation check](cancellation-ownership.md) supply separate scheduling evidence.
+
 ## Read the report
 
 The JSON report includes:
@@ -83,6 +89,12 @@ The JSON report includes:
 - Goal submission attempts, cancellation calls, final ownership, queued tasks, scripted
   provider calls, virtual elapsed time and measured wall duration.
 - Explicit limitations and zero paid API calls/cost.
+
+Day 4 adds a `trace` report to each result. It captures production-stage events and checks
+that published statuses, submission attempts and cancellation requests match their trace
+events, with no observed loss. The harness's temporary database is removed after each case;
+the exported trace remains in the report. See [mission tracing](mission-tracing.md) for the
+schema, persistent ROS setup and exporter.
 
 The runner uses shorter virtual deadlines (5 s lookup, 3 s arrival, 2 s Nav2 response,
 10 s trip) to exercise exact boundary conditions without waiting. These are harness
@@ -110,3 +122,5 @@ separate integration/qualification runs. Passing this suite alone is not product
 
 The [Day 3 validation record](validation/day-03.json) records the observed regression,
 fix, source hashes and local check results.
+The [Day 8 record](validation/day-08.json) records the expanded suite, concurrent callback
+repairs and controlled ROS latency checks. Startup goal reconciliation remains outstanding.

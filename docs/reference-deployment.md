@@ -79,10 +79,11 @@ endurance qualification remain later work.
 
 The inspected development host has 16 logical CPUs, an Intel Core Ultra 9 285H and about
 62 GiB RAM, with other workloads running. This describes available hardware, not a minimum
-requirement or dedicated allocation. Initial planning allowances are up to eight CPUs,
-16 GiB RAM and 20 GiB of evaluation artifacts per run. They are **provisional**, not measured
-pass/fail targets or enforced Compose limits. Day 2 must measure and freeze limits,
-including latency and storage retention, before tuning. No endurance job is started here.
+requirement or dedicated allocation. The Day 2 qualification contract fixes engineering
+ceilings of eight CPUs, 16 GiB RAM and 20 GiB of data/artifacts per run. CPU/RAM quotas were
+used for the bounded Day 1 checks; disk enforcement, retention qualification and a measured
+accepted ingestion-work age limit remain open. These ceilings are not minimum hardware
+recommendations or evidence of endurance. See the [Day 7 review](readiness-review.md).
 
 ## Operator walkthrough
 
@@ -122,7 +123,9 @@ does not coordinate independently launched nodes or the other simulation test co
 Do not run `check-pipeline`, `record-commands` or navigation tests alongside this session.
 
 The launcher uses `/home/simulator/placecell-missions/` for scene/object memory, retained
-images, corrections and `missions.sqlite3`. A node restart within the same running world
+images, corrections, `missions.sqlite3` and `traces.sqlite3`. Mission trace capture was added
+on Day 4; the Day 1 record retains hashes of its earlier profile. See [mission tracing](mission-tracing.md)
+for export, retention and evidence limits. A node restart within the same running world
 preserves context but does not resume a mission. Recreating/removing the container removes
 that directory; it is not a persistent host volume.
 
@@ -196,7 +199,12 @@ ros2 topic pub --once /placecell/command std_msgs/msg/String \
 the current visit. `step_succeeded` completes an intermediate visit. Only the final visit
 produces mission `succeeded`. A Nav2 result by itself does not establish visual arrival.
 Record rejected, failed and timed-out requests as outcomes, not successful demonstrations.
-The status topic is currently an event stream; reconnecting does not retrieve a snapshot.
+The status topic is an event stream. Day 5 added a retained `/placecell/mission_snapshot`
+topic and read-only `/placecell/get_mission_snapshot` service for reconnecting clients;
+see the [operator contract](operator-interface.md) for freshness and restart semantics.
+Clients that retry delivery should use [version 2 command IDs](command-identity.md).
+The reference profile persists `commands.sqlite3` in the same mission volume as context
+and traces. Reuse the complete envelope on retry; use a new ID for another intentional visit.
 
 “First go to the printer, then the cupboard” is also a valid input form, but it cannot be
 promised to complete when no cupboard was observed. The correct outcome is clarification
@@ -247,6 +255,7 @@ Neither establishes real-model chained-mission accuracy, generalization, resourc
 under endurance load, or behavior on a physical robot.
 
 Existing recordings from the same office are development/baseline data. Independent
-human labels, additional layouts/sessions, a frozen held-out split, a model budget and
-measured acceptance thresholds remain Day 2 dependencies. See the inventory for the
-actual data available and the checks completed on this checkout.
+human labels, additional layouts/sessions, a frozen held-out split and a model budget
+remain dependencies. Acceptance targets are frozen in the qualification contract;
+the accepted ingestion-work age budget still needs measurement. See the inventory and
+[Day 7 review](readiness-review.md) for available evidence and remaining work.
