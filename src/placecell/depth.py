@@ -201,7 +201,10 @@ class DepthSnapshot:
                     px = int(core.left * self.width) + col
                     py = int(core.top * self.height) + row
                     mapped = transform @ [
-                        (px - self.cx) * distance / self.fx, (py - self.cy) * distance / self.fy, distance, 1,
+                        (px - self.cx) * distance / self.fx,
+                        (py - self.cy) * distance / self.fy,
+                        distance,
+                        1,
                     ]
                     support.append((float(mapped[0]), float(mapped[1]), float(mapped[2])))
                 if not support:

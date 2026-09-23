@@ -26,7 +26,7 @@ from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.depth import DepthSnapshot
 from placecell.errors import PlacecellError, ValidationError
-from placecell.lifecycle import Curator, remove_local_file
+from placecell.lifecycle import Curator, RetentionPolicy, remove_local_file
 from placecell.localization import LocalizationGate, LocalizationPolicy
 from placecell.memory import Pose
 from placecell.mission_context import MissionContext
@@ -61,6 +61,8 @@ from placecell.ros2.navigation import Nav2Navigator, create_navigation_timers, c
 from placecell.ros2.operator import OperatorInterface
 from placecell.sensors import SensorHealth
 from placecell.store import CollectionInfo, VectorStore
+from placecell.store.base import EVERYTHING
+from placecell.store.limits import StoreLimits
 from placecell.tracing import TraceStore
 from placecell.verification import VisionVerifier
 
@@ -123,15 +125,17 @@ def build_embedder(
     )
 
 
-def build_store(db_path: str, collection: str, embedder: EmbeddingProvider) -> VectorStore:
+def build_store(
+    db_path: str, collection: str, embedder: EmbeddingProvider, *, limits: StoreLimits | None = None
+) -> VectorStore:
     info = CollectionInfo(collection, embedder.model_name, embedder.dimension)
     if not db_path:
         from placecell.store import InMemoryStore
 
-        return InMemoryStore(info)
+        return InMemoryStore(info, limits=limits)
     from placecell.store.lancedb_store import LanceDBStore
 
-    return LanceDBStore(Path(db_path).expanduser(), info)
+    return LanceDBStore(Path(db_path).expanduser(), info, limits=limits)
 
 
 def build_mission_planner(parameters: dict[str, Any], api_key: str | None) -> MissionPlanner | None:
@@ -361,7 +365,17 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 batch_size=p["embed_batch_size"],
                 cache_folder=p["embed_cache_folder"],
             )
-            store = build_store(p["db_path"], p["collection"], embedder)
+            store = build_store(
+                p["db_path"],
+                p["collection"],
+                embedder,
+                limits=StoreLimits(
+                    p["memory_max_records"],
+                    p["memory_max_sightings"],
+                    p["refine_max_pending"],
+                    p["cleanup_max_pending"],
+                ),
+            )
             captioner: Captioner | None = None
             if p["caption_model"]:
                 from placecell.providers import OpenAICompatibleCaptioner
@@ -403,7 +417,11 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             ingester = Ingester(
                 embedder, store, captioner, segmenter, batch_size=p["batch_size"], observer=observer, objects=tracker
             )
-            self._corrections = JsonlCorrectionLog(Path(p["corrections_path"]).expanduser())
+            self._corrections = JsonlCorrectionLog(
+                Path(p["corrections_path"]).expanduser(),
+                max_records=p["correction_max_records"],
+                max_bytes=p["correction_max_bytes"],
+            )
             self._recall = Recall(store, embedder, corrections=self._corrections, clock=self._memory_time)
             self._agent: Agent | None = None
             self._consolidator: Consolidator | None = None
@@ -443,7 +461,11 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._questions = BoundedTasks(p["question_workers"], p["question_queue"], self.get_logger())
             self._maintenance = BoundedTasks(1, 1, self.get_logger())
             self._curator = Curator(
-                store, corrections=self._corrections, remover=remove_local_file, clock=self._memory_time
+                store,
+                RetentionPolicy(max_idle_s=p["memory_max_idle_s"], history_age_s=p["memory_history_age_s"]),
+                corrections=self._corrections,
+                remover=remove_local_file,
+                clock=self._memory_time,
             )
             writer = KeyframeWriter(Path(p["keyframe_dir"]).expanduser())
             writer.recover_pending(store)
@@ -490,9 +512,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             if p["objects_enabled"] and p["depth_topic"]:
                 self._depth_frames = self._pending_images.depth
                 self._camera_infos = self._pending_images.info
-                self.create_subscription(
-                    Image, p["depth_topic"], self._pending_images.add_depth, image_qos
-                )
+                self.create_subscription(Image, p["depth_topic"], self._pending_images.add_depth, image_qos)
                 self.create_subscription(
                     CameraInfo,
                     p["camera_info_topic"],
@@ -503,9 +523,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._clock_fault_reported = False
             self.create_timer(0.04, self._drain_image, clock=Clock(clock_type=ClockType.STEADY_TIME))
             if p["compressed"]:
-                self.create_subscription(
-                    CompressedImage, p["image_topic"], self._receive_compressed, image_qos
-                )
+                self.create_subscription(CompressedImage, p["image_topic"], self._receive_compressed, image_qos)
             else:
                 self.create_subscription(Image, p["image_topic"], self._receive_image, image_qos)
             self.create_subscription(String, "~/ask", self._on_ask, 10)
@@ -530,6 +548,10 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     self._mission_context = MissionContext(
                         p["mission_context_path"] or ":memory:",
                         scope=json.dumps([p["robot_id"], p["map_id"], p["mission_conversation_id"]]),
+                        max_events=p["mission_context_max_events"],
+                        max_bytes=p["mission_context_max_bytes"],
+                        retention_s=p["mission_context_retention_s"],
+                        references_available=self._context_reference_available,
                     )
                 places = load_named_places(p["places_file"]) if p["places_file"] else {}
                 verification_model = p["verification_model"] or p["caption_model"]
@@ -759,6 +781,17 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "min_turn_rad": 0.35,
                 "batch_size": 8,
                 "max_queue": 64,
+                "memory_max_records": 10000,
+                "memory_max_sightings": 1024,
+                "memory_max_idle_s": 7776000.0,
+                "memory_history_age_s": 7776000.0,
+                "refine_max_pending": 256,
+                "cleanup_max_pending": 2048,
+                "correction_max_records": 10000,
+                "correction_max_bytes": 4194304,
+                "mission_context_max_events": 1000,
+                "mission_context_max_bytes": 2097152,
+                "mission_context_retention_s": 2592000.0,
                 "tf_timeout_s": 0.2,
                 "curator_interval_s": 3600.0,
                 "contradiction": True,
@@ -1038,12 +1071,16 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     str(data.get("question", "")),
                     str(data.get("note", "")),
                 )
-            except (ValueError, KeyError, TypeError, PlacecellError) as e:
+                if self._store.get(correction.memory_id) is None:
+                    raise ValidationError("correction refers to an unavailable scene memory")
+                self._corrections.record(correction)
+                if correction.verdict == "wrong":
+                    accepted = self._store.refinements.request(correction.memory_id, "operator correction")
+                    if not accepted:
+                        self.get_logger().warning("Correction saved; recheck queue full or memory is ineligible.")
+            except (ValueError, KeyError, TypeError, OSError, PlacecellError) as e:
                 self.get_logger().warning(f"ignored correction: {e}")
                 return
-            self._corrections.record(correction)
-            if correction.verdict == "wrong":
-                self._store.refinements.request(correction.memory_id, "operator correction")
 
         def _on_refine(self, msg: Any) -> None:
             """JSON: {"memory_id": ..., "action": "recheck"|"rollback"}."""
@@ -1072,14 +1109,34 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
         def _curate(self) -> None:
             self._maintenance.submit(self._run_curator)
 
+        def _context_reference_available(self, data: dict[str, Any]) -> bool:
+            if data.get("object_id"):
+                record = self._store.objects.get(data["object_id"])
+                return record is not None and record.status == "present"
+            if data.get("memory_id"):
+                memory = self._store.get(data["memory_id"])
+                return memory is not None and not memory.superseded
+            return True
+
         def _run_curator(self) -> None:
-            self._store.objects.prune(self._memory_time() - self._object_policy.retention_s)
+            self._store.drain_cleanup(remove_local_file)
+            before = self._memory_time() - self._object_policy.retention_s
+            for _ in range(128):
+                if not self._store.objects.prune(before, limit=1):
+                    break
+                self._store.drain_cleanup(remove_local_file)
             report = self._curator.run()
+            self._corrections.prune(m.id for batch in self._store.iter_query(EVERYTHING) for m in batch)
+            if self._mission_context is not None:
+                self._mission_context.prune()
             maintain = getattr(self._store, "maintain", None)
             if maintain is not None:
                 maintain()
-            if report.removed or report.discredited:
-                self.get_logger().info(f"curator removed {report.removed} memories, discredited {report.discredited}")
+            if report.removed or report.discredited or report.history_pruned:
+                self.get_logger().info(
+                    f"curator removed {report.removed} memories, discredited {report.discredited}, "
+                    f"pruned {report.history_pruned} sightings"
+                )
 
         def _consolidate(self) -> None:
             self._maintenance.submit(self._run_consolidator)

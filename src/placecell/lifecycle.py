@@ -19,6 +19,7 @@ from placecell.corrections import CorrectionLog
 from placecell.errors import ValidationError
 from placecell.memory import Evidence, Memory
 from placecell.store.base import EVERYTHING, Filter, VectorStore
+from placecell.store.limits import StoreLimits
 
 EvidenceRemover = Callable[[Evidence], None]
 """Called once for every piece of evidence whose memory has been deleted."""
@@ -194,6 +195,15 @@ class RetentionPolicy:
     """A memory judged wrong this often, net of right verdicts, is superseded."""
 
     def __post_init__(self) -> None:
+        durations = (
+            self.half_life_s,
+            self.history_age_s,
+            self.drop_superseded_after_s,
+            self.max_idle_s,
+            self.max_age_s,
+        )
+        if any(value is not None and not math.isfinite(value) for value in durations):
+            raise ValidationError("retention durations must be finite")
         if self.history_age_s <= 0 or (self.max_idle_s is not None and self.max_idle_s <= 0):
             raise ValidationError("retention durations must be positive")
         if self.wrong_verdicts_to_supersede < 1:
@@ -212,6 +222,7 @@ class CuratorReport:
     superseded_dropped: int = 0
     discredited: int = 0
     """Superseded in this pass because operators judged answers based on them wrong."""
+    history_pruned: int = 0
 
     @property
     def removed(self) -> int:
@@ -243,7 +254,11 @@ class Curator:
         now = self._clock() if now is None else now
         p = self._policy
         scanned = expired_count = aged_count = dropped_count = discredited = 0
-        for batch in self._store.iter_query(scope):
+        if self._remover is not None:
+            self._store.drain_cleanup(self._remover)
+        limits = getattr(self._store, "limits", StoreLimits())
+        batch_size = max(1, min(256, limits.max_cleanup - int(self._store.jobs.stats()["queued"])))
+        for batch in self._store.iter_query(scope, batch_size=batch_size):
             with self._store.transaction():
                 expired, aged, dropped, alive = [], [], [], []
                 for candidate in batch:
@@ -265,15 +280,17 @@ class Curator:
                         expired.append(m)
                     else:
                         alive.append(m)
-                self._remove(expired + aged + dropped)
+                self._remove(expired + aged + dropped, managed_only=True)
                 discredited += self._discredit(alive, now)
                 expired_count += len(expired)
                 aged_count += len(aged)
                 dropped_count += len(dropped)
-        self._store.prune_history(now - p.history_age_s, where=scope)
+            if self._remover is not None:
+                self._store.drain_cleanup(self._remover)
+        history_pruned = self._store.prune_history(now - p.history_age_s, where=scope)
         if self._remover is not None:
             self._store.drain_cleanup(self._remover)
-        return CuratorReport(scanned, expired_count, aged_count, dropped_count, discredited)
+        return CuratorReport(scanned, expired_count, aged_count, dropped_count, discredited, history_pruned)
 
     def _discredit(self, alive: list[Memory], now: float) -> int:
         if self._corrections is None or not alive:
@@ -302,12 +319,18 @@ class Curator:
     def forget(self, where: Filter) -> int:
         """Delete every memory the filter matches, evidence included. The explicit-deletion path."""
         removed = 0
+        if self._remover is not None:
+            self._store.drain_cleanup(self._remover)
         for record in self._store.objects.iter_records():
             with self._store.transaction():
                 views = self._store.objects.views(record.id, include_crops=False)
                 if any(where.matches(view.memory) for view in views):
                     removed += self._store.objects.delete(record.id)
-        for doomed in self._store.iter_query(where):
+            if self._remover is not None:
+                self._store.drain_cleanup(self._remover)
+        limits = getattr(self._store, "limits", StoreLimits())
+        batch_size = max(1, min(256, limits.max_cleanup - int(self._store.jobs.stats()["queued"])))
+        for doomed in self._store.iter_query(where, batch_size=batch_size):
             with self._store.transaction():
                 self._remove(doomed)
                 removed += len(doomed)
@@ -317,10 +340,14 @@ class Curator:
             self._store.drain_cleanup(self._remover)
         return removed
 
-    def _remove(self, memories: Iterable[Memory]) -> None:
+    def _remove(self, memories: Iterable[Memory], *, managed_only: bool = False) -> None:
         batch = list(memories)
         if not batch:
             return
         self._store.delete(m.id for m in batch)
         if self._remover is not None:
-            remove_unreferenced(self._store, (m.evidence for m in batch if m.evidence is not None), self._remover)
+            remove_unreferenced(
+                self._store,
+                (m.evidence for m in batch if m.evidence is not None and (not managed_only or m.evidence.managed)),
+                self._remover,
+            )

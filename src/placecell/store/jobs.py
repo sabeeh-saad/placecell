@@ -26,9 +26,15 @@ class Job:
 
 
 class WorkJournal:
-    def __init__(self, connection: sqlite3.Connection, transaction: Callable[[], AbstractContextManager[None]]) -> None:
+    def __init__(
+        self,
+        connection: sqlite3.Connection,
+        transaction: Callable[[], AbstractContextManager[None]],
+        cleanup: Callable[[Iterable[Evidence]], None],
+    ) -> None:
         self._conn = connection
         self._transaction = transaction
+        self._cleanup = cleanup
         self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY, timestamp REAL NOT NULL, uri TEXT NOT NULL, payload TEXT NOT NULL,
@@ -93,7 +99,8 @@ class WorkJournal:
                     continue
                 evidence = json.loads(row["payload"])["evidence"]
                 if evidence["managed"]:
-                    self._conn.execute("INSERT OR IGNORE INTO cleanup VALUES (?,?)", (row["uri"], json.dumps(evidence)))
+                    evidence["kind"] = EvidenceKind(evidence["kind"])
+                    self._cleanup([Evidence(**evidence)])
                 self._conn.execute("DELETE FROM jobs WHERE id=?", (identity,))
 
     def fail(self, ids: Iterable[str], error: str, *, max_attempts: int = 5, retry_delay_s: float = 1) -> None:

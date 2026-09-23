@@ -35,6 +35,9 @@ The camera bridge and application use reliable RGB, depth and calibration delive
 default to sensor-data QoS; enable reliable subscriptions only with a compatible
 publisher. Capture timestamps and freshness limits still apply.
 
+The no-cost `simulation/sim check-retention` check validates the reference node’s
+[memory and history bounds](memory-retention.md) in an isolated container.
+
 The [humanoid validation report](simulation-humanoid-validation.json) records the
 2026-09-16 sensor and live navigation checks. From 5.71 m away from the remembered
 printer, the command `go to the printer` selected an object approach from visual

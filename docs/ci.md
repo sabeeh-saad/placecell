@@ -26,6 +26,12 @@ JUnit results, coverage JSON and fault reports are uploaded even after failures.
 matrix keeps running its other versions when one version fails. Jobs have bounded
 timeouts; superseded runs of the same workflow/ref are canceled.
 
+The separate Python 3.12 `execution` job runs `placecell-check-faults --repeat 10
+--execution-gate`. It fails if any contract fails or the campaign contains fewer than
+100 distinct mission cases or 1,000 mission executions. The current matrix supplies
+102 cases and 1,020 executions, plus 30 separately counted component checks. Its report
+is retained even on failure. See the [execution checkpoint](execution-gate.md).
+
 The suite includes regression checks that prohibit workflow/job filters from silently
 excluding core changes, verify the supported Python matrix and ROS smoke gates, and
 ensure a failing package installation yields a failed result with diagnostics.
@@ -76,6 +82,7 @@ simulation/sim build
 simulation/sim check-operator
 simulation/sim check-cancel
 simulation/sim check-sensors
+simulation/sim check-retention
 simulation/sim start
 simulation/sim check
 simulation/sim start-nav
@@ -100,6 +107,11 @@ in a disposable container with networking disabled. It checks loss, skew, malfor
 repeated timestamps, delayed TF, recovery and a backward clock reset. Destination selection
 and action results are scripted; provider calls are blocked. Reports are retained under
 `simulation/artifacts/check-sensors-*`. See [sensor/clock contracts](sensor-clock-contracts.md).
+
+`check-retention` uses the production ROS node, persistent stores and DDS corrections
+with small configured limits. It checks repeated visits, queue ownership, feedback,
+conversation pruning, evidence release and node restart with no provider calls. See
+[memory retention](memory-retention.md); reports go to `simulation/artifacts/check-retention-*`.
 
 `check-cancel` uses real command topics and a controlled `NavigateToPose` action server,
 with network access disabled, eight CPUs and 16 GiB RAM. It checks cancellation with

@@ -76,7 +76,7 @@ def test_credential_image_redaction_and_explicit_truncation(store):
     context = store.context("mission", "request")
     context.emit(
         "input",
-        text="go to my-configured-credential; password=hidden Bearer abc sk-test-123",
+        text="go to my-configured-credential; password=hidden Bearer bearer-fixture-token sk-test-123",
         api_key="hidden-key",
         headers={"authorization": "hidden-header"},
         image="data:image/png;base64,YQ==",
@@ -95,7 +95,7 @@ def test_credential_image_redaction_and_explicit_truncation(store):
         "hidden-query",
         "YQ==",
         "sk-test-123",
-        "abc",
+        "bearer-fixture-token",  # Cannot accidentally match a random hexadecimal session ID.
     ):
         assert secret not in encoded
     assert report["events"][0]["data"]["unknown"] is None

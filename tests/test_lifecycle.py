@@ -244,10 +244,18 @@ def test_curator_expires_ages_and_drops_superseded(
     store.upsert(
         [
             embedded(hashing, "fresh", t=99 * day, x=0),
-            embedded(hashing, "faded", t=1, x=1, evidence=Evidence(EvidenceKind.FRAME, str(old))),
+            embedded(hashing, "faded", t=1, x=1, evidence=Evidence(EvidenceKind.FRAME, str(old), managed=True)),
             embedded(hashing, "reinforced", t=2, x=2, observations=5),
             embedded(hashing, "ancient", t=3, x=3, observations=50),
-            embedded(hashing, "gone", t=4, x=4, superseded=True, last_seen=98 * day),
+            embedded(
+                hashing,
+                "gone",
+                t=4,
+                x=4,
+                superseded=True,
+                last_seen=98 * day,
+                evidence=Evidence(EvidenceKind.FRAME, "frames/front_4.jpg", managed=True),
+            ),
             embedded(hashing, "just gone", t=5, x=5, superseded=True, last_seen=99.5 * day),
         ]
     )

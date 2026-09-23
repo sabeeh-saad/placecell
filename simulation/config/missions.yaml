@@ -11,6 +11,19 @@ placecell:
     mission_max_destinations: 8
     mission_conversation_id: office-reference-operator
     mission_context_path: /home/simulator/placecell-missions/missions.sqlite3
+    mission_context_max_events: 1000
+    mission_context_max_bytes: 2097152
+    mission_context_retention_s: 2592000.0
+    memory_max_records: 10000
+    memory_max_sightings: 1024
+    memory_max_idle_s: 7776000.0
+    memory_history_age_s: 7776000.0
+    cleanup_max_pending: 2048
+    refine_max_pending: 256
+    correction_max_records: 10000
+    correction_max_bytes: 4194304
+    # Local retention only; this timer makes no model calls.
+    curator_interval_s: 60.0
     command_journal_path: /home/simulator/placecell-missions/commands.sqlite3
     command_retry_window_s: 86400.0
     command_max_records: 10000

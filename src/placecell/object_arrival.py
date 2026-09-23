@@ -212,10 +212,7 @@ class ObjectArrivalVerifier:
         scored = sorted(((self._similarity(view, memories), i) for i, view in enumerate(fresh)), reverse=True)
         trace_event(
             "arrival.detections",
-            candidates=[
-                {"index": i, "box": asdict(fresh[i].box), "similarity": score}
-                for score, i in scored
-            ],
+            candidates=[{"index": i, "box": asdict(fresh[i].box), "similarity": score} for score, i in scored],
         )
         position_known = (
             record.position is not None

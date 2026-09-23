@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add 23 deterministic mission scenarios and a CI execution checkpoint requiring 100 distinct mission cases and 1,000 executions; report component checks separately.
+
+- Bound memory admission, detailed sightings, refinement requests and evidence cleanup; keep job-owned images and externally owned recordings safe during retention.
+- Persist conversation row/content/age limits with whole-request pruning and explicit missing-history boundaries; exclude unavailable target references from follow-up context.
+- Bound correction logs, commit files before changing verdicts, and prune only feedback for deleted memories; add a no-cost ROS retention/restart check to CI.
+
 - Ground configured place names and purpose-based search queries without relaxing destination checks; prefer the learned viewing side and visually verify the unique crop selected by embedding, rival and geometry checks.
 - Use reliable RGB-D transport in simulation, refresh object geometry through normal arrival ingestion, and start Nav2 after lifecycle service discovery settles.
 - Add a selectable three-product Gazebo scene and bounded live multi-stop evaluation, scoring exact visit order, purpose-based descriptions, repeated visits and an absent target with camera and decision-trace evidence.

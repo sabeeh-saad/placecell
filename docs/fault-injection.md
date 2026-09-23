@@ -5,7 +5,8 @@ destination resolver, mission controller, localization gate and Nav2 adapter. Sc
 providers and a controlled action client inject failures at their interfaces. Context uses
 a real temporary SQLite database. No API key, ROS installation or robot is needed.
 
-The suite has **73 scenarios: 71 fault cases and two successful controls**. Its checks
+The suite has **105 scenarios: 102 mission cases and three component cases**, including
+five successful mission controls. Its checks
 specify expected status, dispatch count and mission ownership at intermediate checkpoints,
 as well as the final outcome. A successful fault check means the software handled the
 specified failure; it does not mean a navigation mission succeeded.
@@ -70,9 +71,15 @@ any checks cannot pass. Each repetition starts with fresh state and a new tempor
   another SQLite transaction, then exits without cleanup. Reopening must preserve committed
   history, discard the incomplete success record, and never automatically replay motion.
 
-The controls complete two named destinations in order and one remembered destination with
+The original controls complete two named destinations in order and one remembered destination with
 scripted candidate and fresh-arrival verification. They prevent “always refuse” behavior
 from appearing as a healthy suite.
+
+Day 14 adds successful repeated-visit, mixed named/memory and ambiguity-choice chains,
+alongside command identity, queued-work, stale-callback and retained-context scenarios.
+The [execution checkpoint](execution-gate.md) runs ten repetitions and enforces at least
+100 mission cases and 1,000 executions with `--execution-gate`. Component checks remain
+required but are excluded from both execution denominators.
 
 Day 8 adds ten cancellation cases: stop during planning/candidate/arrival work, stop before
 acceptance, deadlines enforced without a timely poll, and terminal results deliberately

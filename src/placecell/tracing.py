@@ -29,8 +29,13 @@ _APPLICATION_ID = 0x50435452
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
 _HEALTH_COUNTS = (
-    "dropped_events", "write_errors", "trimmed_events", "truncated_events", "unclean_shutdowns",
-    "coalesced_events", "dropped_critical_events",
+    "dropped_events",
+    "write_errors",
+    "trimmed_events",
+    "truncated_events",
+    "unclean_shutdowns",
+    "coalesced_events",
+    "dropped_critical_events",
 )
 _SECRET_KEYS = {"api_key", "authorization", "password", "secret", "access_token", "refresh_token", "headers", "cookie"}
 _SENSITIVE = re.compile(
@@ -275,10 +280,7 @@ class TraceStore:
             old = dict(self._db.execute("SELECT key,value FROM trace_meta"))
             if old.get("schema_version", "1") != "1":
                 raise ValidationError("unsupported trace schema version")
-            self._counts = {
-                key: int(old.get(key, "0"))
-                for key in _HEALTH_COUNTS
-            }
+            self._counts = {key: int(old.get(key, "0")) for key in _HEALTH_COUNTS}
             self._counts["unclean_shutdowns"] += int(old.get("open_session", "false") == "true")
             self._db.execute("INSERT OR REPLACE INTO trace_meta VALUES ('schema_version', '1')")
             self._db.execute("INSERT OR REPLACE INTO trace_meta VALUES ('open_session', 'true')")
@@ -466,11 +468,7 @@ def read_trace(path: str | Path, mission_id: str | None = None) -> dict[str, Any
     starts = {e["data"].get("span_id"): e for e in events if e["kind"] == "start"}
     ended = {e["data"].get("span_id") for e in events if e["kind"] == "end"}
     usage = [e["data"].get("usage", {}) for e in events if e["stage"] == "provider_request" and e["kind"] == "end"]
-    losses = {
-        key: int(meta.get(key, "0"))
-        for key in _HEALTH_COUNTS
-        if key != "coalesced_events"
-    }
+    losses = {key: int(meta.get(key, "0")) for key in _HEALTH_COUNTS if key != "coalesced_events"}
     totals = {}
     for field_name in ("input_tokens", "output_tokens", "total_tokens", "cost_usd"):
         known = [u[field_name] for u in usage if u.get(field_name) is not None]

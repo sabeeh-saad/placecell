@@ -47,6 +47,25 @@ jobs:
             tests.xml
           if-no-files-found: warn
 
+  execution:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Run at least 100 mission cases and 1000 deterministic executions
+        run: placecell-check-faults --repeat 10 --execution-gate --output execution-gate.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deterministic-execution-gate
+          path: execution-gate.json
+          if-no-files-found: warn
+
   package:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

@@ -1,7 +1,7 @@
 # Production-readiness contract
 
-Status: **version 1 targets frozen; Day 8 execution evidence added, no gate fully satisfied**,
-22 September 2026. The [Day 7 review](readiness-review.md) separates partial software
+Status: **version 1 targets frozen; Day 14 deterministic checkpoint added, no gate fully satisfied**,
+23 September 2026. The [Day 7 review](readiness-review.md) separates partial software
 evidence from unassessed model/endurance quality and ranks the remaining release blockers.
 This document defines what must be demonstrated; it does not certify the current alpha
 or turn a deadline into a guarantee. Provider spending and the ingestion-age budget remain
@@ -119,6 +119,14 @@ comparisons and explicit failure-stage attribution. The [Day 12 record](validati
 keeps synthetic object cases, deterministic faults and ROS delivery checks separate from
 live-model identity accuracy and held-out mission qualification.
 
+Day 14's [execution checkpoint](execution-gate.md) distinguishes mission executions from
+component checks and planning-only scores. CI now enforces at least 100 distinct mission
+cases and 1,000 executions, alongside all scenario and trace assertions. The
+[validation record](validation/day-14.json) records 1,020 passing mission executions across 102
+cases, 30 passing component checks, and reused ROS evidence. This closes only the documented deterministic coverage requirement when its
+report passes; surviving Nav2 goals after a process crash and cancellation under the full
+supported workload remain unqualified. There are no independent held-out mission cases.
+
 Release blockers include any observed:
 
 - Goal execution before required plan review, localization or destination checks.
@@ -179,6 +187,12 @@ write denial, disk exhaustion, missing evidence, damaged storage and interrupted
 - The documented upgrade and rollback path is demonstrated. Rollback may require restoring
   a compatible backup rather than running an old binary against a newer schema.
 
+Day 13 adds transactional memory admission and cleanup limits, a durable sighting-age
+cutoff, whole-request conversation pruning and atomic correction-file replacement.
+The [retention checks](memory-retention.md) cover write failure, evidence ownership and
+clean node recreation without movement replay. They do not qualify abrupt process death,
+active Nav2 goal reconciliation, corruption recovery or upgrade/rollback.
+
 ## Gate 4: Endurance and bounded resources
 
 Run at least one 24-hour continuous software workload after critical fixes, using recorded
@@ -199,6 +213,11 @@ Measure accepted ingestion-work age with the selected provider workload before f
 that budget; the model budget is still undecided. Do not use the scripted evaluator's tiny
 latency or memory footprint to fill this gap. The endurance gate cannot pass while that
 budget is missing. Existing setup evidence does not establish 24-hour resource behavior.
+
+Day 13's [validation record](validation/day-13.json) measures configured row/content
+limits under repeated visits and corrections. Scene sightings, persistent conversation
+content, corrections, refinement requests and cleanup work now have explicit caps. These
+logical bounds do not enforce the 20 GiB filesystem ceiling or establish 24-hour endurance.
 
 Pass only if:
 

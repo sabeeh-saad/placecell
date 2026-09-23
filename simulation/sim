@@ -35,7 +35,7 @@ case "$command" in
     mkdir -p "$sim_dir/artifacts"
     "${compose[@]}" cp simulator:/home/simulator/smoke/. "$sim_dir/artifacts/"
     ;;
-  check-operator|check-cancel|check-sensors)
+  check-operator|check-cancel|check-sensors|check-retention)
     run_name="${command}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
     mkdir -p "$sim_dir/artifacts/$run_name"
     # This standalone check needs neither a running office nor provider credentials.
@@ -43,9 +43,12 @@ case "$command" in
     script=operator_test.py
     if [[ "$command" == check-cancel ]]; then script=cancellation_test.py; fi
     if [[ "$command" == check-sensors ]]; then script=sensor_test.py; fi
+    if [[ "$command" == check-retention ]]; then script=retention_test.py; fi
+    test_output=/out
+    if [[ "$command" == check-retention ]]; then test_output=/out/retention; fi
     docker run --rm --network none --cpus 8 --memory 16g --user "$(id -u):$(id -g)" -e HOME=/tmp \
       -v "$sim_dir/artifacts/$run_name:/out" placecell-sim:jazzy \
-      timeout 240 python3 "/opt/placecell-sim/scripts/$script" --output /out "$@"
+      timeout 240 python3 "/opt/placecell-sim/scripts/$script" --output "$test_output" "$@"
     ;;
   check-nav|check-pipeline|check-missions|check-live-mission|record-commands)
     run_name="${command}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -92,7 +95,7 @@ case "$command" in
     "${compose[@]}" -f "$sim_dir/compose.gui.yaml" up --force-recreate
     ;;
   *)
-    echo 'Usage: simulation/sim {build|start|start-nav|gui|teleop|missions|check|check-operator|check-cancel|check-sensors|check-nav|check-pipeline|check-missions|check-live-mission|record-commands|logs|shell|stop}'
+    echo 'Usage: simulation/sim {build|start|start-nav|gui|teleop|missions|check|check-operator|check-cancel|check-sensors|check-retention|check-nav|check-pipeline|check-missions|check-live-mission|record-commands|logs|shell|stop}'
     echo 'check moves the simulated robot; check --sensors-only only inspects sensor data.'
     echo 'missions requires start-nav and a funded API key; see docs/reference-deployment.md.'
     ;;

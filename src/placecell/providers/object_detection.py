@@ -175,8 +175,7 @@ class GeminiObjectDetector:
             or not target.strip()
             or len(target) > 500
             or any(
-                not raw.startswith(b"\x89PNG\r\n\x1a\n") or len(raw) > 1_000_000
-                for raw in (*references, *candidates)
+                not raw.startswith(b"\x89PNG\r\n\x1a\n") or len(raw) > 1_000_000 for raw in (*references, *candidates)
             )
         ):
             raise ValidationError("arrival comparison requires saved PNG crops and a bounded destination")

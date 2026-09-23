@@ -51,10 +51,7 @@ class ArrivalComparison:
     destination: SceneVerdict
 
     def __post_init__(self) -> None:
-        if (
-            type(self.selected) is not int
-            or not -1 <= self.selected < 64
-        ):
+        if type(self.selected) is not int or not -1 <= self.selected < 64:
             raise ValidationError("invalid arrival comparison selection")
         for verdict in (self.identity, self.destination):
             if (

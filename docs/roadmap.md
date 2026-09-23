@@ -130,6 +130,28 @@ discarded and a fresh second capture succeeds before the robot returns home. His
 failures remain in their original manifests. Stationary endurance and broader model
 reliability remain unqualified; Day 13 work is still separate.
 
+Day 13, 23 September: [bounded memory and conversation history](memory-retention.md)
+now enforce record, sighting, work-queue, correction and context limits. Whole-request
+pruning leaves explicit history boundaries; deleted target references cannot expose an
+older destination as the latest one. Automatic aging preserves caller-owned recordings,
+and failed correction writes leave both disk and live verdicts unchanged. The
+[Day 13 record](validation/day-13.json) records 1,281 passing tests, repeated-visit and
+correction checks, and network-disabled ROS validation. The retention check keeps eight
+sightings and one image after 120 revisits; 100 two-event requests retain six events.
+Physical disk quotas, endurance and crash recovery remain unqualified. The five deferred
+live product missions remain paused. Day 14 is the execution gate.
+
+Day 14, 23 September: the [deterministic execution checkpoint](execution-gate.md)
+expands the matrix to 105 scenarios, including 102 mission execution cases and three
+separately counted component cases. A new CI job requires at least 100 distinct mission
+cases and 1,000 executions; repeats cannot replace case diversity. All 1,020 mission
+executions and 30 component checks pass, alongside 1,306 tests at 95.68% coverage. The
+[Day 14 record](validation/day-14.json) preserves the campaign results, full regressions,
+source hashes and audited reuse of unchanged Day 13 ROS evidence. Independent held-out
+data, post-crash active-goal reconciliation and full-workload cancellation remain explicit
+qualification gaps. The five live product missions remain paused. Day 15 is crash/restart
+recovery.
+
 ## Scope for this month
 
 The supported reference is a single robot, one aligned RGB-D stream, trusted localization

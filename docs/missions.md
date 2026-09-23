@@ -149,9 +149,14 @@ Planning and review receive up to twenty recent history events within a 16,000-c
 serialized context budget, with timestamps and
 actual outcomes. They can use them to interpret follow-ups such as "take me there again";
 the destination must still be retrieved and verified now. Missing or ambiguous references
-should prompt clarification. The database keeps older events for inspection, but the model
-window is bounded; there is no automatic long-term conversation summarization or retention
-policy yet. Text history is separate from image/object memory and does not rewrite it.
+should prompt clarification. Persistent history now has row, content and age limits:
+1,000 events, 2 MiB and 30 days by default, across all scopes sharing that database.
+Pruning removes whole requests and exposes a history boundary. Deleted or superseded
+scene/object references remove their request and older events from the planning window;
+an older destination is never substituted for an unavailable latest reference. Both
+agents are told to clarify when required context is missing. See the
+[retention contract](memory-retention.md) for settings, failures and measured checks.
+Text history remains separate from image/object memory and does not rewrite it.
 
 Restarting loads context only. It never resumes movement or replays unfinished steps.
 A new instruction is always needed. History is untrusted context, not executable work.

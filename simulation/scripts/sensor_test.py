@@ -54,9 +54,7 @@ class Check:
         )
         image_qos = QoSProfile(depth=8, reliability=ReliabilityPolicy.RELIABLE)
         self.rgb = self.probe.create_publisher(Image, "/camera/color/image_raw", image_qos)
-        self.depth = self.probe.create_publisher(
-            Image, "/camera/aligned_depth_to_color/image_raw", image_qos
-        )
+        self.depth = self.probe.create_publisher(Image, "/camera/aligned_depth_to_color/image_raw", image_qos)
         self.info = self.probe.create_publisher(CameraInfo, "/camera/color/camera_info", image_qos)
         self.command = self.probe.create_publisher(String, "/placecell/command", 1)
         self.tf = TransformBroadcaster(self.probe)

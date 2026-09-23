@@ -47,7 +47,7 @@ from placecell.pipeline import Ingester, IngestReport, Observation, Segmentation
 from placecell.recordings import RecordingWriter, read_recording
 from placecell.refinement import MemoryRefiner, RefinementPolicy, RefinementReport
 from placecell.retrieval import RankedMemory, Recall
-from placecell.store import CollectionInfo, Filter, Hit, InMemoryStore, VectorStore
+from placecell.store import CollectionInfo, Filter, Hit, InMemoryStore, StoreLimits, VectorStore
 from placecell.store.refinements import MemoryRevision
 from placecell.verification import SceneVerdict, SceneVerifier, VisionVerifier
 
@@ -140,6 +140,7 @@ __all__ = [
     "SegmentationPolicy",
     "Segmenter",
     "Sighting",
+    "StoreLimits",
     "ToolCall",
     "VectorStore",
     "ViewpointRegion",

@@ -25,6 +25,7 @@ from typing import Any
 
 from placecell.chat import ChatMessage, ChatReply, ToolCall
 from placecell.errors import ValidationError
+from placecell.execution_cases import EXECUTION_CASES
 from placecell.localization import LocalizationGate
 from placecell.memory import Evidence, EvidenceKind, Memory, Pose
 from placecell.mission_context import MissionContext
@@ -60,9 +61,11 @@ class _Model:
         self.error: Exception | None = None
         self.before: Callable[[], None] = lambda: None
         self.calls = 0
+        self.inputs: list[Sequence[ChatMessage]] = []
 
     def complete(self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> ChatReply:
         self.calls += 1
+        self.inputs.append(messages)
         self.before()
         if self.error:
             raise self.error
@@ -936,7 +939,28 @@ CASES = (
         "Child exits with an uncommitted SQLite write",
         _interrupted_storage,
     ),
+    *(FaultCase(name, "execution_boundary", description, exercise) for name, description, exercise in EXECUTION_CASES),
 )
+
+
+def execution_gate(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Count mission cases separately from component checks and require every run to pass."""
+    excluded = {"sensor_boundary", "persistence_restart"}
+    eligible = [result for result in results if result["scope"] not in excluded]
+    case_ids = sorted({result["case_id"] for result in eligible})
+    coverage = len(case_ids) >= 100 and len(eligible) >= 1000
+    return {
+        "required_cases": 100,
+        "required_runs": 1000,
+        "cases": len(case_ids),
+        "runs": len(eligible),
+        "passed_runs": sum(bool(result["passed"]) for result in eligible),
+        "excluded_component_runs": len(results) - len(eligible),
+        "coverage_met": coverage,
+        "passed": coverage and all(result["passed"] for result in results),
+        "case_ids": case_ids,
+        "qualification": "Deterministic checkpoint only; held-out, crash-recovery and workload gates remain separate.",
+    }
 
 
 def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
@@ -1047,6 +1071,7 @@ def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
         ],
         "paid_api_calls": 0,
         "cost_usd": 0,
+        "execution_gate": execution_gate(results),
         "summary": {
             "runs": len(results),
             "passed": sum(result["passed"] for result in results),
@@ -1066,6 +1091,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True, help="New JSON report path (never overwritten)")
     parser.add_argument("--case", action="append", default=[], choices=[case.id for case in CASES])
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument(
+        "--execution-gate", action="store_true", help="Also fail unless 100 mission cases and 1000 executions pass"
+    )
     args = parser.parse_args(argv)
     if not 1 <= args.repeat <= 1000:
         parser.error("--repeat must be within 1..1000")
@@ -1078,8 +1106,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     with args.output.open("x") as stream:
         json.dump(report, stream, indent=2, allow_nan=False)
         stream.write("\n")
-    sys.stdout.write(json.dumps(report["summary"]) + "\n")
-    return 1 if report["summary"]["failed"] else 0
+    summary = dict(report["summary"])
+    if args.execution_gate:
+        summary["execution_gate"] = report["execution_gate"]
+    sys.stdout.write(json.dumps(summary) + "\n")
+    return int(bool(report["summary"]["failed"]) or (args.execution_gate and not report["execution_gate"]["passed"]))
 
 
 if __name__ == "__main__":

@@ -148,7 +148,8 @@ def test_progress_coalescing_never_crosses_mission_step(tmp_path, monkeypatch):
     assert report["health"]["coalesced_events"] == 2
     events = [e for e in report["events"] if e["stage"] == "status"]
     assert [(e["request_id"], e["step"], e["data"]["distance_remaining"]) for e in events] == [
-        ("one", 1, 1.0), ("two", 2, 1.0)
+        ("one", 1, 1.0),
+        ("two", 2, 1.0),
     ]
 
 
