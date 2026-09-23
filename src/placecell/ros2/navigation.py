@@ -32,6 +32,7 @@ class _Trip:
     trace: TraceContext | None = None
     span_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     trace_started: float = field(default_factory=time.perf_counter)
+    last_feedback: float = -math.inf
 
     def record(self, stage: str, *, kind: str = "event", **data: Any) -> None:
         if self.trace:
@@ -47,11 +48,13 @@ class Nav2Navigator:
         response_timeout_s: float = 10.0,
         trip_timeout_s: float = 600.0,
         clock: Callable[[], float] = time.monotonic,
+        feedback_interval_s: float = 0.2,
     ) -> None:
-        if any(not math.isfinite(v) or v <= 0 for v in (response_timeout_s, trip_timeout_s)):
+        if any(not math.isfinite(v) or v <= 0 for v in (response_timeout_s, trip_timeout_s, feedback_interval_s)):
             raise ValidationError("navigation timeouts must be finite and positive")
         self._client, self._make_goal, self._clock = client, make_goal, clock
         self._response_timeout, self._trip_timeout = response_timeout_s, trip_timeout_s
+        self._feedback_interval = feedback_interval_s
         self._lock = threading.RLock()
         self._trip: _Trip | None = None
 
@@ -149,6 +152,10 @@ class Nav2Navigator:
         if not math.isfinite(distance) or distance < 0:
             return
         with self._lock:
+            now = self._clock()
+            if self._trip is not trip or now - trip.last_feedback < self._feedback_interval:
+                return
+            trip.last_feedback = now
             canceling = trip.cancel_requested
         self._emit(trip, NavigationEvent("canceling" if canceling else "navigating", distance_remaining=distance))
 

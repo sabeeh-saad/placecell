@@ -332,7 +332,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
     from rclpy.clock import Clock, ClockType, JumpThreshold
     from rclpy.duration import Duration
     from rclpy.node import Node
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
     from sensor_msgs.msg import CameraInfo, CompressedImage, Image
     from std_msgs.msg import String
     from tf2_ros import Buffer, TransformException, TransformListener
@@ -383,6 +383,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 max_views=p["object_max_views"],
                 retention_s=p["object_retention_s"],
                 min_interval_s=p["object_min_interval_s"],
+                require_position=bool(p["depth_topic"]),
             )
             self._object_recall: ObjectRecall | None = None
             tracker = None
@@ -481,27 +482,32 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._pending_images = PendingImages(
                 self._depth_skew, wait_s=p["rgbd_wait_s"], max_age_s=p["sensor_max_age_s"]
             )
+            image_qos = (
+                QoSProfile(depth=8, reliability=ReliabilityPolicy.RELIABLE)
+                if p["rgbd_reliable"]
+                else qos_profile_sensor_data
+            )
             if p["objects_enabled"] and p["depth_topic"]:
                 self._depth_frames = self._pending_images.depth
                 self._camera_infos = self._pending_images.info
                 self.create_subscription(
-                    Image, p["depth_topic"], self._pending_images.add_depth, qos_profile_sensor_data
+                    Image, p["depth_topic"], self._pending_images.add_depth, image_qos
                 )
                 self.create_subscription(
                     CameraInfo,
                     p["camera_info_topic"],
                     lambda msg: self._pending_images.add_depth(msg, calibration=True),
-                    qos_profile_sensor_data,
+                    image_qos,
                 )
             self._sync_images = p["objects_enabled"] and bool(p["depth_topic"])
             self._clock_fault_reported = False
             self.create_timer(0.04, self._drain_image, clock=Clock(clock_type=ClockType.STEADY_TIME))
             if p["compressed"]:
                 self.create_subscription(
-                    CompressedImage, p["image_topic"], self._receive_compressed, qos_profile_sensor_data
+                    CompressedImage, p["image_topic"], self._receive_compressed, image_qos
                 )
             else:
-                self.create_subscription(Image, p["image_topic"], self._receive_image, qos_profile_sensor_data)
+                self.create_subscription(Image, p["image_topic"], self._receive_image, image_qos)
             self.create_subscription(String, "~/ask", self._on_ask, 10)
             self.create_subscription(String, "~/correct", self._on_correct, 10)
             self.create_subscription(String, "~/refine", self._on_refine, 10)
@@ -636,6 +642,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     ),
                     arrival_timeout_s=p["navigation_arrival_timeout_s"],
                     max_observation_age_s=p["navigation_max_observation_age_s"],
+                    arrival_max_attempts=p["navigation_arrival_max_attempts"],
                     mission_planner=build_mission_planner(p, api_key),
                     mission_context=self._mission_context,
                     trace_store=self._mission_traces,
@@ -712,6 +719,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "camera_info_topic": "/camera/color/camera_info",
                 "object_depth_max_skew_s": 0.08,
                 "rgbd_wait_s": 0.3,
+                "rgbd_reliable": False,
                 "object_position_error_m": 0.1,
                 "object_angular_error_rad": 0.05,
                 "map_frame": "map",
@@ -781,6 +789,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "verification_request_timeout_s": 8.0,
                 "navigation_arrival_timeout_s": 30.0,
                 "navigation_max_observation_age_s": 5.0,
+                "navigation_arrival_max_attempts": 3,
                 "nav2_action": "navigate_to_pose",
                 "places_file": "",
                 "navigation_min_similarity": 0.5,
@@ -902,7 +911,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             force = self._commands is not None and self._commands.needs_observation
             if not force and not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
                 return
-            if not self._worker.has_capacity():
+            if not force and not self._worker.has_capacity():
                 self._worker.dropped += 1
                 return
             try:
@@ -912,7 +921,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
-            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp), depth=depth)
+            obs = replace(
+                obs, localization_checked=self._localization.accepts(pose, stamp), depth=depth, refresh_objects=force
+            )
             if not self._sensors.ready():
                 return
             self._record(obs)
@@ -967,7 +978,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             force = self._commands is not None and self._commands.needs_observation
             if not force and not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
                 return
-            if not self._worker.has_capacity():
+            if not force and not self._worker.has_capacity():
                 self._worker.dropped += 1
                 return
             try:
@@ -975,7 +986,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
-            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp), depth=depth)
+            obs = replace(
+                obs, localization_checked=self._localization.accepts(pose, stamp), depth=depth, refresh_objects=force
+            )
             if not self._sensors.ready():
                 return
             self._record(obs)

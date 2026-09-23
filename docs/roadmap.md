@@ -113,6 +113,23 @@ and complete trace retention remain blockers; passing unit checks do not overrid
 integration findings. Resolve these findings before treating the accumulated work as
 qualified or proceeding to the next release gate.
 
+Repair follow-up, 22 September: [the three Gazebo repairs](gazebo-repairs.md) now keep
+incomplete captures out of RGB-D object identity updates, wait for aligned depth at object
+arrival, and protect critical traces from progress floods. The final software suite passes
+1,200 tests. The default live run retains one printer identity and loses no trace events,
+but hosted verification exceeds the five-second capture-age limit; concurrent object
+updates and geometric absence/movement evidence also remain integration limits. The
+repair manifest distinguishes these failures from passing component checks. Day 13 has
+not been implemented by this follow-up.
+
+Further repair follow-up: [the remaining integration fixes](gazebo-completion.md) pass
+all 11 deterministic-provider Gazebo cases, 1,209 Python tests, 246 fault runs and the
+ROS sensor/operator/cancellation checks. The live printer-then-home mission also passes
+with the unchanged five-second image freshness limit: an expired first attempt is
+discarded and a fresh second capture succeeds before the robot returns home. Historical
+failures remain in their original manifests. Stationary endurance and broader model
+reliability remain unqualified; Day 13 work is still separate.
+
 ## Scope for this month
 
 The supported reference is a single robot, one aligned RGB-D stream, trusted localization

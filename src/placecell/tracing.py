@@ -28,6 +28,10 @@ from placecell.errors import ValidationError
 _APPLICATION_ID = 0x50435452
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
+_HEALTH_COUNTS = (
+    "dropped_events", "write_errors", "trimmed_events", "truncated_events", "unclean_shutdowns",
+    "coalesced_events", "dropped_critical_events",
+)
 _SECRET_KEYS = {"api_key", "authorization", "password", "secret", "access_token", "refresh_token", "headers", "cookie"}
 _SENSITIVE = re.compile(
     r"(?i)(?:bearer\s+\S+|(?:api[_ -]?key|password|secret|access_token)[\"']?\s*[:=]\s*[\"']?[^\s,\"']+"
@@ -176,6 +180,44 @@ class _Barrier:
     stop: bool = False
 
 
+@dataclass(frozen=True)
+class _QueuedEvent:
+    row: tuple[str, str]
+    progress_key: tuple[str, str, int, str] | None = None
+
+
+class _TraceQueue(queue.Queue[_QueuedEvent | _Barrier]):
+    """FIFO critical events, bounded latest progress, and ordered flush barriers."""
+
+    def offer(self, event: _QueuedEvent) -> str:
+        with self.not_full:
+            if event.progress_key is not None:
+                for index in range(len(self.queue) - 1, -1, -1):
+                    previous = self.queue[index]
+                    if isinstance(previous, _Barrier):
+                        break  # Never move post-flush work ahead of its barrier.
+                    if previous.progress_key == event.progress_key:
+                        del self.queue[index]
+                        self._put(event)  # Keep the latest sample after intervening transitions.
+                        return "coalesced"
+            outcome = "added"
+            if self._qsize() >= self.maxsize:
+                if event.progress_key is not None:
+                    return "dropped"
+                for index, previous in enumerate(self.queue):
+                    if isinstance(previous, _QueuedEvent) and previous.progress_key is not None:
+                        del self.queue[index]
+                        self.unfinished_tasks -= 1
+                        outcome = "evicted_progress"
+                        break
+                else:
+                    return "dropped"  # Critical-only saturation remains observable.
+            self._put(event)
+            self.unfinished_tasks += 1
+            self.not_empty.notify()
+            return outcome
+
+
 class TraceStore:
     """Single-writer SQLite ring of events; callbacks only sanitize and enqueue.
 
@@ -235,7 +277,7 @@ class TraceStore:
                 raise ValidationError("unsupported trace schema version")
             self._counts = {
                 key: int(old.get(key, "0"))
-                for key in ("dropped_events", "write_errors", "trimmed_events", "truncated_events", "unclean_shutdowns")
+                for key in _HEALTH_COUNTS
             }
             self._counts["unclean_shutdowns"] += int(old.get("open_session", "false") == "true")
             self._db.execute("INSERT OR REPLACE INTO trace_meta VALUES ('schema_version', '1')")
@@ -248,7 +290,7 @@ class TraceStore:
         self._max_events = max_events
         self._payload_budget = max_bytes // 2  # Leave room for indexes, metadata and SQLite page overhead.
         self._secrets = tuple(sorted({s for s in secrets if s}, key=len, reverse=True))
-        self._queue: queue.Queue[tuple[str, str] | _Barrier] = queue.Queue(maxsize=queue_size)
+        self._queue = _TraceQueue(maxsize=queue_size)
         self._lock = threading.Lock()
         self._accepting = True
         self._last_error = ""
@@ -289,17 +331,29 @@ class TraceStore:
                 encoded = json.dumps(event, allow_nan=False)
                 with self._lock:
                     self._counts["truncated_events"] += 1
+            progress = (
+                kind == "event"
+                and stage in {"nav2.event", "status"}
+                and data.get("state") in {"navigating", "canceling"}
+                and not data.get("message")
+                and data.get("distance_remaining") is not None
+            )
+            key = (context.mission_id, context.request_id, context.step, stage) if progress else None
             with self._lock:
                 if not self._accepting:
                     self._counts["dropped_events"] += 1
+                    self._counts["dropped_critical_events"] += int(not progress)
                     return
-                try:
-                    self._queue.put_nowait((context.mission_id[:128], encoded))
-                except queue.Full:
+                outcome = self._queue.offer(_QueuedEvent((context.mission_id[:128], encoded), key))
+                if outcome == "coalesced":
+                    self._counts["coalesced_events"] += 1
+                elif outcome in {"dropped", "evicted_progress"}:
                     self._counts["dropped_events"] += 1
+                    self._counts["dropped_critical_events"] += int(outcome == "dropped" and not progress)
         except Exception as exc:
             with self._lock:
                 self._counts["dropped_events"] += 1
+                self._counts["dropped_critical_events"] += 1
                 self._last_error = type(exc).__name__
 
     def health(self) -> dict[str, Any]:
@@ -344,7 +398,7 @@ class TraceStore:
                             if item.stop:
                                 self._db.execute("UPDATE trace_meta SET value='false' WHERE key='open_session'")
                     else:
-                        self._write(item)
+                        self._write(item.row)
                 except Exception as exc:
                     with self._lock:
                         self._counts["write_errors"] += 1
@@ -414,7 +468,8 @@ def read_trace(path: str | Path, mission_id: str | None = None) -> dict[str, Any
     usage = [e["data"].get("usage", {}) for e in events if e["stage"] == "provider_request" and e["kind"] == "end"]
     losses = {
         key: int(meta.get(key, "0"))
-        for key in ("dropped_events", "write_errors", "trimmed_events", "truncated_events", "unclean_shutdowns")
+        for key in _HEALTH_COUNTS
+        if key != "coalesced_events"
     }
     totals = {}
     for field_name in ("input_tokens", "output_tokens", "total_tokens", "cost_usd"):

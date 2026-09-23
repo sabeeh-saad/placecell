@@ -7,7 +7,7 @@ import math
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -16,9 +16,10 @@ import numpy as np
 from placecell.depth import ObjectPosition
 from placecell.errors import FailureStage, TargetValidationError, ValidationError
 from placecell.memory import Evidence, EvidenceKind, Memory
-from placecell.object_types import ObjectRecord, ObjectView
+from placecell.object_types import ArrivalComparator, ObjectRecord, ObjectView
 from placecell.objects import ObjectTracker
 from placecell.pipeline import Observation
+from placecell.tracing import trace_event
 from placecell.verification import SceneVerdict
 
 
@@ -83,6 +84,10 @@ class ObjectArrivalVerifier:
         self.policy, self.clock = policy or ObjectArrivalPolicy(), clock
         self.monotonic = monotonic
 
+    @property
+    def supports_comparison(self) -> bool:
+        return isinstance(self.tracker.detector, ArrivalComparator)
+
     def _rivals(self, record: ObjectRecord) -> tuple[Memory, ...]:
         journal = self.tracker.store.objects
         records = journal.records(
@@ -140,7 +145,14 @@ class ObjectArrivalVerifier:
         )
 
     def verify_image(
-        self, reference: ObjectReference, observation: Observation, image_url: str, canceled: Callable[[], bool]
+        self,
+        reference: ObjectReference,
+        observation: Observation,
+        image_url: str,
+        canceled: Callable[[], bool],
+        request_check: Callable[[], SceneVerdict] | None = None,
+        *,
+        target: str = "",
     ) -> ObjectArrivalVerdict:
         """Use snapshotted bytes so concurrent keyframe cleanup cannot change the arrival evidence."""
         prefix, separator, encoded = image_url.partition(",")
@@ -155,10 +167,16 @@ class ObjectArrivalVerifier:
             path = Path(directory) / ("frame.png" if "png" in prefix else "frame.jpg")
             path.write_bytes(raw)
             copied = replace(observation, evidence=Evidence(EvidenceKind.FRAME, str(path)))
-            return self.verify(reference, copied, canceled)
+            return self.verify(reference, copied, canceled, request_check, target=target)
 
     def verify(
-        self, reference: ObjectReference, observation: Observation, canceled: Callable[[], bool] = lambda: False
+        self,
+        reference: ObjectReference,
+        observation: Observation,
+        canceled: Callable[[], bool] = lambda: False,
+        request_check: Callable[[], SceneVerdict] | None = None,
+        *,
+        target: str = "",
     ) -> ObjectArrivalVerdict:
         p, record = self.policy, reference.record
         deadline = self.monotonic() + p.max_observation_age_s - (self.clock() - observation.timestamp)
@@ -186,10 +204,19 @@ class ObjectArrivalVerifier:
             )
 
         check()
-        fresh = self.tracker.detect_views(observation)
+        # Arrival compares image vectors only. Caption vectors are needed for stored
+        # retrieval, not for this read-only check, and would add a hosted round trip.
+        fresh = self.tracker.detect_views(observation, include_captions=False)
         check()
         memories = tuple(view.memory for view in reference.views)
         scored = sorted(((self._similarity(view, memories), i) for i, view in enumerate(fresh)), reverse=True)
+        trace_event(
+            "arrival.detections",
+            candidates=[
+                {"index": i, "box": asdict(fresh[i].box), "similarity": score}
+                for score, i in scored
+            ],
+        )
         position_known = (
             record.position is not None
             and record.position_timestamp is not None
@@ -224,7 +251,18 @@ class ObjectArrivalVerifier:
         def ambiguous() -> bool:
             with self.tracker.store.transaction():
                 rivals = reference.rivals + self._rivals(record)
-            alternative = max(scored[1][0] if len(scored) > 1 else -1, self._similarity(candidate, rivals))
+            live_alternative = scored[1][0] if len(scored) > 1 else -1
+            known_alternative = self._similarity(candidate, rivals)
+            alternative = max(live_alternative, known_alternative)
+            trace_event(
+                "arrival.identity_scores",
+                object_id=record.id,
+                target_similarity=score,
+                live_alternative=live_alternative,
+                known_alternative=known_alternative,
+                required_margin=p.similarity_margin,
+                actual_margin=score - alternative,
+            )
             return score - alternative < p.similarity_margin
 
         if ambiguous():
@@ -235,6 +273,15 @@ class ObjectArrivalVerifier:
             )
 
         position = observation.depth.locate(candidate.box) if observation.depth else None
+        trace_event(
+            "arrival.geometry",
+            box=asdict(candidate.box),
+            depth_available=observation.depth is not None,
+            reference_position_known=position_known,
+            reference_position_timestamp=record.position_timestamp,
+            observation_timestamp=observation.timestamp,
+            candidate_position=asdict(position) if position else None,
+        )
         moved = False
         if position_known and position is not None and record.position is not None:
             if position.uncertainty_m > p.max_uncertainty_m:
@@ -262,7 +309,33 @@ class ObjectArrivalVerifier:
             )
 
         check()
-        verdict = self.comparator.compare(tuple(view.crop_png for view in reference.views), candidate.crop_png)
+        comparison = None
+        if target and isinstance(self.tracker.detector, ArrivalComparator):
+            # Embeddings, rival separation and geometry select one fixed crop first.
+            # The visual model can only accept/reject that exact candidate; it cannot
+            # accidentally authorize a different object's ordinal in a multi-image list.
+            comparison = self.tracker.detector.compare_arrival(
+                tuple(view.crop_png for view in reference.views),
+                (candidate.crop_png,),
+                observation.evidence,
+                target,
+            )
+        check()
+        if comparison is not None:
+            trace_event(
+                "arrival.comparison",
+                selected=comparison.selected,
+                identity=asdict(comparison.identity),
+                destination=asdict(comparison.destination),
+            )
+            # Index zero is the only candidate sent to the visual model.
+            if comparison.selected != 0:
+                return ObjectArrivalVerdict(
+                    "ambiguous", "Visual and appearance checks do not select the same object.", failure_stage="identity"
+                )
+            verdict = comparison.identity
+        else:
+            verdict = self.comparator.compare(tuple(view.crop_png for view in reference.views), candidate.crop_png)
         check()
         if verdict.result not in {"matched", "not_matched", "uncertain"} or not verdict.reason.strip():
             raise ValidationError("invalid object comparison verdict")
@@ -270,6 +343,21 @@ class ObjectArrivalVerifier:
             return ObjectArrivalVerdict("ambiguous", verdict.reason, failure_stage="identity")
         if verdict.result != "matched":
             return ObjectArrivalVerdict("unobserved", verdict.reason, failure_stage="identity")
+        if comparison is not None and comparison.destination.result != "matched":
+            return ObjectArrivalVerdict(
+                "ambiguous" if comparison.destination.result == "uncertain" else "unobserved",
+                comparison.destination.reason,
+                failure_stage="identity",
+            )
+        if request_check is not None:
+            request_verdict = request_check()
+            check()
+            if request_verdict.result != "matched":
+                return ObjectArrivalVerdict(
+                    "ambiguous" if request_verdict.result == "uncertain" else "unobserved",
+                    request_verdict.reason,
+                    failure_stage="identity",
+                )
         reason = "Saved views and fresh appearance/geometry agree. "
         if moved:
             reason += "The previous location is confirmed empty. "
@@ -280,5 +368,8 @@ class ObjectArrivalVerifier:
                     "ambiguous", "New object evidence prevents a unique identity match.", failure_stage="identity"
                 )
             return ObjectArrivalVerdict(
-                "matched", reason + verdict.reason, position, checked_generation=self.tracker.store.objects.generation
+                "matched",
+                reason + verdict.reason,
+                position,
+                checked_generation=self.tracker.store.objects.evidence_generation,
             )

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Ground configured place names and purpose-based search queries without relaxing destination checks; prefer the learned viewing side and visually verify the unique crop selected by embedding, rival and geometry checks.
+- Use reliable RGB-D transport in simulation, refresh object geometry through normal arrival ingestion, and start Nav2 after lifecycle service discovery settles.
+- Add a selectable three-product Gazebo scene and bounded live multi-stop evaluation, scoring exact visit order, purpose-based descriptions, repeated visits and an absent target with camera and decision-trace evidence.
+- Distinguish object evidence changes from scan scheduling, run independent arrival checks together, omit unused arrival caption embeddings, and retry expired captures within the original deadline.
+- Keep arrival capture available under ingestion backpressure; retain observed surface samples for removal/movement checks and upgrade existing collections to schema 9.
+- Reject tiny color artifacts in the deterministic Gazebo detector and keep sensor forwarding active during world-change service calls.
+- Require usable localized geometry for object updates in configured RGB-D pipelines; incomplete captures remain scene-only and do not consume the object scan interval.
+- Wait for aligned depth before starting object arrival verification, retaining the original arrival deadline and capture-age checks.
+- Rate-limit Nav2 distance feedback and coalesce pending trace progress; prioritize critical events and expose critical-drop counts under bounded queue saturation.
 - Add bounded live-provider and deterministic-provider Gazebo mission checkpoints, including duplicate commands, stops, sensor loss and changed targets.
 - Prefer newer complete RGB-D captures after a dropped pair's wait expires; keep recent depth trust until its existing freshness deadline without refreshing it from RGB-only frames.
 - Recheck target references immediately before dispatch and after arrival checks; bound arrival capture age through queueing and provider work, including paused source time.

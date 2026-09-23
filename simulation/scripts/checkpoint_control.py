@@ -24,8 +24,9 @@ import yaml
 from checkpoint_fixtures import CaptionFixture, DetectorFixture, PixelFixture, PlanFixture, VisionFixture
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from pipeline_test import PipelineProbe, snapshot
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
 
@@ -136,19 +137,37 @@ class Probe(PipelineProbe):
         self.create_subscription(
             String, "/placecell/command_receipt", lambda m: self.receipts.append(json.loads(m.data)), 10
         )
+        # World-service calls and assertions must never pause the sensor relay.
+        # Otherwise a test that inserts an occluder accidentally injects sensor loss.
+        self.relay = Node("checkpoint_sensor_relay")
         for key, topic, message_type in (
             ("rgb", "/camera/color/image_raw", Image),
             ("depth", "/camera/aligned_depth_to_color/image_raw", Image),
             ("info", "/camera/color/camera_info", CameraInfo),
             ("localization", "/amcl_pose", PoseWithCovarianceStamped),
         ):
-            pub = self.create_publisher(message_type, f"/checkpoint/{key}", qos_profile_sensor_data)
-            self.create_subscription(
+            qos = (
+                qos_profile_sensor_data
+                if key == "localization"
+                else QoSProfile(depth=8, reliability=ReliabilityPolicy.RELIABLE)
+            )
+            pub = self.relay.create_publisher(message_type, f"/checkpoint/{key}", qos)
+            self.relay.create_subscription(
                 message_type,
                 topic,
                 lambda m, key=key, pub=pub: pub.publish(m) if self.forward[key] else None,
-                qos_profile_sensor_data,
+                qos,
             )
+        self.relay_executor = SingleThreadedExecutor()
+        self.relay_executor.add_node(self.relay)
+        self.relay_thread = threading.Thread(target=self.relay_executor.spin, daemon=True)
+        self.relay_thread.start()
+
+    def destroy_node(self):
+        self.relay_executor.shutdown(timeout_sec=5)
+        self.relay_thread.join(5)
+        self.relay.destroy_node()
+        return super().destroy_node()
 
     def spin_for(self, seconds):
         deadline = time.monotonic() + seconds
@@ -394,6 +413,14 @@ def run_case(probe, world, case, output, *, isolate_arrival=False):
             except sqlite3.OperationalError as error:
                 report["trace_read_error"] = str(error)
         report["dispatches"] = dispatches
+        report["critical_trace_complete"] = (
+            report.get("trace_flushed", False)
+            and report.get("retained_trace_dispatches") == len(dispatches)
+            and report.get("trace_health", {}).get("dropped_critical_events") == 0
+            and report.get("trace_health", {}).get("write_errors") == 0
+        )
+        if not report["critical_trace_complete"]:
+            report["passed"] = False
         expected_goals = 2 if case == "ordered_duplicate" else 0 if case in {"cancel_planning", "invalid_model"} else 1
         if len(dispatches) != expected_goals:
             report["passed"] = False

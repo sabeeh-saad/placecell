@@ -33,6 +33,8 @@ class Observation:
     evidence: Evidence
     localization_checked: bool = False
     depth: DepthSnapshot | None = None
+    refresh_objects: bool = False
+    """Request an object scan for a significant capture, such as an arrival observation."""
 
 
 @dataclass(frozen=True, slots=True)

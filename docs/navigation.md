@@ -122,6 +122,14 @@ recorded observation pose and heading by default. Optional [object approach plan
 uses fresh RGB-D object geometry, the costmap and Nav2 path queries to select a stopping
 pose near an object. It requires object memory to be enabled.
 
+If no object passes the similarity threshold, a compatible visual verifier can propose
+one search category from the categories observed in that robot/camera/map scope. This
+supports purpose descriptions such as a place to print documents without hardcoded
+product aliases. The proposed category is only a search query: retrieved candidates
+still pass the same similarity threshold, and their images and arrival evidence are
+checked against the original request. Unknown categories and ambiguous purposes do
+not authorize a goal. The fallback is bounded to one expansion over at most 13 categories.
+
 Default gates require similarity of at least 0.5, effective confidence of at least 0.2,
 and a retained image captured within seven days with checked localization and a known
 image–pose pairing. These are configurable starting values, not calibrated probabilities.
@@ -245,6 +253,6 @@ uncertainty rather than claiming the robot stopped.
 The main parameters are `navigation_enabled`, `nav2_action`, `places_file`,
 `navigation_min_similarity`, `navigation_min_confidence`, `navigation_max_memory_age_s`,
 `navigation_lookup_timeout_s`, `navigation_response_timeout_s`, `navigation_timeout_s`,
-`navigation_arrival_timeout_s`, `verification_model`, `verification_base_url`,
+`navigation_arrival_timeout_s`, `navigation_arrival_max_attempts`, `verification_model`, `verification_base_url`,
 `verification_request_timeout_s`, `localization_topic`, `localization_max_age_s`,
 `localization_max_position_std_m`, and `localization_max_yaw_std_rad`.

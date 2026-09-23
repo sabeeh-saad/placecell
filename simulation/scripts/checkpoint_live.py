@@ -23,6 +23,7 @@ from std_msgs.msg import String
 from placecell.errors import ProviderError
 from placecell.providers._http import UrllibTransport
 from placecell.ros2.node import create_node
+from placecell.tracing import read_trace
 
 
 class RequestBudget:
@@ -140,6 +141,12 @@ def main():
 
         probe.wait(learned, 180)
         report["before"] = snapshot(database)
+        from PIL import Image
+
+        picture = probe.rgb[-1]
+        Image.frombytes("RGB", (picture.width, picture.height), bytes(picture.data)).save(
+            args.output / "learned-camera.png"
+        )
         report["checks"].append("live RGB-D ingestion learned a localized printer")
         report["departure_pose"] = probe.navigate(-1.0, 0.3, math.pi)
         probe.wait(lambda: publisher.get_subscription_count() > 0 and node._localization.ready(), 30)
@@ -179,6 +186,10 @@ def main():
         report["terminal"] = probe.statuses[-1]
         report["mission_distance_m"] = probe.distance - initial_distance
         report["after"] = snapshot(database)
+        picture = probe.rgb[-1]
+        Image.frombytes("RGB", (picture.width, picture.height), bytes(picture.data)).save(
+            args.output / "terminal-camera.png"
+        )
         assert report["terminal"]["state"] == "succeeded", report["terminal"]
         assert report["mission_distance_m"] > 1.0, "No actual semantic trip"
         report["checks"].append("live mission reached its goal(s) after fresh object verification")
@@ -201,7 +212,13 @@ def main():
         if thread is not None:
             thread.join(timeout=5)
         if node is not None:
+            if node._mission_traces is not None:
+                report["trace_flushed"] = node._mission_traces.flush(timeout=30)
+                report["trace_health"] = node._mission_traces.health()
             node.destroy_node()
+        if report.get("trace_flushed"):
+            trace = read_trace(args.output / "traces.sqlite3")
+            (args.output / "trace.json").write_text(json.dumps(trace, indent=2) + "\n")
         report.update(
             statuses=probe.statuses,
             receipts=receipts,

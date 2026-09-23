@@ -196,7 +196,8 @@ def test_new_rival_during_final_request_check_invalidates_object_success(tmp_pat
 
     h.resolver._verifier.verify = changed
     h.observe()
-    assert h.events[-1].state == "destination_unverified"
+    assert h.events[-1].state == "destination_ambiguous"
+    assert h.events[-1].object_result == "ambiguous"
     assert h.events[-1].failure_stage == "identity"
 
 

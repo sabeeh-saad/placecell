@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Literal, Protocol
@@ -35,7 +36,7 @@ from placecell.tracing import (
     trace_span,
     traced,
 )
-from placecell.verification import ObjectSceneVerifier, SceneVerdict, SceneVerifier
+from placecell.verification import ObjectSceneVerifier, SceneVerdict, SceneVerifier, SemanticQueryResolver
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +190,11 @@ class DestinationResolver:
         self._approach = approach
         self._object_arrival = object_arrival
 
+    @property
+    def configured_places(self) -> tuple[str, ...]:
+        """Names only, in the current map; the planner cannot choose poses."""
+        return tuple(sorted(name for name, pose in self._places.items() if pose.same_frame(self._origin)))
+
     @traced("approach_planning")
     def prepare_destination(self, destination: Destination, canceled: Callable[[], bool]) -> Destination:
         if not destination.object_id:
@@ -217,7 +223,7 @@ class DestinationResolver:
             and self._object_arrival.available(destination.object_reference)
             and destination.memory is not None
             and self._recall.confidence(destination.memory) >= self._policy.min_confidence
-            and (checked_generation is None or self._store.objects.generation == checked_generation)
+            and (checked_generation is None or self._store.objects.evidence_generation == checked_generation)
         )
 
     def verify_object_arrival(
@@ -228,20 +234,20 @@ class DestinationResolver:
                 "unavailable", "The selected object's saved reference is unavailable.", failure_stage="retrieval"
             )
         assert self._object_arrival is not None and destination.object_reference is not None
-        verdict = self._object_arrival.verify_image(destination.object_reference, observation, image, canceled)
-        if verdict.result == "matched" and not canceled():
-            request_check = self.verify(destination.target, image)
-            if request_check.result != "matched":
-                return ObjectArrivalVerdict(
-                    "ambiguous" if request_check.result == "uncertain" else "unobserved",
-                    request_check.reason,
-                    failure_stage="identity",
-                )
-            if not self.arrival_available(destination, verdict.checked_generation):
-                return ObjectArrivalVerdict(
-                    "unavailable", "Object evidence changed during the final request check.", failure_stage="identity"
-                )
-        return verdict
+        if self._object_arrival.supports_comparison:
+            # One image inspection binds detection, instance comparison and the
+            # original request to the same box. Embeddings/geometry remain independent.
+            return self._object_arrival.verify_image(
+                destination.object_reference, observation, image, canceled, target=destination.target
+            )
+        # Independent image checks may run together. The object verifier validates
+        # current identities and captures its evidence version AFTER both complete.
+        # One bounded worker is joined before this verification attempt returns.
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="arrival-request") as pool:
+            request = pool.submit(bind_trace(current_trace(), lambda: self.verify(destination.target, image)))
+            return self._object_arrival.verify_image(
+                destination.object_reference, observation, image, canceled, request.result
+            )
 
     @traced("destination_lookup")
     def resolve(self, command: MovementCommand) -> Resolution:
@@ -356,12 +362,12 @@ class DestinationResolver:
             )
         return Resolution("resolved", "Navigating to the remembered observation viewpoint.", choices)
 
-    def _resolve_object(self, target: str) -> Resolution | None:
+    def _resolve_object(self, target: str, *, query: str | None = None) -> Resolution | None:
         assert self._objects is not None
         p = self._policy
         with trace_span("object_retrieval"):
             hits = self._objects.similar(
-                target,
+                query or target,
                 robot_id=self._scope.robot_id or "",
                 camera_id=self._scope.camera_id or "",
                 frame_id=self._origin.frame_id,
@@ -384,9 +390,18 @@ class DestinationResolver:
                 for h in hits
             ],
         )
+        labels = tuple(sorted({h.object.label for h in hits}))
         hits = [h for h in hits if h.similarity >= p.min_similarity]
         trace_event("retrieval.eligible", channel="object", object_ids=[h.object.id for h in hits], policy=asdict(p))
         if not hits:
+            if query is None and 1 <= len(labels) <= 13 and isinstance(self._verifier, SemanticQueryResolver):
+                with trace_span("semantic_grounding"):
+                    expanded = self._verifier.search_query(target, labels)
+                trace_event("retrieval.query_expanded", target=target, query=expanded, observed_labels=labels)
+                if expanded and expanded in labels and expanded.casefold() != target.casefold():
+                    # Retain the original target for both candidate and arrival verification.
+                    # Expansion never changes similarity, presence, geometry or identity gates.
+                    return self._resolve_object(target, query=expanded)
             return None
         if len(hits) > p.verification_candidates:
             return Resolution(
@@ -562,6 +577,7 @@ class NavigationCommands:
         sensor_generation: Callable[[Destination], object] = lambda _: 0,
         arrival_timeout_s: float = 30.0,
         max_observation_age_s: float = 5.0,
+        arrival_max_attempts: int = 1,
         search: ObjectSearch | None = None,
         mission_planner: MissionPlanner | None = None,
         mission_context: MissionContext | None = None,
@@ -573,6 +589,8 @@ class NavigationCommands:
             raise ValidationError("arrival timeout must be finite and positive")
         if not math.isfinite(max_observation_age_s) or max_observation_age_s <= 0:
             raise ValidationError("arrival observation maximum age must be finite and positive")
+        if type(arrival_max_attempts) is not int or not 1 <= arrival_max_attempts <= 5:
+            raise ValidationError("arrival attempts must be an integer within 1..5")
         self._resolver, self._navigator = resolver, navigator
         self._submit_callback, self._publish_callback = submit, publish
         self._trace_store = trace_store
@@ -594,6 +612,7 @@ class NavigationCommands:
         self._interruption_reason = ""
         self._arrival_timeout = arrival_timeout_s
         self._max_observation_age = max_observation_age_s
+        self._arrival_max_attempts, self._arrival_attempts = arrival_max_attempts, 0
         self._arrival_stamp: float | None = None
         self._image_deadline = 0.0
         self._arrival_after = self._arrival_deadline = 0.0
@@ -933,7 +952,9 @@ class NavigationCommands:
 
         try:
             context = self._context.recent(exclude_request_id=request_id) if self._context else []
-            plan = self._mission_planner.plan(text, canceled, context=context)
+            plan = self._mission_planner.plan(
+                text, canceled, context=context, configured_places=self._resolver.configured_places
+            )
         except Exception as e:
             trace_event("plan.failed", error_type=type(e).__name__)
             with self._lock:
@@ -1122,6 +1143,7 @@ class NavigationCommands:
                     )
                     return
                 self._state = "awaiting_observation"
+                self._arrival_attempts = 0
                 self._arrival_after = self._observation_clock()
                 self._arrival_deadline = self._clock() + self._arrival_timeout
                 if self._search_deadline is not None:
@@ -1170,6 +1192,7 @@ class NavigationCommands:
                 or observation.robot_id != memory.robot_id
                 or observation.camera_id != memory.camera_id
                 or not observation.localization_checked
+                or (bool(destination.object_id) and observation.depth is None)
                 or not self._provenance_ready()
                 or not self._arrival_after < observation.timestamp <= self._observation_clock()
                 or not 0 <= self._observation_clock() - observation.timestamp <= self._max_observation_age
@@ -1185,6 +1208,7 @@ class NavigationCommands:
                         timestamp=observation.timestamp,
                         pose=asdict(observation.pose),
                         localization_checked=observation.localization_checked,
+                        aligned_depth_available=observation.depth is not None,
                         localization_ready=self._provenance_ready(),
                         after_timestamp=self._arrival_after,
                         observation_clock=self._observation_clock(),
@@ -1201,6 +1225,7 @@ class NavigationCommands:
                 )
                 return
             self._arrival_stamp = observation.timestamp
+            self._arrival_attempts += 1
             self._image_deadline = (
                 self._clock() + self._max_observation_age - (self._observation_clock() - observation.timestamp)
             )
@@ -1217,6 +1242,7 @@ class NavigationCommands:
             if arrival_trace:
                 arrival_trace.emit(
                     "arrival.observation_accepted",
+                    attempt=self._arrival_attempts,
                     timestamp=observation.timestamp,
                     pose=asdict(observation.pose),
                     evidence_digest=observation.evidence.digest,
@@ -1288,6 +1314,15 @@ class NavigationCommands:
             self._arrival_stamp is not None
             and 0 <= self._observation_clock() - self._arrival_stamp <= self._max_observation_age
             and self._clock() <= self._image_deadline
+        )
+
+    def _can_retry_arrival(self) -> bool:
+        return (
+            self._destination is not None
+            and bool(self._destination.object_id)
+            and self._arrival_attempts < self._arrival_max_attempts
+            and self._clock() < self._arrival_deadline
+            and self._provenance_ready()
         )
 
     def _search_next(self, request_id: str, destination: Destination, verdict: ObjectArrivalVerdict) -> None:
@@ -1417,6 +1452,22 @@ class NavigationCommands:
             if request_id != self._active:
                 return
             if self._state == "verifying_arrival" and not self._arrival_fresh():
+                if self._can_retry_arrival() and object_result not in {"ambiguous", "missing", "unobserved"}:
+                    # The worker has returned. Discard its expired result before
+                    # accepting a different capture; never overlap attempts or
+                    # extend the original arrival deadline.
+                    self._state, self._arrival_stamp = "awaiting_observation", None
+                    self._arrival_after = self._observation_clock()
+                    self._emit(
+                        NavigationUpdate(
+                            request_id,
+                            self._state,
+                            "The visual check expired. Waiting for a new capture within the arrival deadline.",
+                            self._destination,
+                            search_attempt=self._search_count,
+                        )
+                    )
+                    return
                 matched, reason, failure_stage = False, "The arrival image expired during verification.", "geometry"
                 if object_result:
                     object_result = "unavailable"
@@ -1522,7 +1573,11 @@ class NavigationCommands:
                 if (
                     not ready
                     or self._clock() >= self._arrival_deadline
-                    or (self._state == "verifying_arrival" and not self._arrival_fresh())
+                    or (
+                        self._state == "verifying_arrival"
+                        and not self._arrival_fresh()
+                        and not self._can_retry_arrival()
+                    )
                 ):
                     self._finish_arrival(
                         self._active,

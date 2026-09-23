@@ -36,6 +36,11 @@ This boundary is intentional: flexible language does not grant capabilities the 
 Both agents may use the same model or different tool-calling models. Separate contexts are
 not proof of independent errors, and a reviewer can also approve an incorrect interpretation.
 
+Both roles receive the names of configured places in the current map, without coordinates.
+This resolves a configured `home`; it is not an inventory or whitelist of object destinations.
+Unlisted object names and functional descriptions are grounded by the executor after review.
+The catalog cannot add visits, waive image checks, or turn an absent target into a success.
+
 ## Enable the ROS interface
 
 For the bundled Gazebo office, the [reference deployment guide](reference-deployment.md)

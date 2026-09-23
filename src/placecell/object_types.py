@@ -45,6 +45,36 @@ class ObjectComparator(Protocol):
 
 
 @dataclass(frozen=True)
+class ArrivalComparison:
+    selected: int
+    identity: SceneVerdict
+    destination: SceneVerdict
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.selected) is not int
+            or not -1 <= self.selected < 64
+        ):
+            raise ValidationError("invalid arrival comparison selection")
+        for verdict in (self.identity, self.destination):
+            if (
+                verdict.result not in {"matched", "not_matched", "uncertain"}
+                or not isinstance(verdict.reason, str)
+                or not verdict.reason.strip()
+                or len(verdict.reason) > 1000
+                or (self.selected == -1 and verdict.result == "matched")
+            ):
+                raise ValidationError("invalid arrival comparison verdict")
+
+
+@runtime_checkable
+class ArrivalComparator(Protocol):
+    def compare_arrival(
+        self, references: tuple[bytes, ...], candidates: tuple[bytes, ...], image: Evidence, target: str
+    ) -> ArrivalComparison: ...
+
+
+@dataclass(frozen=True)
 class ObjectRecord:
     id: str
     robot_id: str

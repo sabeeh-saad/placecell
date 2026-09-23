@@ -35,8 +35,8 @@ in [missions](missions.md).
 Use a persistent `db_path` for restart recovery. Each collection now has a
 `<collection>.state.sqlite3` file containing authoritative memory metadata, observation
 history, ingestion jobs and cleanup intents. LanceDB supplies a derived vector index.
-Schema 2–7 collections import into schema 8 in bounded batches when opened. The
-original sighting history is retained during import; older clients reject schema 8.
+Schema 2–8 collections import into schema 9 in bounded batches when opened. The
+original sighting history is retained during import; older clients reject schema 9.
 Stop writers and back up the entire database directory and keyframe directory together
 before an upgrade. Do not remove the state file when rebuilding a vector index.
 
@@ -91,7 +91,7 @@ Time queries match actual sighting timestamps, not the interval between the firs
 visit. Results expose matching times through `RankedMemory.observed_at`; agent tool results
 and ROS answers include `observed_at` and `last_seen`. Nearby agent queries honor `map_id`.
 
-Existing schema 2–7 collections are upgraded to schema 8 when opened. The upgrade retains
+Existing schema 2–8 collections are upgraded to schema 9 when opened. The upgrade retains
 stored rows, captions, evidence and lifecycle counts. It can preserve the recorded first
 and last times, but cannot reconstruct intermediate sightings or observation ids that the
 older schema discarded. Replay detection for merged observations is complete for sightings

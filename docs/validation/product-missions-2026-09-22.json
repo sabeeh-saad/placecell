@@ -1,0 +1,1429 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-22",
+  "scope": "Live hosted providers, production PlaceCell node, Gazebo RGB-D/AMCL/Nav2; guided learning then ordered instructions",
+  "full_chain_qualified": false,
+  "runtime_policy_changes_for_this_evaluation": [],
+  "model_ids": [
+    "google/gemini-2.5-flash",
+    "google/gemini-embedding-2"
+  ],
+  "capture_age_limit_s": 5.0,
+  "unit_tests": {
+    "passed": 6,
+    "files": [
+      "tests/test_product_scenarios.py",
+      "tests/test_simulation_map.py"
+    ]
+  },
+  "ruff_passed": true,
+  "git_diff_check_passed": true,
+  "attempts": [
+    {
+      "passed": true,
+      "mode": "no-model scene preflight",
+      "training": [
+        {
+          "product": "printer",
+          "pose": {
+            "x": 0.9326724252930353,
+            "y": -0.002965336865452063,
+            "yaw": 0.029171574192342384
+          },
+          "image": "learned-printer.png",
+          "object_id": null,
+          "simulation_time": 15.132
+        },
+        {
+          "product": "microwave",
+          "pose": {
+            "x": 1.1321720299919396,
+            "y": -2.443122024415428,
+            "yaw": -0.06136139749688733
+          },
+          "image": "learned-microwave.png",
+          "object_id": null,
+          "simulation_time": 35.59
+        },
+        {
+          "product": "fire extinguisher",
+          "pose": {
+            "x": -1.182432629519774,
+            "y": -2.4402841811957776,
+            "yaw": -3.101227178107956
+          },
+          "image": "learned-fire-extinguisher.png",
+          "object_id": null,
+          "simulation_time": 64.148
+        }
+      ],
+      "provider_calls": 0,
+      "reported_cost_usd": 0.0,
+      "total_distance_m": 10.05135883785575,
+      "attempt": "preflight",
+      "image": "sha256:85740fe4f98bcb7c58feeacc6057a1861e5b46e2237419e09979d680a2f4b7fb",
+      "artifact_directory": "simulation/artifacts/products-20260922/preflight/results",
+      "explicit_home": false,
+      "cases": [],
+      "http_statuses": {},
+      "unknown_cost_requests": 0,
+      "evidence_sha256": {
+        "simulation/artifacts/products-20260922/preflight/results/learned-fire-extinguisher.png": "418b6a958384ffb3e5138c472917a453ea4861c61702c5a69a1e5b574460c37e",
+        "simulation/artifacts/products-20260922/preflight/results/learned-microwave.png": "f5a5dc66c8ef0f559bf0d3d6e68fdbda89a8e2f3b1e934f8af8f194ded259327",
+        "simulation/artifacts/products-20260922/preflight/results/learned-printer.png": "776ee119c6e9a0ad2049cb6a54bc0e5237ec135d068a527a7eb2a434527cd318",
+        "simulation/artifacts/products-20260922/preflight/results/places.json": "9ddbace4a4e5e66771f6042b01c709b727f71db2866edf113678a2d56a3b5d5c",
+        "simulation/artifacts/products-20260922/preflight/results/report.json": "7b9b5a47f49adfcbd538cebe7f4000096e2587abd39b27021eb14032650aaf6c"
+      }
+    },
+    {
+      "passed": false,
+      "mode": "live hosted multi-product missions",
+      "training": [
+        {
+          "product": "printer",
+          "pose": {
+            "x": 0.9412949609666945,
+            "y": 0.006545835365683867,
+            "yaw": -0.05515247384849189
+          },
+          "image": "learned-printer.png",
+          "object_id": "43a89fdc-9623-5aaf-8fe8-3f067096ea44",
+          "simulation_time": 47.266
+        },
+        {
+          "product": "microwave",
+          "pose": {
+            "x": 1.1435199302137593,
+            "y": -2.4336172460318717,
+            "yaw": -0.08168070653921779
+          },
+          "image": "learned-microwave.png",
+          "object_id": "d0662081-026f-5fb8-80a6-208cc669c6aa",
+          "simulation_time": 72.37
+        },
+        {
+          "product": "fire extinguisher",
+          "pose": {
+            "x": -1.1998896906818337,
+            "y": -2.448433006597951,
+            "yaw": -3.076913288047917
+          },
+          "image": "learned-fire-extinguisher.png",
+          "object_id": "3f415847-fd9e-5411-bb54-0238cb0a11ea",
+          "simulation_time": 104.872
+        }
+      ],
+      "trace_health": {
+        "schema_version": 1,
+        "open_session": false,
+        "dropped_events": 0,
+        "write_errors": 0,
+        "trimmed_events": 0,
+        "truncated_events": 0,
+        "unclean_shutdowns": 0,
+        "coalesced_events": 0,
+        "dropped_critical_events": 0
+      },
+      "provider_calls": 73,
+      "reported_cost_usd": 0.021259949999999993,
+      "owned_at_shutdown": false,
+      "total_distance_m": 10.103793200029287,
+      "attempt": "live",
+      "image": "sha256:a772ac96c174f41bc6bbb7bb3fbdf3743eb8ddc98e94db7b1e4a4ee23784e648",
+      "artifact_directory": "simulation/artifacts/products-20260922/live/results",
+      "explicit_home": false,
+      "cases": [
+        {
+          "id": "three_products",
+          "instruction": "Go to the printer, then the microwave, then the fire extinguisher, and finally return home.",
+          "passed": false,
+          "observed_order": [],
+          "expected_order": [
+            "printer",
+            "microwave",
+            "fire extinguisher",
+            "home"
+          ],
+          "terminal": {
+            "simulation_time": 127.782,
+            "schema_version": 1,
+            "type": "navigation_status",
+            "instance_id": "f453f9e0ab384f47a870cabff4e38c3c",
+            "sequence": 2,
+            "request_id": "0bdc0116ea7f42a6a0deb4ba30c1a47d",
+            "state": "clarification_required",
+            "message": "I cannot interpret \"home\" as a destination. Please provide a more specific location.",
+            "destination": null,
+            "choices": [],
+            "distance_remaining": null,
+            "object_result": "",
+            "failure_stage": "",
+            "search_attempt": 0,
+            "mission_id": "0bdc0116ea7f42a6a0deb4ba30c1a47d",
+            "mission_step": 0,
+            "mission_destinations": []
+          },
+          "submissions": 0,
+          "elapsed_s": 1.0407852839998668,
+          "distance_m": 5.329070518200751e-15,
+          "decisions": [
+            {
+              "stage": "plan.proposed",
+              "decision": "clarify",
+              "destinations": [],
+              "message": "I cannot interpret \"home\" as a destination. Please provide a more specific location.",
+              "context_events": 0
+            }
+          ],
+          "arrival_attempts": [],
+          "arrival_check_seconds": [],
+          "retrieval": []
+        },
+        {
+          "id": "purpose_reasoning",
+          "instruction": "First go to the appliance where I can heat my lunch, then to where I can print documents, and finally return home.",
+          "passed": false,
+          "observed_order": [],
+          "expected_order": [
+            "microwave",
+            "printer",
+            "home"
+          ],
+          "terminal": {
+            "simulation_time": 128.866,
+            "schema_version": 1,
+            "type": "navigation_status",
+            "instance_id": "f453f9e0ab384f47a870cabff4e38c3c",
+            "sequence": 4,
+            "request_id": "b33ae27c830747a4b586c36eb713db8c",
+            "state": "clarification_required",
+            "message": "I cannot interpret \"home\" as a destination. Please provide a more specific location.",
+            "destination": null,
+            "choices": [],
+            "distance_remaining": null,
+            "object_result": "",
+            "failure_stage": "",
+            "search_attempt": 0,
+            "mission_id": "b33ae27c830747a4b586c36eb713db8c",
+            "mission_step": 0,
+            "mission_destinations": []
+          },
+          "submissions": 0,
+          "elapsed_s": 1.025779044999581,
+          "distance_m": 0.0,
+          "decisions": [
+            {
+              "stage": "plan.proposed",
+              "decision": "clarify",
+              "destinations": [],
+              "message": "I cannot interpret \"home\" as a destination. Please provide a more specific location.",
+              "context_events": 3
+            }
+          ],
+          "arrival_attempts": [],
+          "arrival_check_seconds": [],
+          "retrieval": []
+        },
+        {
+          "id": "repeat_visit",
+          "instruction": "Go to the fire extinguisher, then the microwave, then go back to the fire extinguisher, and finish at home.",
+          "passed": false,
+          "observed_order": [],
+          "expected_order": [
+            "fire extinguisher",
+            "microwave",
+            "fire extinguisher",
+            "home"
+          ],
+          "terminal": {
+            "simulation_time": 129.868,
+            "schema_version": 1,
+            "type": "navigation_status",
+            "instance_id": "f453f9e0ab384f47a870cabff4e38c3c",
+            "sequence": 6,
+            "request_id": "679011c6ba354260b5f1f0560a33bc8e",
+            "state": "clarification_required",
+            "message": "I cannot interpret \"home\" as a destination. Please provide a more specific location.",
+            "destination": null,
+            "choices": [],
+            "distance_remaining": null,
+            "object_result": "",
+            "failure_stage": "",
+            "search_attempt": 0,
+            "mission_id": "679011c6ba354260b5f1f0560a33bc8e",
+            "mission_step": 0,
+            "mission_destinations": []
+          },
+          "submissions": 0,
+          "elapsed_s": 0.9725869979993149,
+          "distance_m": 0.0,
+          "decisions": [
+            {
+              "stage": "plan.proposed",
+              "decision": "clarify",
+              "destinations": [],
+              "message": "I cannot interpret \"home\" as a destination. Please provide a more specific location.",
+              "context_events": 6
+            }
+          ],
+          "arrival_attempts": [],
+          "arrival_check_seconds": [],
+          "retrieval": []
+        },
+        {
+          "id": "missing_second_target",
+          "instruction": "Go to the printer, then the refrigerator, then return home.",
+          "passed": false,
+          "observed_order": [],
+          "expected_order": [
+            "printer"
+          ],
+          "terminal": {
+            "simulation_time": 130.922,
+            "schema_version": 1,
+            "type": "navigation_status",
+            "instance_id": "f453f9e0ab384f47a870cabff4e38c3c",
+            "sequence": 8,
+            "request_id": "504876a8c48140a79f1b684ebf884386",
+            "state": "clarification_required",
+            "message": "I cannot interpret \"home\" as a destination. Please provide a more specific location.",
+            "destination": null,
+            "choices": [],
+            "distance_remaining": null,
+            "object_result": "",
+            "failure_stage": "",
+            "search_attempt": 0,
+            "mission_id": "504876a8c48140a79f1b684ebf884386",
+            "mission_step": 0,
+            "mission_destinations": []
+          },
+          "submissions": 0,
+          "elapsed_s": 1.026043531999676,
+          "distance_m": 0.0,
+          "decisions": [
+            {
+              "stage": "plan.proposed",
+              "decision": "clarify",
+              "destinations": [],
+              "message": "I cannot interpret \"home\" as a destination. Please provide a more specific location.",
+              "context_events": 9
+            }
+          ],
+          "arrival_attempts": [],
+          "arrival_check_seconds": [],
+          "retrieval": []
+        }
+      ],
+      "http_statuses": {
+        "200": 73
+      },
+      "unknown_cost_requests": 0,
+      "evidence_sha256": {
+        "simulation/artifacts/products-20260922/live/results/learned-fire-extinguisher.png": "cde51ca289e3d56b00ab53026125f18962a6cd9b477df5316a2b2ff3760e830e",
+        "simulation/artifacts/products-20260922/live/results/learned-microwave.png": "e4d6e8b2a10f1d27ccec9a250d985b6514977088e2503fa1f7183c4df6ea699a",
+        "simulation/artifacts/products-20260922/live/results/learned-printer.png": "bcf8bc7cf2d643925f093a6ccd8d5e51ea90608d329bd3ac549f13cb7347815e",
+        "simulation/artifacts/products-20260922/live/results/missing_second_target.json": "3c0125fe5d605188227c99f39d6261ece53963f6316b27cd0ca3e8fee52f700a",
+        "simulation/artifacts/products-20260922/live/results/places.json": "9ddbace4a4e5e66771f6042b01c709b727f71db2866edf113678a2d56a3b5d5c",
+        "simulation/artifacts/products-20260922/live/results/provider-requests.jsonl": "3e42007f86ab6d0b5d21c1e607ee169a2f362b419c66d08602084158f8d3289b",
+        "simulation/artifacts/products-20260922/live/results/purpose_reasoning.json": "687af78d04871519c4f10eb5cdd4ee134a770ceaf224b3ece4d98741f867905d",
+        "simulation/artifacts/products-20260922/live/results/repeat_visit.json": "8126f1e45d7578a825b9e87466f1bda7235ebc17f1453659e93a214d0bca2f60",
+        "simulation/artifacts/products-20260922/live/results/report.json": "b57c0bfad6beef0949b9fa091f557d38436346bf091068d4e7351ff09b4aa391",
+        "simulation/artifacts/products-20260922/live/results/three_products.json": "b05a4813ea9e0f64dc8804fc2c52f4851cfbcdb5982006177af3e0ab2b311a8e",
+        "simulation/artifacts/products-20260922/live/results/trace.json": "ede713f1c1bb2decd2ee7e44d373c8250f57f29eaa42bb389dcbdafdf3f71380"
+      }
+    },
+    {
+      "passed": false,
+      "mode": "live hosted multi-product missions",
+      "training": [
+        {
+          "product": "printer",
+          "pose": {
+            "x": 0.9329596608465142,
+            "y": 0.002683101877875674,
+            "yaw": -0.023803221166059065
+          },
+          "image": "learned-printer.png",
+          "object_id": "9bb331a4-25d5-5843-b599-e986a2b9f194",
+          "simulation_time": 44.324
+        },
+        {
+          "product": "microwave",
+          "pose": {
+            "x": 1.1582815185357145,
+            "y": -2.454103604412785,
+            "yaw": -0.06484966184357362
+          },
+          "image": "learned-microwave.png",
+          "object_id": "9b32c00a-7817-5cc7-9284-2f6b554726f9",
+          "simulation_time": 68.838
+        },
+        {
+          "product": "fire extinguisher",
+          "pose": {
+            "x": -1.182142828758795,
+            "y": -2.443845598147547,
+            "yaw": -3.1105473026636923
+          },
+          "image": "learned-fire-extinguisher.png",
+          "object_id": "30215494-9cba-5687-9fb8-549287dd392b",
+          "simulation_time": 123.794
+        }
+      ],
+      "trace_health": {
+        "schema_version": 1,
+        "open_session": false,
+        "dropped_events": 0,
+        "write_errors": 0,
+        "trimmed_events": 0,
+        "truncated_events": 0,
+        "unclean_shutdowns": 0,
+        "coalesced_events": 10,
+        "dropped_critical_events": 0
+      },
+      "provider_calls": 217,
+      "reported_cost_usd": 0.0672067000000001,
+      "owned_at_shutdown": false,
+      "total_distance_m": 19.463270008303738,
+      "attempt": "clarified",
+      "image": "sha256:593261e87a9d720a6c5f4971d044219c08e3b3642c54f59d8024ce49baa80752",
+      "artifact_directory": "simulation/artifacts/products-20260922/clarified/results",
+      "explicit_home": true,
+      "cases": [
+        {
+          "id": "three_products",
+          "instruction": "The configured named place \"home\" is the starting place. Go to the printer, then the microwave, then the fire extinguisher, and finally return home.",
+          "passed": false,
+          "observed_order": [],
+          "expected_order": [
+            "printer",
+            "microwave",
+            "fire extinguisher",
+            "home"
+          ],
+          "terminal": {
+            "simulation_time": 188.64,
+            "schema_version": 1,
+            "type": "navigation_status",
+            "instance_id": "c8c3e0ada4e2470fb13e0721766069c4",
+            "sequence": 102,
+            "request_id": "c59296c03269456b86a4ee390054194d",
+            "state": "destination_unverified",
+            "message": "Reached the pose; destination unverified. The arrival image expired during verification.",
+            "destination": {
+              "label": "printer: gray printer with a blue screen and a paper tray",
+              "source": "memory",
+              "memory_id": "9bb331a4-25d5-5843-b599-e986a2b9f194",
+              "object_id": "9bb331a4-25d5-5843-b599-e986a2b9f194",
+              "goal_kind": "object_approach",
+              "target": "printer",
+              "x": 1.0227779039200904,
+              "y": 0.003887431138392411,
+              "yaw": 6.281543308040465,
+              "frame_id": "map",
+              "map_id": "office-products-v1"
+            },
+            "choices": [],
+            "distance_remaining": null,
+            "object_result": "",
+            "failure_stage": "geometry",
+            "search_attempt": 0,
+            "mission_id": "c59296c03269456b86a4ee390054194d",
+            "mission_step": 1,
+            "mission_destinations": [
+              "the printer",
+              "the microwave",
+              "the fire extinguisher",
+              "home"
+            ]
+          },
+          "submissions": 1,
+          "elapsed_s": 44.03266591399915,
+          "distance_m": 2.0291128587472613,
+          "decisions": [
+            {
+              "stage": "plan.proposed",
+              "decision": "ready",
+              "destinations": [
+                "the printer",
+                "the microwave",
+                "the fire extinguisher",
+                "home"
+              ],
+              "message": "Navigating to the printer, then the microwave, then the fire extinguisher, and finally returning home.",
+              "context_events": 0
+            },
+            {
+              "stage": "plan.reviewed",
+              "decision": "approve",
+              "message": "The proposed navigation plan accurately reflects the requested sequence of destinations: printer, microwave, fire extinguisher, and then home.",
+              "destinations": [
+                "the printer",
+                "the microwave",
+                "the fire extinguisher",
+                "home"
+              ]
+            },
+            {
+              "stage": "arrival.verdict",
+              "matched": false,
+              "reason": "The arrival image expired during verification.",
+              "object_result": "",
+              "failure_stage": "geometry"
+            }
+          ],
+          "arrival_attempts": [
+            {
+              "attempt": 1,
+              "timestamp": 171.4,
+              "pose": {
+                "x": 0.9607370454139916,
+                "y": 0.010940951134884191,
+                "yaw": -0.0011713273911896861,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "70d06960f4378743c9ab9860a04e3a6516e2d521ce2e924ea750d1ab4099f105"
+            },
+            {
+              "attempt": 2,
+              "timestamp": 177.4,
+              "pose": {
+                "x": 0.9594459446241036,
+                "y": 0.010160133768252533,
+                "yaw": 0.012540804880714523,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "7695ae642c9ed860a10c47c0461f5db17080da265a7e064a8deec246c4e21b3b"
+            },
+            {
+              "attempt": 3,
+              "timestamp": 183.6,
+              "pose": {
+                "x": 0.9539458294395755,
+                "y": 0.010424440238075428,
+                "yaw": 0.012688514017957488,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "7695ae642c9ed860a10c47c0461f5db17080da265a7e064a8deec246c4e21b3b"
+            }
+          ],
+          "arrival_check_seconds": [
+            5.76105677600026,
+            4.954534446998878,
+            4.918028042000515
+          ],
+          "retrieval": [
+            {
+              "stage": "retrieval.candidates",
+              "channel": "object",
+              "candidates": [
+                {
+                  "object_id": "9bb331a4-25d5-5843-b599-e986a2b9f194",
+                  "revision": 1,
+                  "memory_id": "9bb331a4-25d5-5843-b599-e986a2b9f194",
+                  "similarity": 0.8362297610962676,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "30215494-9cba-5687-9fb8-549287dd392b",
+                  "revision": 1,
+                  "memory_id": "30215494-9cba-5687-9fb8-549287dd392b",
+                  "similarity": 0.6697133970943935,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "74e236ff-0298-5829-8cfd-f05ce20cc73c",
+                  "revision": 1,
+                  "memory_id": "74e236ff-0298-5829-8cfd-f05ce20cc73c",
+                  "similarity": 0.6636143126257844,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "9b32c00a-7817-5cc7-9284-2f6b554726f9",
+                  "revision": 1,
+                  "memory_id": "9b32c00a-7817-5cc7-9284-2f6b554726f9",
+                  "similarity": 0.6617734817918496,
+                  "status": "present",
+                  "misses": 0
+                }
+              ]
+            },
+            {
+              "stage": "retrieval.eligible",
+              "channel": "object",
+              "object_ids": [
+                "9bb331a4-25d5-5843-b599-e986a2b9f194"
+              ],
+              "policy": {
+                "min_similarity": 0.75,
+                "min_confidence": 0.2,
+                "max_age_s": 604800.0,
+                "same_place_radius_m": 1.0,
+                "candidates": 12,
+                "verification_candidates": 3
+              }
+            }
+          ]
+        },
+        {
+          "id": "purpose_reasoning",
+          "instruction": "The configured named place \"home\" is the starting place. First go to the appliance where I can heat my lunch, then to where I can print documents, and finally return home.",
+          "passed": false,
+          "observed_order": [],
+          "expected_order": [
+            "microwave",
+            "printer",
+            "home"
+          ],
+          "terminal": {
+            "simulation_time": 211.288,
+            "schema_version": 1,
+            "type": "navigation_status",
+            "instance_id": "c8c3e0ada4e2470fb13e0721766069c4",
+            "sequence": 106,
+            "request_id": "d60bfec271d14710921a2c023f202db5",
+            "state": "not_found",
+            "message": "I don't have a sufficiently recent, reliable location for that destination.",
+            "destination": null,
+            "choices": [],
+            "distance_remaining": null,
+            "object_result": "",
+            "failure_stage": "retrieval",
+            "search_attempt": 0,
+            "mission_id": "d60bfec271d14710921a2c023f202db5",
+            "mission_step": 1,
+            "mission_destinations": [
+              "the appliance where I can heat my lunch",
+              "where I can print documents",
+              "home"
+            ]
+          },
+          "submissions": 0,
+          "elapsed_s": 5.682852325000567,
+          "distance_m": 0.007449998815562964,
+          "decisions": [
+            {
+              "stage": "plan.proposed",
+              "decision": "ready",
+              "destinations": [
+                "the appliance where I can heat my lunch",
+                "where I can print documents",
+                "home"
+              ],
+              "message": "The proposed navigation plan accurately reflects the requested sequence of destinations: the appliance where I can heat my lunch, where I can print documents, and then home.",
+              "context_events": 13
+            },
+            {
+              "stage": "plan.reviewed",
+              "decision": "approve",
+              "message": "The proposed plan accurately reflects the requested sequence of destinations: the appliance where I can heat my lunch, where I can print documents, and then home.",
+              "destinations": [
+                "the appliance where I can heat my lunch",
+                "where I can print documents",
+                "home"
+              ]
+            }
+          ],
+          "arrival_attempts": [],
+          "arrival_check_seconds": [],
+          "retrieval": [
+            {
+              "stage": "retrieval.candidates",
+              "channel": "object",
+              "candidates": [
+                {
+                  "object_id": "9b32c00a-7817-5cc7-9284-2f6b554726f9",
+                  "revision": 1,
+                  "memory_id": "9b32c00a-7817-5cc7-9284-2f6b554726f9",
+                  "similarity": 0.704084683438464,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "9bb331a4-25d5-5843-b599-e986a2b9f194",
+                  "revision": 4,
+                  "memory_id": "3ddb6aba-6877-5faa-83c3-ecd95c273c63",
+                  "similarity": 0.6177150887763712,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "74e236ff-0298-5829-8cfd-f05ce20cc73c",
+                  "revision": 1,
+                  "memory_id": "74e236ff-0298-5829-8cfd-f05ce20cc73c",
+                  "similarity": 0.5889976375697635,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "30215494-9cba-5687-9fb8-549287dd392b",
+                  "revision": 1,
+                  "memory_id": "30215494-9cba-5687-9fb8-549287dd392b",
+                  "similarity": 0.5870550067293628,
+                  "status": "present",
+                  "misses": 0
+                }
+              ]
+            },
+            {
+              "stage": "retrieval.eligible",
+              "channel": "object",
+              "object_ids": [],
+              "policy": {
+                "min_similarity": 0.75,
+                "min_confidence": 0.2,
+                "max_age_s": 604800.0,
+                "same_place_radius_m": 1.0,
+                "candidates": 12,
+                "verification_candidates": 3
+              }
+            }
+          ]
+        },
+        {
+          "id": "repeat_visit",
+          "instruction": "The configured named place \"home\" is the starting place. Go to the fire extinguisher, then the microwave, then go back to the fire extinguisher, and finish at home.",
+          "passed": false,
+          "observed_order": [],
+          "expected_order": [
+            "fire extinguisher",
+            "microwave",
+            "fire extinguisher",
+            "home"
+          ],
+          "terminal": {
+            "simulation_time": 235.266,
+            "schema_version": 1,
+            "type": "navigation_status",
+            "instance_id": "c8c3e0ada4e2470fb13e0721766069c4",
+            "sequence": 170,
+            "request_id": "54a08b98806b4adf9d41e64a2abf498d",
+            "state": "destination_ambiguous",
+            "message": "Reached the pose; destination unverified. Similar objects cannot be distinguished. Please identify the target.",
+            "destination": {
+              "label": "fire extinguisher: red fire extinguisher with a black top and a black hose, sitting on a gray cube",
+              "source": "memory",
+              "memory_id": "30215494-9cba-5687-9fb8-549287dd392b",
+              "object_id": "30215494-9cba-5687-9fb8-549287dd392b",
+              "goal_kind": "object_approach",
+              "target": "fire extinguisher",
+              "x": -2.0650742842232157,
+              "y": -1.0180431195243,
+              "yaw": 4.221517873942311,
+              "frame_id": "map",
+              "map_id": "office-products-v1"
+            },
+            "choices": [],
+            "distance_remaining": null,
+            "object_result": "ambiguous",
+            "failure_stage": "identity",
+            "search_attempt": 0,
+            "mission_id": "54a08b98806b4adf9d41e64a2abf498d",
+            "mission_step": 1,
+            "mission_destinations": [
+              "the fire extinguisher",
+              "the microwave",
+              "the fire extinguisher",
+              "home"
+            ]
+          },
+          "submissions": 1,
+          "elapsed_s": 24.166890902999512,
+          "distance_m": 1.7291047654549594,
+          "decisions": [
+            {
+              "stage": "plan.proposed",
+              "decision": "ready",
+              "destinations": [
+                "the fire extinguisher",
+                "the microwave",
+                "the fire extinguisher",
+                "home"
+              ],
+              "message": "The proposed navigation plan accurately reflects the requested sequence of destinations: the fire extinguisher, the microwave, the fire extinguisher, and then home.",
+              "context_events": 18
+            },
+            {
+              "stage": "plan.reviewed",
+              "decision": "approve",
+              "message": "The proposed navigation plan accurately reflects the requested sequence of destinations: the fire extinguisher, the microwave, the fire extinguisher, and then home.",
+              "destinations": [
+                "the fire extinguisher",
+                "the microwave",
+                "the fire extinguisher",
+                "home"
+              ]
+            },
+            {
+              "stage": "arrival.verdict",
+              "matched": false,
+              "reason": "Similar objects cannot be distinguished. Please identify the target.",
+              "object_result": "ambiguous",
+              "failure_stage": "identity"
+            }
+          ],
+          "arrival_attempts": [
+            {
+              "attempt": 1,
+              "timestamp": 231.4,
+              "pose": {
+                "x": -2.0379838014897875,
+                "y": -0.9679141222330523,
+                "yaw": -2.049964000377537,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "81807713004ba4ec0624de96c5effdee1165290f0534a65222a22e02b0482916"
+            }
+          ],
+          "arrival_check_seconds": [
+            3.316301687000305
+          ],
+          "retrieval": [
+            {
+              "stage": "retrieval.candidates",
+              "channel": "object",
+              "candidates": [
+                {
+                  "object_id": "30215494-9cba-5687-9fb8-549287dd392b",
+                  "revision": 1,
+                  "memory_id": "30215494-9cba-5687-9fb8-549287dd392b",
+                  "similarity": 0.8488021853441751,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "74e236ff-0298-5829-8cfd-f05ce20cc73c",
+                  "revision": 1,
+                  "memory_id": "74e236ff-0298-5829-8cfd-f05ce20cc73c",
+                  "similarity": 0.6520854027322175,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "9b32c00a-7817-5cc7-9284-2f6b554726f9",
+                  "revision": 1,
+                  "memory_id": "9b32c00a-7817-5cc7-9284-2f6b554726f9",
+                  "similarity": 0.6288955518950348,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "9bb331a4-25d5-5843-b599-e986a2b9f194",
+                  "revision": 4,
+                  "memory_id": "3ddb6aba-6877-5faa-83c3-ecd95c273c63",
+                  "similarity": 0.6264218989424465,
+                  "status": "present",
+                  "misses": 0
+                }
+              ]
+            },
+            {
+              "stage": "retrieval.eligible",
+              "channel": "object",
+              "object_ids": [
+                "30215494-9cba-5687-9fb8-549287dd392b"
+              ],
+              "policy": {
+                "min_similarity": 0.75,
+                "min_confidence": 0.2,
+                "max_age_s": 604800.0,
+                "same_place_radius_m": 1.0,
+                "candidates": 12,
+                "verification_candidates": 3
+              }
+            }
+          ]
+        },
+        {
+          "id": "missing_second_target",
+          "instruction": "The configured named place \"home\" is the starting place. Go to the printer, then the refrigerator, then return home.",
+          "passed": false,
+          "observed_order": [],
+          "expected_order": [
+            "printer"
+          ],
+          "terminal": {
+            "simulation_time": 298.872,
+            "schema_version": 1,
+            "type": "navigation_status",
+            "instance_id": "c8c3e0ada4e2470fb13e0721766069c4",
+            "sequence": 267,
+            "request_id": "363cc4b823aa49168c5aba81d6c98c11",
+            "state": "destination_unverified",
+            "message": "Reached the pose; destination unverified. The arrival image expired during verification.",
+            "destination": {
+              "label": "printer: gray printer with a blue screen and black details",
+              "source": "memory",
+              "memory_id": "3ddb6aba-6877-5faa-83c3-ecd95c273c63",
+              "object_id": "9bb331a4-25d5-5843-b599-e986a2b9f194",
+              "goal_kind": "object_approach",
+              "target": "printer",
+              "x": 1.0240298069106075,
+              "y": 0.008646078767971067,
+              "yaw": 6.265819047759464,
+              "frame_id": "map",
+              "map_id": "office-products-v1"
+            },
+            "choices": [],
+            "distance_remaining": null,
+            "object_result": "",
+            "failure_stage": "geometry",
+            "search_attempt": 0,
+            "mission_id": "363cc4b823aa49168c5aba81d6c98c11",
+            "mission_step": 1,
+            "mission_destinations": [
+              "the printer",
+              "the refrigerator",
+              "home"
+            ]
+          },
+          "submissions": 1,
+          "elapsed_s": 44.20672831500087,
+          "distance_m": 1.9995966418068996,
+          "decisions": [
+            {
+              "stage": "plan.proposed",
+              "decision": "ready",
+              "destinations": [
+                "the printer",
+                "the refrigerator",
+                "home"
+              ],
+              "message": "The proposed navigation plan accurately reflects the requested sequence of destinations: the printer, the refrigerator, and then home.",
+              "context_events": 20
+            },
+            {
+              "stage": "plan.reviewed",
+              "decision": "approve",
+              "message": "The proposed plan accurately reflects the requested sequence of destinations: the printer, the refrigerator, and then home.",
+              "destinations": [
+                "the printer",
+                "the refrigerator",
+                "home"
+              ]
+            },
+            {
+              "stage": "arrival.verdict",
+              "matched": false,
+              "reason": "The arrival image expired during verification.",
+              "object_result": "",
+              "failure_stage": "geometry"
+            }
+          ],
+          "arrival_attempts": [
+            {
+              "attempt": 1,
+              "timestamp": 282.0,
+              "pose": {
+                "x": 0.9655082214717897,
+                "y": 0.007174621069014453,
+                "yaw": -0.01617546750006277,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "d5aef4cfd69e40883133074406fb3b6848a2acaa4781894eeef6e1d6213a0b18"
+            },
+            {
+              "attempt": 2,
+              "timestamp": 287.8,
+              "pose": {
+                "x": 0.9621451031159588,
+                "y": 0.009629122106048715,
+                "yaw": -0.017257965425560403,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "d5aef4cfd69e40883133074406fb3b6848a2acaa4781894eeef6e1d6213a0b18"
+            },
+            {
+              "attempt": 3,
+              "timestamp": 293.8,
+              "pose": {
+                "x": 0.9573712353791927,
+                "y": 0.011458195853541797,
+                "yaw": -0.016511308093375372,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "d5aef4cfd69e40883133074406fb3b6848a2acaa4781894eeef6e1d6213a0b18"
+            }
+          ],
+          "arrival_check_seconds": [
+            5.651038285999675,
+            5.265902974999335,
+            5.95379333100027
+          ],
+          "retrieval": [
+            {
+              "stage": "retrieval.candidates",
+              "channel": "object",
+              "candidates": [
+                {
+                  "object_id": "9bb331a4-25d5-5843-b599-e986a2b9f194",
+                  "revision": 4,
+                  "memory_id": "3ddb6aba-6877-5faa-83c3-ecd95c273c63",
+                  "similarity": 0.8484283324309188,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "30215494-9cba-5687-9fb8-549287dd392b",
+                  "revision": 2,
+                  "memory_id": "3776489e-472b-55c8-ba02-119789a37777",
+                  "similarity": 0.6697133970943935,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "74e236ff-0298-5829-8cfd-f05ce20cc73c",
+                  "revision": 1,
+                  "memory_id": "74e236ff-0298-5829-8cfd-f05ce20cc73c",
+                  "similarity": 0.6636143126257844,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "9b32c00a-7817-5cc7-9284-2f6b554726f9",
+                  "revision": 1,
+                  "memory_id": "9b32c00a-7817-5cc7-9284-2f6b554726f9",
+                  "similarity": 0.6617734817918496,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "d39313ba-514c-571c-88a2-6d032304f101",
+                  "revision": 1,
+                  "memory_id": "d39313ba-514c-571c-88a2-6d032304f101",
+                  "similarity": 0.6597573554371211,
+                  "status": "present",
+                  "misses": 0
+                }
+              ]
+            },
+            {
+              "stage": "retrieval.eligible",
+              "channel": "object",
+              "object_ids": [
+                "9bb331a4-25d5-5843-b599-e986a2b9f194"
+              ],
+              "policy": {
+                "min_similarity": 0.75,
+                "min_confidence": 0.2,
+                "max_age_s": 604800.0,
+                "same_place_radius_m": 1.0,
+                "candidates": 12,
+                "verification_candidates": 3
+              }
+            }
+          ]
+        }
+      ],
+      "http_statuses": {
+        "200": 217
+      },
+      "unknown_cost_requests": 0,
+      "evidence_sha256": {
+        "simulation/artifacts/products-20260922/clarified/results/learned-fire-extinguisher.png": "1223bd1c273516933459bbb1268d2de657456d8ccc69b32e85bef1440fff2ef2",
+        "simulation/artifacts/products-20260922/clarified/results/learned-microwave.png": "247bba782c8bc8b0511279a7cab11d2a3c869fae15ba2f60bd620c10d9519b44",
+        "simulation/artifacts/products-20260922/clarified/results/learned-printer.png": "d1e77c50aa7b861c5f8281fe613042c5145bb5237ac47313f5ab19e56babe93a",
+        "simulation/artifacts/products-20260922/clarified/results/missing_second_target.json": "d41e331c11b2f02d1e1c45f98429b2802477b27e36c97f2669ebda73e1eea469",
+        "simulation/artifacts/products-20260922/clarified/results/places.json": "9ddbace4a4e5e66771f6042b01c709b727f71db2866edf113678a2d56a3b5d5c",
+        "simulation/artifacts/products-20260922/clarified/results/provider-requests.jsonl": "9633691d3c6bdd55418134a1218e7d0387a41939fd13827454c1f7db1c608ea0",
+        "simulation/artifacts/products-20260922/clarified/results/purpose_reasoning.json": "59953c129c24713a189897da4854fe242b094d5e4a4a20a1d4010e8cd365b803",
+        "simulation/artifacts/products-20260922/clarified/results/repeat_visit.json": "1313a3399a6b4b3dc84563fbd5ce11cdc7b30bb7a18d0842e4a388e6bda7007c",
+        "simulation/artifacts/products-20260922/clarified/results/report.json": "04ffae7438a19d201f81ab9ee45a8fd18cadf6065d40dd15c7f7d06d6573fc5d",
+        "simulation/artifacts/products-20260922/clarified/results/three_products.json": "67531840417b3c5bd008a970debcff01ceb029b72473df5527370efc11b53232",
+        "simulation/artifacts/products-20260922/clarified/results/trace.json": "89132268571febef5901a1459e9582a3a99b8a3966211a875a8826c6a5de23f5"
+      }
+    },
+    {
+      "passed": false,
+      "mode": "live hosted multi-product missions",
+      "training": [
+        {
+          "product": "printer",
+          "pose": {
+            "x": 0.9389972560657148,
+            "y": -0.0013187976738296952,
+            "yaw": -0.034040010550524566
+          },
+          "image": "learned-printer.png",
+          "object_id": "95fe1c77-3544-5ab0-b388-b04e9d906a54",
+          "simulation_time": 48.926
+        },
+        {
+          "product": "microwave",
+          "pose": {
+            "x": 1.1503735479749089,
+            "y": -2.4543923558247807,
+            "yaw": -0.028874448750300326
+          },
+          "image": "learned-microwave.png",
+          "object_id": "dec8f184-9bc3-5b49-9f13-a93b7af3cb12",
+          "simulation_time": 69.962
+        },
+        {
+          "product": "fire extinguisher",
+          "pose": {
+            "x": -1.1786401694136468,
+            "y": -2.432016463236129,
+            "yaw": -3.0829742409801515
+          },
+          "image": "learned-fire-extinguisher.png",
+          "object_id": "bf8f3219-b09c-5dc0-9ffb-ec5b887b0ca5",
+          "simulation_time": 159.896
+        }
+      ],
+      "trace_health": {
+        "schema_version": 1,
+        "open_session": false,
+        "dropped_events": 0,
+        "write_errors": 0,
+        "trimmed_events": 0,
+        "truncated_events": 0,
+        "unclean_shutdowns": 0,
+        "coalesced_events": 5,
+        "dropped_critical_events": 0
+      },
+      "provider_calls": 125,
+      "reported_cost_usd": 0.034292929999999985,
+      "owned_at_shutdown": false,
+      "total_distance_m": 13.026115991493901,
+      "attempt": "microwave-first",
+      "image": "sha256:97d2e730e236e61d7e85fa32116d29d6f81f9b3139b0f4561db977b5af49bfd9",
+      "artifact_directory": "simulation/artifacts/products-20260922/microwave-first/results",
+      "explicit_home": true,
+      "cases": [
+        {
+          "id": "microwave_first",
+          "instruction": "The configured named place \"home\" is the starting place. Go to the microwave, then the printer, then the fire extinguisher, and finally return home.",
+          "passed": false,
+          "observed_order": [],
+          "expected_order": [
+            "microwave",
+            "printer",
+            "fire extinguisher",
+            "home"
+          ],
+          "terminal": {
+            "simulation_time": 230.04,
+            "schema_version": 1,
+            "type": "navigation_status",
+            "instance_id": "0d78a005ec7a4b45b85c326e7b8a7506",
+            "sequence": 116,
+            "request_id": "a9e02cb3d56e4deea01d5988e496ff76",
+            "state": "destination_unverified",
+            "message": "Reached the pose; destination unverified. The arrival image expired during verification.",
+            "destination": {
+              "label": "microwave: black and gray microwave with a green digital display and a keypad, sitting on a brown table",
+              "source": "memory",
+              "memory_id": "9fccf5ce-3df7-590e-9ac3-59614215f616",
+              "object_id": "dec8f184-9bc3-5b49-9f13-a93b7af3cb12",
+              "goal_kind": "object_approach",
+              "target": "microwave",
+              "x": 1.4621344036078083,
+              "y": -1.2241982406162797,
+              "yaw": -0.7509504684629968,
+              "frame_id": "map",
+              "map_id": "office-products-v1"
+            },
+            "choices": [],
+            "distance_remaining": null,
+            "object_result": "",
+            "failure_stage": "geometry",
+            "search_attempt": 0,
+            "mission_id": "a9e02cb3d56e4deea01d5988e496ff76",
+            "mission_step": 1,
+            "mission_destinations": [
+              "microwave",
+              "printer",
+              "fire extinguisher",
+              "home"
+            ]
+          },
+          "submissions": 1,
+          "elapsed_s": 48.93293840899969,
+          "distance_m": 2.8868178383570555,
+          "decisions": [
+            {
+              "stage": "plan.proposed",
+              "decision": "ready",
+              "destinations": [
+                "microwave",
+                "printer",
+                "fire extinguisher",
+                "home"
+              ],
+              "message": "Navigating to the microwave, then the printer, then the fire extinguisher, and finally returning home.",
+              "context_events": 0
+            },
+            {
+              "stage": "plan.reviewed",
+              "decision": "approve",
+              "message": "The proposed navigation plan accurately reflects the requested sequence of destinations: microwave, printer, fire extinguisher, and then home.",
+              "destinations": [
+                "microwave",
+                "printer",
+                "fire extinguisher",
+                "home"
+              ]
+            },
+            {
+              "stage": "arrival.verdict",
+              "matched": false,
+              "reason": "The arrival image expired during verification.",
+              "object_result": "",
+              "failure_stage": "geometry"
+            }
+          ],
+          "arrival_attempts": [
+            {
+              "attempt": 1,
+              "timestamp": 210.2,
+              "pose": {
+                "x": 1.4050124807125606,
+                "y": -1.2004783728204527,
+                "yaw": -0.8096934490858597,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "23b55dc944b568fce1a7b41b86fb5d2f2445d65f394d915d59d80fcc3326a225"
+            },
+            {
+              "attempt": 2,
+              "timestamp": 217.2,
+              "pose": {
+                "x": 1.413787755373444,
+                "y": -1.1978420134853984,
+                "yaw": -0.8291352627560643,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "eec32ada4311977018e4cd6f90a0aa40f91963c92578faa1f77283a50f6c02df"
+            },
+            {
+              "attempt": 3,
+              "timestamp": 225.0,
+              "pose": {
+                "x": 1.417911768337491,
+                "y": -1.2007915788481942,
+                "yaw": -0.8260270603345746,
+                "frame_id": "map",
+                "map_id": "office-products-v1"
+              },
+              "evidence_digest": "eec32ada4311977018e4cd6f90a0aa40f91963c92578faa1f77283a50f6c02df"
+            }
+          ],
+          "arrival_check_seconds": [
+            6.385788420000608,
+            5.054792352000732,
+            5.469718976999502
+          ],
+          "retrieval": [
+            {
+              "stage": "retrieval.candidates",
+              "channel": "object",
+              "candidates": [
+                {
+                  "object_id": "dec8f184-9bc3-5b49-9f13-a93b7af3cb12",
+                  "revision": 2,
+                  "memory_id": "9fccf5ce-3df7-590e-9ac3-59614215f616",
+                  "similarity": 0.8363873373463169,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "d669150b-0566-5159-ae39-320a029c23ee",
+                  "revision": 3,
+                  "memory_id": "9eb75509-f510-5e30-91ff-49de832dd380",
+                  "similarity": 0.6703249609082984,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "95fe1c77-3544-5ab0-b388-b04e9d906a54",
+                  "revision": 1,
+                  "memory_id": "95fe1c77-3544-5ab0-b388-b04e9d906a54",
+                  "similarity": 0.6661243042649497,
+                  "status": "present",
+                  "misses": 0
+                },
+                {
+                  "object_id": "bf8f3219-b09c-5dc0-9ffb-ec5b887b0ca5",
+                  "revision": 4,
+                  "memory_id": "93f32c37-2c53-5e95-a03f-802f2642d5f3",
+                  "similarity": 0.6472945388906645,
+                  "status": "present",
+                  "misses": 0
+                }
+              ]
+            },
+            {
+              "stage": "retrieval.eligible",
+              "channel": "object",
+              "object_ids": [
+                "dec8f184-9bc3-5b49-9f13-a93b7af3cb12"
+              ],
+              "policy": {
+                "min_similarity": 0.75,
+                "min_confidence": 0.2,
+                "max_age_s": 604800.0,
+                "same_place_radius_m": 1.0,
+                "candidates": 12,
+                "verification_candidates": 3
+              }
+            }
+          ]
+        }
+      ],
+      "http_statuses": {
+        "200": 125
+      },
+      "unknown_cost_requests": 0,
+      "evidence_sha256": {
+        "simulation/artifacts/products-20260922/microwave-first/results/learned-fire-extinguisher.png": "21f2c8df64e5cb2ceba132d07833034b2bf54c29eec1d926a4672241029d6e0a",
+        "simulation/artifacts/products-20260922/microwave-first/results/learned-microwave.png": "b7e32f75148a968d63a464f5301b0d239ffc5003ec848d1c457808882f8f6e2a",
+        "simulation/artifacts/products-20260922/microwave-first/results/learned-printer.png": "74d3e5fd204ce97571167110a5b1505f11a908eadd2e7471e67d6d74472df059",
+        "simulation/artifacts/products-20260922/microwave-first/results/microwave_first.json": "eb94f2694488ed416fd57210365115edd5c2818baf9d93d855103273cbcbaa30",
+        "simulation/artifacts/products-20260922/microwave-first/results/places.json": "9ddbace4a4e5e66771f6042b01c709b727f71db2866edf113678a2d56a3b5d5c",
+        "simulation/artifacts/products-20260922/microwave-first/results/provider-requests.jsonl": "e8d68ca32e9c8fae45793781b0dc66beaaca6417a6d32170048c3b499a333adc",
+        "simulation/artifacts/products-20260922/microwave-first/results/report.json": "69fbea061b307d1bd401a127dfbbd9a6d10566be498c8d21db8a6c13ce60b9a6",
+        "simulation/artifacts/products-20260922/microwave-first/results/trace.json": "0c9992a33063d360e9d0fe5b376b49873f4fdb02a386d3c9853604e0d5547c59"
+      }
+    }
+  ],
+  "limitations": [
+    "Authored scene, three visually distinct products and guided learning; no claim of general recognition accuracy or hardware readiness.",
+    "Original and explicitly clarified inputs are separate conditions.",
+    "Later legs are untested when an earlier leg blocks the chain.",
+    "Identity margin failure is recorded, but exact rival similarity scores are not retained in current runtime traces.",
+    "Provider reported cost does not cap unknown or in-flight charges."
+  ],
+  "provider_totals": {
+    "requests": 415,
+    "reported_cost_usd": 0.12275958000000001,
+    "http_statuses": {
+      "200": 415
+    },
+    "unknown_cost_requests": 0
+  },
+  "packaged_sources": {
+    "src/placecell/pipeline.py": "69210df11bc30e0f89896f552ac143d57a417fee3f8535efe99eb19ffeb5deac",
+    "src/placecell/tracing.py": "1c0311e129aa01a41ac90369ab4a77657bcc3d2d32e23ea91ffbdf7352d22ab0",
+    "src/placecell/object_arrival.py": "69d5721bd0b936a7a5ee291c46a1d9f620c3f85543ccb3f4974f17f12ec89900",
+    "src/placecell/localization.py": "8f4efeba5e379b5bd19e44b3f91d7f5521554d33c4e742538673f794df44c3ae",
+    "src/placecell/trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+    "src/placecell/errors.py": "2c70ef137fc35959f229b3c8d8b562eb570e77203ec17c90f51c55c4c02387f2",
+    "src/placecell/speech.py": "a4e80bb56a3ed7f01341b45798f9bf558ff2ebf0c532da7a1594918b136830e1",
+    "src/placecell/objects.py": "5a672cb9f560db3b7942a6799fc13e6e90ade25efea2834bd4d3fdb51b55b2e2",
+    "src/placecell/agent.py": "eb9af5659ac3a4d878807d5bb0220af51c6602b565d80c9e068a3a1c9af85799",
+    "src/placecell/command_identity.py": "8995ac9e64a99d810e6b3e1c3d91420b6c211a5e5b27f40f5ea66db9e4cc5633",
+    "src/placecell/navigation.py": "917f61d3504f90764f33daaad77d3e42221aed37476e493998d08019fa1944d0",
+    "src/placecell/fault_injection.py": "25f3b6c600f9c6d21978041940eb878b1b1e0dc80accbf8e09aaad5e701ae00b",
+    "src/placecell/recordings.py": "52ff54579bd16151c1c373c9a58d29ac806e44346a134ceaf3c29e1957b64522",
+    "src/placecell/evaluation.py": "dcd8e4e80cb1dc588ad31ecf5256465827fa901e3622920f64e5417cff711ee3",
+    "src/placecell/migrate.py": "46d1e4eff55bbb9ad5dcb00e1f5d55a2019c2610a85ec5ab8aed820c30ad535d",
+    "src/placecell/object_search.py": "7d970c0783d36f245a9218c952194a687d1e30711661ee10aa9d11fb7fe70286",
+    "src/placecell/operator.py": "178fdef134e71c20508d4f799b00e5c599587264d384d6502682f5f3ae71e515",
+    "src/placecell/depth.py": "0b04319e7d5663998972b1ac4654fb74eff942769ffd2a212084782fa8570db8",
+    "src/placecell/missions.py": "71df0059e1c24e07a865c30fee1027cec85d98977a8f6f37e707ed13eeb9365e",
+    "src/placecell/retrieval.py": "215ebccf4cfab9f055302a3c6975f840eb58d3d98090452c6dc3e2f8c2a6bdbf",
+    "src/placecell/object_evaluation.py": "374a99700563884cae9e231bb715227b43915ef4a6ac9fa06b0b4e9b26822179",
+    "src/placecell/mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+    "src/placecell/corrections.py": "11e6b2714cc22165c4dd951ed59304c7e20105b4821d7b22c52d081f4cdf98a1",
+    "src/placecell/memory.py": "307835ebe01216073063864d76cdf3c711c43afad0cb7784b9d9586d6451cd04",
+    "src/placecell/lifecycle.py": "940b76b672ba864906df126810f9c0914c8c293269330837e20674b0afee7bea",
+    "src/placecell/mission_context.py": "044d45cc2fc6d7f17c13f12ce2ae1b6dcc2c51fcb3f9be8fd1a44cc7296f474c",
+    "src/placecell/chat.py": "e85e28f43263a6fcbdac8d669b830d246529aacec5d79f83545923653df6db97",
+    "src/placecell/refinement.py": "8c814c06b9f951ac52e590b332545a3f0762bf8560eec87a55aecaf5d79d3142",
+    "src/placecell/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/placecell/object_types.py": "1f0100479bbb9bb8692e34a322a0859a05821a777697908d9cec4b1572282404",
+    "src/placecell/approach.py": "b19aa2a01b11dcda99094f9265ebbb849519010675034a8d3ba03e6b93f21933",
+    "src/placecell/observer.py": "6e3669b09583eb40d51ce0d79c7008c220809cf6dafd48e78f85da24cf0b2e2a",
+    "src/placecell/consolidation.py": "23033a699a82933fbc38ca57b6681d74498dbe9300a1d013facdc78940bffcb6",
+    "src/placecell/verification.py": "a1a1177085ed5aff66a74cabe2ab57a1d7b36ddeeca73c64a5ec24763a26be8c",
+    "src/placecell/sensors.py": "16b27b4b6029a8407f5f1098476b9cd4f4c716f889737efc820adc3f91a1013a",
+    "src/placecell/__init__.py": "c6508e702c386c6ea34350cbe89a90cea0540ef638f88b96bdc96d1421bba048",
+    "src/placecell/ros2/speech.py": "8d36d5dd7b9c80035ae980102cc4597d7c81a7fcf93f99284c9a71119a394b3f",
+    "src/placecell/ros2/navigation.py": "00605f572a63a89e64727dccb18533e92184c12288aa3330e6a6f83c3a9e6fb2",
+    "src/placecell/ros2/operator.py": "97343dd2d9c5a6a2653bc9ddb1477b88c442de543b2a4b0096722786b044fdb6",
+    "src/placecell/ros2/depth.py": "a09eb1a1de3545dc97c0466f7a29e058e1dedc946dbc2fd4ebe0acb55d49bea7",
+    "src/placecell/ros2/bridge.py": "9b95c15d197c570c37f4bdb08ad88863e840b7ac369566d4ef836d69e8ab9734",
+    "src/placecell/ros2/approach.py": "580c3afec4e1d53411f647794b8f59c0ddfe425c274040aa4b3e083d5ae11afa",
+    "src/placecell/ros2/node.py": "3364a00ac01eed02c9fcce888a353f31b37728469697f5887fe594c0899474e1",
+    "src/placecell/ros2/__init__.py": "940365c14b76882518d9a28665cbc1d8c9b8ea899aabfc14a8db3c33f15f8db1",
+    "src/placecell/sources/video.py": "4769ad5ce3cf3668de1b3aa6e98e080ba872691a386875096da25bbe9433652f",
+    "src/placecell/sources/pose_log.py": "7386c8a53f10ac52c6d37ddbc7100f1e3cea9a8972ecba8bc405c8e17e4b16b0",
+    "src/placecell/sources/__init__.py": "c47d4e85dec0f6b068ead36c31e842a27b21609fb6450b2e2ea3252f921bb613",
+    "src/placecell/store/codec.py": "2f2c647ffcd07909c35b9a43081d594ebff367de19869d28ef7e8882b923c108",
+    "src/placecell/store/objects.py": "445feb8b36aba3c7f362bc0bbaed2f1c3f095d365d3af7217fd697b0c06628ee",
+    "src/placecell/store/base.py": "0751bcb6cdd5973431ee9d0506ed9e0050b2dc28f02e80341dbfb4b357b56a2b",
+    "src/placecell/store/jobs.py": "f0a1137b6919f53305429911595137ced10d9c8c2058c0800dc3f7c64c58f22e",
+    "src/placecell/store/lancedb_store.py": "eeda440e40d3d353f96de071c5cb73ca2976ed6adce97320827a4f83557bd9b2",
+    "src/placecell/store/refinements.py": "3f78bccbf0d1ae9d72477fe770c5e154ce0a956b9bc9b576467ad396e7de32e8",
+    "src/placecell/store/state.py": "f32294e839ff74ed306355e4b4c6d76e0ed75dee61a13ee026978fa8b579acc7",
+    "src/placecell/store/__init__.py": "226f74ed34c4b6ef38462f4f710e4b2fc4629a562fd2fc1bd5dcf40ea63f5971",
+    "src/placecell/store/in_memory.py": "928a5f85939a0950ed9ffd671c8cd5c62dcdb8d79004b70721cf1095b14c82f9",
+    "src/placecell/providers/hashing.py": "e798dad790d74c76732169f84f27e89d27ae2881f8ca57e2d442b71e75572f71",
+    "src/placecell/providers/captioning.py": "2f88e77113bb716ee79ee3ced1384e8fa93afb563f117fb1d652b53a5b0e9330",
+    "src/placecell/providers/_contracts.py": "89abc7f69c8464dc1b9b0193a22bdc140171991fcae1426e118a79351806293b",
+    "src/placecell/providers/base.py": "85e63d710fcb861876c3f1f73c5c5923afdb2dae78f72f7dc8f03e67a1688bca",
+    "src/placecell/providers/gemini.py": "7b612e927131d2e97721686dcc8956b53d78e566eabb15faaaac316f81cf54ea",
+    "src/placecell/providers/embedding.py": "1d49e3419c83ec5ec9a6e022b4fb630a2be456860cdd624af93c50ccee8cc1a8",
+    "src/placecell/providers/_http.py": "9985cbca3ae09afd0247b9aafe028102ce5be02061c0503d85aa663067fa5557",
+    "src/placecell/providers/object_detection.py": "bfb3385ee36002b115497205105c4f334067ee527033d69d355dbd41d65a385e",
+    "src/placecell/providers/clip.py": "4af556a1b0f808bbf15323e3c79a1a1b4c743dba5ccdf759f7df62f6f0f81e1d",
+    "src/placecell/providers/openrouter.py": "333319f1b4aaaef099a5f32b5b59dd5ac5102123ad02191b208902bc06742757",
+    "src/placecell/providers/chat.py": "d7146232047b4fb88bcf89f9f16e4c0cb253ae09a004bb633a0609c3ec71f4d2",
+    "src/placecell/providers/openai_compatible.py": "89900bd84cf77e7fcc39bbc9ad3b460faf94f34f2ec86c70f0f95fcbb7a6a437",
+    "src/placecell/providers/__init__.py": "a8c6d4daa5119f3b92fa6b8833152143b122ef43df459bb780a54872bfc56b9d",
+    "simulation/Dockerfile.dockerignore": "9b97ed968819bbd42d2bef47513416eac1c38a19eb7284fd8feb1484790a1529",
+    "simulation/Dockerfile": "1227d659db99931e98c6632c20226438a807faee7ef469851670ff2f27309452",
+    "simulation/compose.yaml": "7d635d7f2ba28e7925d6457691946fa767c956623f59cf39c3f7b83c4ee64b9d",
+    "simulation/compose.gui.yaml": "eae86ce09d57c8557351113bb0711ac2b05e7eb7c0fff1b1b912c33839a2f342",
+    "simulation/entrypoint.sh": "fb65372518eb7542469b94c84280adc7b3e6d1edf6515a9ff4ce334aaf2d36ed",
+    "simulation/sim": "24877b4f6748da6f18c7f0e1f7255d349c5369d413f62ec070de03a29d4e8dcb",
+    "simulation/scripts/make_map.py": "a0fd2858b26d5b7cc684bebaeac912ab21bc7344126ecdf574bcaddbb13b9a72",
+    "simulation/scripts/checkpoint_fixtures.py": "c6ceed7895c7c2a934c8b6d839c64d672187ee132783f5dabbee1e3096bc2230",
+    "simulation/scripts/command_demo.py": "af6d3b51af0d25cc142e12fa3e8acb4e9a8c457e52968a5993151ef267283fc5",
+    "simulation/scripts/pipeline_test.py": "e35ac9d9831b132a1ba6b776e85f6f1089cf3814f8f69b9561b452b9ed3d7aa5",
+    "simulation/scripts/control.py": "5beaccece54964dcf999280422e05d04bb6435f23462a9d82506312ee06dd55a",
+    "simulation/scripts/operator_test.py": "00cab32a3d4d261317f564d6de7954bbbe694af0b12fbb80a8777dabafe130ac",
+    "simulation/scripts/make_robot_mesh.py": "1d9cbf4f274c794f953b516660e02ad61e5fd3c2ffe1f7fc57581f351ebf7ef9",
+    "simulation/scripts/checkpoint_control.py": "83a058f43219bc0e1464b173f5a6f9d89b31a74273c452cc97ae8272370f7029",
+    "simulation/scripts/command_guard.py": "cc18334d56d2170b50745559609ed4544a432c418ed039480d5d75321611de8a",
+    "simulation/scripts/localization_updates.py": "7555947afe4eb10be0a05dc901c603044223c6b2ca55cabba14791f102bf25a6",
+    "simulation/scripts/checkpoint_live.py": "68ab2bbddf77da0362d7fb54e2de4bdecdd584288960f25439e7aa7a021e646b",
+    "simulation/scripts/cancellation_test.py": "8baf3fb7b2e4ae9194899a54c3b75962c95672520ee886cca4e22dae03b7b5fe",
+    "simulation/scripts/smoke_test.py": "41ec7742eaae425883ce27b9425a592f96b07de0a315d63a4ca4395a9d7fc331",
+    "simulation/scripts/checkpoint_sync.py": "fc2f5e910d31373b4f5468a785b2b31e1cbd466c6ff2841cbc1d40d7ac3f7050",
+    "simulation/scripts/sensor_test.py": "f4a8e1134a7a6470f3d01652d7bea1001fc8aea3926b0197b91906363ef145f4",
+    "simulation/scripts/video_recorder.py": "ff259c2fad14a7298afe429529a95308dd86ac817f0499e4896c53c688831c44",
+    "simulation/scripts/product_missions.py": "597c762cc10c90009802b6439e4dab90ee70ecf96ae0d7fc877b4607b03c33ea",
+    "simulation/scripts/product_scene.py": "d09515eed873bd7d1e08b497f479162f444525b24c8153a1a53b841ee82bf167",
+    "simulation/scripts/run_product_missions.py": "6b77e5be18a2ae94c4c48fe592298a50e1c7d709bd68c7a119012e5d7a387f6a",
+    "simulation/config/placecell.yaml": "35b516831cb80fc2f078718ea48f2723ab4500e4f12252aebcef7238c0b0c753",
+    "simulation/config/nav2.yaml": "afd9aaf573a8631a285295e729bb0e616c28b707b562a4e2619ad4ffd658f9eb",
+    "simulation/config/bridge.yaml": "0d49a974734d19b4c0085e42eefa1c236fae98a300b13720c4b476ce0af6163b",
+    "simulation/config/missions.yaml": "5a21609d5d81be90f15933827262e09696bbed1e69d7ccc7abacd315f5bee9f2",
+    "simulation/worlds/office.sdf": "59e3e52e1a2b61a4af13346f387f4da69490df808d3400c18b4de396ab41aae9",
+    "simulation/launch/navigation.launch.py": "55e74b4627d674fa20a85573f76376bc3f3e3f710d2e15d7eda1767b51c62455",
+    "simulation/launch/office.launch.py": "ee7de5303aa1a210f9a262643cf4e091512b9249ec4d41df6b7f488e027b1629",
+    "simulation/models/robot/robot.urdf.xacro": "f81a53f71b49622817f222e006c791225e6bbd0af950fe2948092bc32a3ba96f",
+    "simulation/models/robot/meshes/rounded_box.dae": "a255a7aeb1e96f18e85edd06666a0c3b6155b7b86f84adc01013b661c3c1536c"
+  },
+  "packaged_source_mismatches": [],
+  "cleanup": {
+    "private_credential_removed": true,
+    "task_containers_remaining": [],
+    "secret_scan_files": 405,
+    "secret_scan_matches": []
+  }
+}

@@ -50,6 +50,7 @@ class ObjectJournal:
             );
             CREATE INDEX IF NOT EXISTS object_event_owner ON object_events(object_id,sequence DESC);
             INSERT OR IGNORE INTO settings VALUES ('objects_generation','0');
+            INSERT OR IGNORE INTO settings VALUES ('objects_evidence_generation','0');
         """)
 
     @property
@@ -57,8 +58,20 @@ class ObjectJournal:
         with self._transaction():
             return int(self._conn.execute("SELECT value FROM settings WHERE key='objects_generation'").fetchone()[0])
 
-    def _changed(self) -> None:
+    @property
+    def evidence_generation(self) -> int:
+        """Changes to identities or views, excluding scan scheduling metadata."""
+        with self._transaction():
+            return int(self._conn.execute(
+                "SELECT value FROM settings WHERE key='objects_evidence_generation'"
+            ).fetchone()[0])
+
+    def _changed(self, *, evidence: bool = True) -> None:
         self._conn.execute("UPDATE settings SET value=CAST(value AS INTEGER)+1 WHERE key='objects_generation'")
+        if evidence:
+            self._conn.execute(
+                "UPDATE settings SET value=CAST(value AS INTEGER)+1 WHERE key='objects_evidence_generation'"
+            )
 
     def scan_time(self, scope: str) -> float | None:
         with self._transaction():
@@ -76,7 +89,7 @@ class ObjectJournal:
     def record_scan(self, scope: str, timestamp: float) -> None:
         with self._transaction():
             self._conn.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", ("object_scan:" + scope, str(timestamp)))
-            self._changed()
+            self._changed(evidence=False)
 
     def iter_records(self) -> Iterator[ObjectRecord]:
         after = ""

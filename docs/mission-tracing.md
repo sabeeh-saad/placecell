@@ -71,7 +71,8 @@ The timeline includes:
   metadata, image digests when available, and the arrival verdict. Image bytes, vectors
   and HTTP request/response bodies are not copied into the trace.
 - Nav2 submission attempts, acceptance/rejection, cancellation requests and acknowledgements,
-  action results, transport events and all mission status updates. Acknowledgement is
+  action results, transport events and mission status transitions. Distance-only progress
+  is sampled and may be coalesced. Acknowledgement is
   distinct from a terminal result. Shutdown's unrelated `idle` broadcast does not replace
   the recorded outcome of a completed mission.
 - Instrumented HTTP request durations, attempt counts, model name when supplied in the
@@ -119,9 +120,19 @@ additional disk space. The exporter loads the retained snapshot into memory.
 Retention removes the oldest events, including parts of old or long-running missions.
 Texts and collections have field limits; oversized events are replaced by an omission
 marker using a 16 KiB size guard. Truncation is marked on the event and in health counters.
-Queue overflow drops diagnostic events instead of delaying cancellation. Exports show
-global dropped, write-error, trimmed, truncated and unclean-shutdown counters. Nonzero
-counters apply to the database history, not necessarily only the selected mission.
+Nav2 distance feedback is forwarded at most once per 0.2 seconds per trip. Acceptance,
+cancellation and terminal results bypass that limiter. Pending distance-only events
+coalesce by mission, request, step and stage, without crossing a flush barrier. When the
+queue is full, a critical event can displace queued progress. Critical events and flush
+barriers are never displaced by progress. If the queue contains only critical work,
+overflow still drops diagnostics instead of blocking cancellation.
+
+Exports show global dropped, write-error, trimmed, truncated and unclean-shutdown counters,
+plus `coalesced_events` and `dropped_critical_events`. Deliberate coalescing is reported in
+health but excluded from `loss_counters_nonzero`; evicted progress counts as dropped.
+Zero critical drops does not guarantee completeness if writes failed or retention trimmed
+events. Nonzero counters apply to the database history, not necessarily only the selected
+mission.
 
 `capture_status: open_or_unclean` means the writer is still open or did not record a clean
 shutdown; it does not alone prove a crash. On reopening, a previous open session increments

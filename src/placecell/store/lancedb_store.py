@@ -48,7 +48,7 @@ class LanceDBStore(StateStore):
                     f"not {info.model!r}/{info.dimension}"
                 )
             self._table = self._db.open_table(info.name)
-            if stored.schema_version in (2, 3, 4, 5, 6, 7) and info.schema_version == SCHEMA_VERSION:
+            if stored.schema_version in (2, 3, 4, 5, 6, 7, 8) and info.schema_version == SCHEMA_VERSION:
                 if stored.schema_version == 2:
                     self._upgrade_sightings()
                 else:

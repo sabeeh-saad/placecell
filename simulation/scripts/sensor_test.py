@@ -14,7 +14,7 @@ import yaml
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
@@ -24,7 +24,7 @@ from placecell import Destination, Memory, NavigationEvent, Pose
 from placecell.navigation import Resolution
 from placecell.providers import HashingEmbedder
 from placecell.providers.base import Capabilities
-from placecell.ros2.node import create_node
+from placecell.ros2.node import IngestWorker, create_node
 
 
 class Navigator:
@@ -52,11 +52,12 @@ class Check:
         self.localization = self.probe.create_publisher(
             PoseWithCovarianceStamped, "/amcl_pose", qos_profile_sensor_data
         )
-        self.rgb = self.probe.create_publisher(Image, "/camera/color/image_raw", qos_profile_sensor_data)
+        image_qos = QoSProfile(depth=8, reliability=ReliabilityPolicy.RELIABLE)
+        self.rgb = self.probe.create_publisher(Image, "/camera/color/image_raw", image_qos)
         self.depth = self.probe.create_publisher(
-            Image, "/camera/aligned_depth_to_color/image_raw", qos_profile_sensor_data
+            Image, "/camera/aligned_depth_to_color/image_raw", image_qos
         )
-        self.info = self.probe.create_publisher(CameraInfo, "/camera/color/camera_info", qos_profile_sensor_data)
+        self.info = self.probe.create_publisher(CameraInfo, "/camera/color/camera_info", image_qos)
         self.command = self.probe.create_publisher(String, "/placecell/command", 1)
         self.tf = TransformBroadcaster(self.probe)
         self.checks, self.captures, self.tasks = [], [], []
@@ -72,6 +73,7 @@ class Check:
         self.goal = Destination("fixture", Pose(0, 0, map_id="test-v1"), "named_place")
         self.commands._resolver.resolve = lambda _: Resolution("resolved", "Scripted fixture", (self.goal,))
         self.commands._resolver.current = lambda _: True
+        self.commands._resolver.arrival_available = lambda *_: True
         self.commands._resolver.prepare_destination = lambda d, _: d
         self.commands._resolver.verify = lambda *_: (_ for _ in ()).throw(AssertionError("unexpected model call"))
         self.until(
@@ -242,6 +244,22 @@ class Check:
         assert len(self.captures) == count and not self.node._sensors.ready(camera=True)
         self.passed("malformed RGB cannot refresh camera trust")
         self.frame()
+        self.goal = replace(self.goal, object_id="object")
+        self.start()
+        self.nav.sent[-1][2](NavigationEvent("succeeded"))
+        assert self.commands.needs_observation
+        submit = self.node._worker.submit
+        self.node._worker.has_capacity = lambda: False
+        self.node._worker.submit = lambda obs: IngestWorker.submit(self.node._worker, obs)
+        self.frame()
+        assert self.commands.snapshot().status.state == "verifying_arrival" and len(self.tasks) == 1
+        self.commands.cancel()
+        self.tasks.pop()()  # Queued verification cannot revive the canceled request.
+        assert not self.commands.busy
+        self.node._worker.has_capacity = lambda: True
+        self.node._worker.submit = submit
+        self.passed("full ingestion queue still admits a fresh object arrival capture")
+
         self.goal = Destination("fixture", memory.pose, "named_place")
         self.start()
         self.set_time(self.seconds + 1)

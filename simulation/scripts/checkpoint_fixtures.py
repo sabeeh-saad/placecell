@@ -15,7 +15,7 @@ from PIL import Image
 
 from placecell import ChatReply, ToolCall
 from placecell.depth import Box
-from placecell.object_types import Detection
+from placecell.object_types import ArrivalComparison, Detection
 from placecell.providers.base import Capabilities
 from placecell.verification import SceneVerdict
 
@@ -35,7 +35,9 @@ def displays(array):
     r, g, b = array[:, :, 0], array[:, :, 1], array[:, :, 2]
     mask = ((b > r + 18) & (b > g + 7) & (g > r + 10)).astype(np.uint8)
     count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
-    return [tuple(map(int, row[:4])) for row in stats[1:count] if 4 <= row[4] <= 2200 and row[2] >= 3]
+    # JPEG chroma artifacts can form tiny blue components beside the desk. They are
+    # not resolvable displays. Keep the same threshold for detection and comparison.
+    return [tuple(map(int, row[:4])) for row in stats[1:count] if 24 <= row[4] <= 2200 and row[2] >= 6 and row[3] >= 3]
 
 
 class PixelFixture:
@@ -87,6 +89,12 @@ class DetectorFixture:
     def compare(self, references, candidate):
         matched = bool(displays(pixels(candidate))) and any(displays(pixels(reference)) for reference in references)
         return SceneVerdict("matched" if matched else "uncertain", "Deterministic blue-display fixture comparison")
+
+    def compare_arrival(self, references, candidates, image, target):
+        """Exercise the combined comparison without hosted calls or simulator labels."""
+        return ArrivalComparison(
+            0, self.compare(references, candidates[0]), VisionFixture().verify(target, candidates[0])
+        )
 
 
 class CaptionFixture:

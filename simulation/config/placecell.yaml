@@ -8,6 +8,8 @@ placecell:
     # Software rendering can deliver the matching depth callback after RGB.
     # Wait longer without accepting a different capture timestamp.
     rgbd_wait_s: 1.0
+    # Reliable camera streams avoid losing one half of a large RGB-D capture.
+    rgbd_reliable: true
     localization_required: true
     # Source and monotonic receipt age for validated RGB/TF and aligned depth.
     sensor_max_age_s: 5.0
@@ -21,7 +23,7 @@ placecell:
     object_backend: chat
     object_base_url: https://openrouter.ai/api/v1
     object_api_key_env: OPENROUTER_API_KEY
-    object_model: google/gemini-2.5-flash
+    object_model: google/gemini-3.1-flash-lite
     objects_enabled: true
     approach_enabled: true
     approach_clearance_m: 0.8
