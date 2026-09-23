@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import AbstractContextManager
 from dataclasses import asdict
 from typing import Any
@@ -17,7 +17,7 @@ import numpy as np
 
 from placecell.depth import Box, ObjectPosition
 from placecell.errors import ValidationError
-from placecell.memory import Vector
+from placecell.memory import Evidence, EvidenceKind, Vector
 from placecell.object_types import ObjectEvent, ObjectRecord, ObjectView
 from placecell.store.codec import from_row, to_row
 
@@ -29,7 +29,9 @@ class ObjectJournal:
         transaction: Callable[[], AbstractContextManager[None]],
         model: str,
         dimension: int,
+        cleanup: Callable[[Iterable[Evidence]], None],
     ) -> None:
+        self._cleanup = cleanup
         self._conn, self._transaction = connection, transaction
         self._model, self._dimension = model, dimension
         self._conn.executescript("""
@@ -50,6 +52,7 @@ class ObjectJournal:
             );
             CREATE INDEX IF NOT EXISTS object_event_owner ON object_events(object_id,sequence DESC);
             INSERT OR IGNORE INTO settings VALUES ('objects_generation','0');
+            INSERT OR IGNORE INTO settings VALUES ('objects_evidence_generation','0');
         """)
 
     @property
@@ -57,8 +60,20 @@ class ObjectJournal:
         with self._transaction():
             return int(self._conn.execute("SELECT value FROM settings WHERE key='objects_generation'").fetchone()[0])
 
-    def _changed(self) -> None:
+    @property
+    def evidence_generation(self) -> int:
+        """Changes to identities or views, excluding scan scheduling metadata."""
+        with self._transaction():
+            return int(
+                self._conn.execute("SELECT value FROM settings WHERE key='objects_evidence_generation'").fetchone()[0]
+            )
+
+    def _changed(self, *, evidence: bool = True) -> None:
         self._conn.execute("UPDATE settings SET value=CAST(value AS INTEGER)+1 WHERE key='objects_generation'")
+        if evidence:
+            self._conn.execute(
+                "UPDATE settings SET value=CAST(value AS INTEGER)+1 WHERE key='objects_evidence_generation'"
+            )
 
     def scan_time(self, scope: str) -> float | None:
         with self._transaction():
@@ -76,7 +91,7 @@ class ObjectJournal:
     def record_scan(self, scope: str, timestamp: float) -> None:
         with self._transaction():
             self._conn.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", ("object_scan:" + scope, str(timestamp)))
-            self._changed()
+            self._changed(evidence=False)
 
     def iter_records(self) -> Iterator[ObjectRecord]:
         after = ""
@@ -255,20 +270,16 @@ class ObjectJournal:
         for row in rows:
             data: dict[str, Any] = json.loads(row["payload"])
             if data["evidence_managed"]:
-                self._conn.execute(
-                    "INSERT OR IGNORE INTO cleanup VALUES (?,?)",
-                    (
-                        row["uri"],
-                        json.dumps(
-                            {
-                                "kind": data["evidence_kind"],
-                                "uri": data["evidence_uri"],
-                                "digest": data["evidence_digest"],
-                                "duration_s": data["evidence_duration"],
-                                "managed": True,
-                            }
-                        ),
-                    ),
+                self._cleanup(
+                    [
+                        Evidence(
+                            EvidenceKind(data["evidence_kind"]),
+                            data["evidence_uri"],
+                            data["evidence_digest"],
+                            data["evidence_duration"],
+                            managed=True,
+                        )
+                    ]
                 )
 
     def delete(self, identity: str) -> bool:

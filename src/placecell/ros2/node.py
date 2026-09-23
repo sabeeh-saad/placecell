@@ -21,17 +21,17 @@ from typing import Any
 
 from placecell.agent import Agent
 from placecell.approach import ApproachPlanner, ApproachPolicy
+from placecell.command_identity import CommandJournal, CommandScope
 from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.depth import DepthSnapshot
 from placecell.errors import PlacecellError, ValidationError
-from placecell.lifecycle import Curator, remove_local_file
+from placecell.lifecycle import Curator, RetentionPolicy, remove_local_file
 from placecell.localization import LocalizationGate, LocalizationPolicy
 from placecell.memory import Pose
 from placecell.mission_context import MissionContext
 from placecell.missions import MissionPlanner, PlanReviewAgent
 from placecell.navigation import (
-    Destination,
     DestinationResolver,
     NavigationCommands,
     NavigationPolicy,
@@ -42,6 +42,7 @@ from placecell.object_arrival import ObjectArrivalPolicy, ObjectArrivalVerifier
 from placecell.object_search import ObjectSearch, ObjectSearchPolicy
 from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
 from placecell.observer import Observer
+from placecell.operator import navigation_payload as navigation_payload
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
 from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
 from placecell.recordings import RecordingWriter
@@ -50,13 +51,19 @@ from placecell.retrieval import Recall
 from placecell.ros2.bridge import (
     KeyframeWriter,
     ObservationBuilder,
+    image_dimensions,
     pose_from_transform,
     stamp_to_seconds,
     update_localization,
 )
 from placecell.ros2.depth import PendingImages, aligned_snapshot
-from placecell.ros2.navigation import Nav2Navigator, create_navigator
+from placecell.ros2.navigation import Nav2Navigator, create_navigation_timers, create_navigator
+from placecell.ros2.operator import OperatorInterface
+from placecell.sensors import SensorHealth
 from placecell.store import CollectionInfo, VectorStore
+from placecell.store.base import EVERYTHING
+from placecell.store.limits import StoreLimits
+from placecell.tracing import TraceStore
 from placecell.verification import VisionVerifier
 
 
@@ -118,15 +125,17 @@ def build_embedder(
     )
 
 
-def build_store(db_path: str, collection: str, embedder: EmbeddingProvider) -> VectorStore:
+def build_store(
+    db_path: str, collection: str, embedder: EmbeddingProvider, *, limits: StoreLimits | None = None
+) -> VectorStore:
     info = CollectionInfo(collection, embedder.model_name, embedder.dimension)
     if not db_path:
         from placecell.store import InMemoryStore
 
-        return InMemoryStore(info)
+        return InMemoryStore(info, limits=limits)
     from placecell.store.lancedb_store import LanceDBStore
 
-    return LanceDBStore(Path(db_path).expanduser(), info)
+    return LanceDBStore(Path(db_path).expanduser(), info, limits=limits)
 
 
 def build_mission_planner(parameters: dict[str, Any], api_key: str | None) -> MissionPlanner | None:
@@ -154,6 +163,19 @@ def build_mission_planner(parameters: dict[str, Any], api_key: str | None) -> Mi
     return MissionPlanner(planner, PlanReviewAgent(reviewer), max_destinations=parameters["mission_max_destinations"])
 
 
+def build_trace_store(parameters: dict[str, Any]) -> TraceStore | None:
+    path = parameters["mission_trace_path"]
+    if not path:
+        return None
+    return TraceStore(
+        path,
+        max_events=parameters["mission_trace_max_events"],
+        max_bytes=parameters["mission_trace_max_bytes"],
+        queue_size=parameters["mission_trace_queue_size"],
+        secrets=[os.environ.get(value, "") for key, value in parameters.items() if key.endswith("api_key_env")],
+    )
+
+
 def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[Any]) -> str:
     return json.dumps(
         {
@@ -177,46 +199,6 @@ def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[
                 }
                 for r in evidence
             ],
-        }
-    )
-
-
-def navigation_payload(update: NavigationUpdate) -> str:
-    def describe(destination: Destination) -> dict[str, Any]:
-        p = destination.pose
-        return {
-            "label": destination.label,
-            "source": destination.source,
-            "memory_id": destination.memory.id if destination.memory else None,
-            "object_id": destination.object_id,
-            "goal_kind": (
-                "object_search"
-                if destination.approach and destination.approach.region
-                else "object_approach"
-                if destination.approach
-                else "destination"
-            ),
-            "target": destination.target,
-            "x": p.x,
-            "y": p.y,
-            "yaw": p.yaw,
-            "frame_id": p.frame_id,
-            "map_id": p.map_id,
-        }
-
-    return json.dumps(
-        {
-            "request_id": update.request_id,
-            "state": update.state,
-            "message": update.message,
-            "destination": describe(update.destination) if update.destination else None,
-            "choices": [{"option": i, **describe(d)} for i, d in enumerate(update.choices, 1)],
-            "distance_remaining": update.distance_remaining,
-            "object_result": update.object_result,
-            "search_attempt": update.search_attempt,
-            "mission_id": update.mission_id,
-            "mission_step": update.mission_step,
-            "mission_destinations": list(update.mission_destinations),
         }
     )
 
@@ -349,11 +331,12 @@ class BoundedTasks:
         return all(not thread.is_alive() for thread in self._threads)
 
 
-def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a ROS 2 environment
-    import rclpy
+def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
     from geometry_msgs.msg import PoseWithCovarianceStamped
+    from rclpy.clock import Clock, ClockType, JumpThreshold
+    from rclpy.duration import Duration
     from rclpy.node import Node
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
     from sensor_msgs.msg import CameraInfo, CompressedImage, Image
     from std_msgs.msg import String
     from tf2_ros import Buffer, TransformException, TransformListener
@@ -382,7 +365,17 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 batch_size=p["embed_batch_size"],
                 cache_folder=p["embed_cache_folder"],
             )
-            store = build_store(p["db_path"], p["collection"], embedder)
+            store = build_store(
+                p["db_path"],
+                p["collection"],
+                embedder,
+                limits=StoreLimits(
+                    p["memory_max_records"],
+                    p["memory_max_sightings"],
+                    p["refine_max_pending"],
+                    p["cleanup_max_pending"],
+                ),
+            )
             captioner: Captioner | None = None
             if p["caption_model"]:
                 from placecell.providers import OpenAICompatibleCaptioner
@@ -404,6 +397,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 max_views=p["object_max_views"],
                 retention_s=p["object_retention_s"],
                 min_interval_s=p["object_min_interval_s"],
+                require_position=bool(p["depth_topic"]),
             )
             self._object_recall: ObjectRecall | None = None
             tracker = None
@@ -423,7 +417,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             ingester = Ingester(
                 embedder, store, captioner, segmenter, batch_size=p["batch_size"], observer=observer, objects=tracker
             )
-            self._corrections = JsonlCorrectionLog(Path(p["corrections_path"]).expanduser())
+            self._corrections = JsonlCorrectionLog(
+                Path(p["corrections_path"]).expanduser(),
+                max_records=p["correction_max_records"],
+                max_bytes=p["correction_max_bytes"],
+            )
             self._recall = Recall(store, embedder, corrections=self._corrections, clock=self._memory_time)
             self._agent: Agent | None = None
             self._consolidator: Consolidator | None = None
@@ -463,7 +461,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._questions = BoundedTasks(p["question_workers"], p["question_queue"], self.get_logger())
             self._maintenance = BoundedTasks(1, 1, self.get_logger())
             self._curator = Curator(
-                store, corrections=self._corrections, remover=remove_local_file, clock=self._memory_time
+                store,
+                RetentionPolicy(max_idle_s=p["memory_max_idle_s"], history_age_s=p["memory_history_age_s"]),
+                corrections=self._corrections,
+                remover=remove_local_file,
+                clock=self._memory_time,
             )
             writer = KeyframeWriter(Path(p["keyframe_dir"]).expanduser())
             writer.recover_pending(store)
@@ -473,6 +475,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._recording = RecordingWriter(p["recording_dir"]) if p["recording_dir"] else None
             self._map_frame, self._base_frame, self._map_id = p["map_frame"], p["base_frame"], p["map_id"]
             self._localization_required = p["localization_required"]
+            self._sensors = SensorHealth(p["sensor_max_age_s"], clock=self._memory_time)
+            self._clock_jump = self.get_clock().create_jump_callback(
+                JumpThreshold(min_forward=None, min_backward=Duration(nanoseconds=-1), on_clock_change=True),
+                pre_callback=self._sensors.clock_changed.set,
+            )
             self._localization = LocalizationGate(
                 self._map_frame,
                 self._map_id,
@@ -494,42 +501,57 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self._depth_skew = p["object_depth_max_skew_s"]
             self._depth_error = p["object_position_error_m"]
             self._depth_angular_error = p["object_angular_error_rad"]
-            self._pending_images = PendingImages(self._depth_skew, wait_s=p["rgbd_wait_s"])
+            self._pending_images = PendingImages(
+                self._depth_skew, wait_s=p["rgbd_wait_s"], max_age_s=p["sensor_max_age_s"]
+            )
+            image_qos = (
+                QoSProfile(depth=8, reliability=ReliabilityPolicy.RELIABLE)
+                if p["rgbd_reliable"]
+                else qos_profile_sensor_data
+            )
             if p["objects_enabled"] and p["depth_topic"]:
                 self._depth_frames = self._pending_images.depth
                 self._camera_infos = self._pending_images.info
-                self.create_subscription(
-                    Image, p["depth_topic"], lambda msg: self._depth_frames.append(msg), qos_profile_sensor_data
-                )
+                self.create_subscription(Image, p["depth_topic"], self._pending_images.add_depth, image_qos)
                 self.create_subscription(
                     CameraInfo,
                     p["camera_info_topic"],
-                    lambda msg: self._camera_infos.append(msg),
-                    qos_profile_sensor_data,
+                    lambda msg: self._pending_images.add_depth(msg, calibration=True),
+                    image_qos,
                 )
             self._sync_images = p["objects_enabled"] and bool(p["depth_topic"])
-            if self._sync_images:
-                self.create_timer(0.04, self._drain_image)
+            self._clock_fault_reported = False
+            self.create_timer(0.04, self._drain_image, clock=Clock(clock_type=ClockType.STEADY_TIME))
             if p["compressed"]:
-                self.create_subscription(
-                    CompressedImage, p["image_topic"], self._receive_compressed, qos_profile_sensor_data
-                )
+                self.create_subscription(CompressedImage, p["image_topic"], self._receive_compressed, image_qos)
             else:
-                self.create_subscription(Image, p["image_topic"], self._receive_image, qos_profile_sensor_data)
+                self.create_subscription(Image, p["image_topic"], self._receive_image, image_qos)
             self.create_subscription(String, "~/ask", self._on_ask, 10)
             self.create_subscription(String, "~/correct", self._on_correct, 10)
             self.create_subscription(String, "~/refine", self._on_refine, 10)
             self._answers = self.create_publisher(String, "~/answer", 10)
-            self._navigation_status = self.create_publisher(String, "~/navigation_status", 10)
             self._commands: NavigationCommands | None = None
             self._navigator: Nav2Navigator | None = None
             self._command_tasks: BoundedTasks | None = None
             self._mission_context: MissionContext | None = None
+            self._mission_traces: TraceStore | None = None
+            self._command_journal: CommandJournal | None = None
             if p["navigation_enabled"]:
+                self._command_journal = CommandJournal(
+                    p["command_journal_path"] or ":memory:",
+                    CommandScope(p["robot_id"], p["map_id"], p["mission_conversation_id"]),
+                    retry_window_s=p["command_retry_window_s"],
+                    max_records=p["command_max_records"],
+                )
+                self._mission_traces = build_trace_store(p)
                 if p["mission_enabled"]:
                     self._mission_context = MissionContext(
                         p["mission_context_path"] or ":memory:",
                         scope=json.dumps([p["robot_id"], p["map_id"], p["mission_conversation_id"]]),
+                        max_events=p["mission_context_max_events"],
+                        max_bytes=p["mission_context_max_bytes"],
+                        retention_s=p["mission_context_retention_s"],
+                        references_available=self._context_reference_available,
                     )
                 places = load_named_places(p["places_file"]) if p["places_file"] else {}
                 verification_model = p["verification_model"] or p["caption_model"]
@@ -558,6 +580,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                         ObjectTracker(store, embedder, arrival_detector, self._object_policy),
                         arrival_detector,
                         ObjectArrivalPolicy(
+                            max_observation_age_s=p["navigation_max_observation_age_s"],
                             min_similarity=p["object_arrival_min_similarity"],
                             moved_similarity=p["object_arrival_moved_similarity"],
                             similarity_margin=p["object_arrival_similarity_margin"],
@@ -633,10 +656,18 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     self._publish_navigation,
                     request_timeout_s=p["navigation_lookup_timeout_s"],
                     observation_clock=self._memory_time,
-                    localization_ready=self._localization.ready,
+                    localization_ready=lambda: self._sensors.ready() and self._localization.ready(),
+                    localization_generation=lambda: self._localization.generation,
+                    sensor_ready=lambda d: self._sensors.ready(camera=d.source == "memory", depth=bool(d.object_id)),
+                    sensor_generation=lambda d: (
+                        self._sensors.generation(depth=bool(d.object_id)) if d.source == "memory" else 0
+                    ),
                     arrival_timeout_s=p["navigation_arrival_timeout_s"],
+                    max_observation_age_s=p["navigation_max_observation_age_s"],
+                    arrival_max_attempts=p["navigation_arrival_max_attempts"],
                     mission_planner=build_mission_planner(p, api_key),
                     mission_context=self._mission_context,
+                    trace_store=self._mission_traces,
                     search=ObjectSearch(
                         approach,
                         ObjectSearchPolicy(
@@ -649,10 +680,8 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     if p["object_search_enabled"] and approach is not None
                     else None,
                 )
-                self.create_timer(0.5, self._navigator.poll)
-                self.create_timer(0.2, self._commands.poll)
-            # Volatile, depth-one commands are never replayed from durable ingestion work.
-            self.create_subscription(String, "~/command", self._on_command, 1)
+                create_navigation_timers(self, self._navigator, self._commands)
+            self._operator = OperatorInterface(self, self._commands, journal=self._command_journal)
             if p["curator_interval_s"] > 0:
                 self.create_timer(p["curator_interval_s"], self._curate)
             if self._consolidator is not None:
@@ -712,6 +741,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "camera_info_topic": "/camera/color/camera_info",
                 "object_depth_max_skew_s": 0.08,
                 "rgbd_wait_s": 0.3,
+                "rgbd_reliable": False,
                 "object_position_error_m": 0.1,
                 "object_angular_error_rad": 0.05,
                 "map_frame": "map",
@@ -720,6 +750,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "localization_required": True,
                 "localization_topic": "/amcl_pose",
                 "localization_max_age_s": 5.0,
+                "sensor_max_age_s": 5.0,
                 "localization_max_position_std_m": 0.3,
                 "localization_max_yaw_std_rad": 0.35,
                 "db_path": "~/.placecell/db",
@@ -750,6 +781,17 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "min_turn_rad": 0.35,
                 "batch_size": 8,
                 "max_queue": 64,
+                "memory_max_records": 10000,
+                "memory_max_sightings": 1024,
+                "memory_max_idle_s": 7776000.0,
+                "memory_history_age_s": 7776000.0,
+                "refine_max_pending": 256,
+                "cleanup_max_pending": 2048,
+                "correction_max_records": 10000,
+                "correction_max_bytes": 4194304,
+                "mission_context_max_events": 1000,
+                "mission_context_max_bytes": 2097152,
+                "mission_context_retention_s": 2592000.0,
                 "tf_timeout_s": 0.2,
                 "curator_interval_s": 3600.0,
                 "contradiction": True,
@@ -767,11 +809,20 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 "mission_request_timeout_s": 8.0,
                 "mission_max_destinations": 8,
                 "mission_context_path": "~/.placecell/missions.sqlite3",
+                "mission_trace_path": "",
+                "mission_trace_max_events": 10000,
+                "mission_trace_max_bytes": 16777216,
+                "mission_trace_queue_size": 256,
                 "mission_conversation_id": "default",
+                "command_journal_path": "~/.placecell/commands.sqlite3",
+                "command_retry_window_s": 86400.0,
+                "command_max_records": 10000,
                 "verification_model": "",
                 "verification_base_url": "",
                 "verification_request_timeout_s": 8.0,
                 "navigation_arrival_timeout_s": 30.0,
+                "navigation_max_observation_age_s": 5.0,
+                "navigation_arrival_max_attempts": 3,
                 "nav2_action": "navigate_to_pose",
                 "places_file": "",
                 "navigation_min_similarity": 0.5,
@@ -794,17 +845,19 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             from rclpy.time import Time
 
             try:
+                if stamp_to_seconds(sec, nanosec) <= 0 or not self._sensors.ready():
+                    return None  # Time(0) asks TF for latest, not a capture-time transform.
                 tf = self._tf.lookup_transform(
                     self._map_frame,
                     self._base_frame,
                     Time(seconds=sec, nanoseconds=nanosec),
                     Duration(seconds=self._tf_timeout),
                 )
-            except TransformException as e:
+                t, q = tf.transform.translation, tf.transform.rotation
+                pose = pose_from_transform(t.x, t.y, q.x, q.y, q.z, q.w, self._map_frame, self._map_id)
+            except (TransformException, PlacecellError, ValueError) as e:
                 self.get_logger().warning(f"no pose for image: {e}", throttle_duration_sec=5.0)
                 return None
-            t, q = tf.transform.translation, tf.transform.rotation
-            pose = pose_from_transform(t.x, t.y, q.x, q.y, q.z, q.w, self._map_frame, self._map_id)
             if self._localization_required and not self._localization.accepts(pose, stamp_to_seconds(sec, nanosec)):
                 self.get_logger().warning(
                     "skipping image: localization is missing, stale or uncertain", throttle_duration_sec=5.0
@@ -812,7 +865,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 return None
             return pose
 
-        def _depth_at(self, msg: Any) -> DepthSnapshot | None:
+        def _depth_at(self, msg: Any, dimensions: tuple[int, int]) -> DepthSnapshot | None:
             from rclpy.duration import Duration
             from rclpy.time import Time
 
@@ -831,10 +884,13 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             def skew(message: Any) -> float:
                 return abs(stamp - stamp_to_seconds(message.header.stamp.sec, message.header.stamp.nanosec))
 
-            depth = min(self._depth_frames, key=skew)
-            info = min(self._camera_infos, key=skew)
             try:
-                if hasattr(msg, "width") and (msg.width != info.width or msg.height != info.height):
+                depth = min((d for d in self._depth_frames if d.header.frame_id == msg.header.frame_id), key=skew)
+                info = min(
+                    (i for i in self._camera_infos if i.header.frame_id == msg.header.frame_id),
+                    key=lambda i: 0 if stamp_to_seconds(i.header.stamp.sec, i.header.stamp.nanosec) == 0 else skew(i),
+                )
+                if dimensions != (info.width, info.height):
                     raise ValidationError("RGB and aligned depth dimensions differ")
                 transform = self._tf.lookup_transform(
                     self._map_frame,
@@ -856,6 +912,22 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self.get_logger().warning(f"object positions unavailable: {e}", throttle_duration_sec=5.0)
                 return None
 
+        def _capture(self, msg: Any, *, compressed: bool = False) -> tuple[Pose, float, DepthSnapshot | None] | None:
+            stamp = 0.0
+            try:
+                stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
+                dimensions = image_dimensions(msg, compressed=compressed)
+                pose = self._pose_at(msg.header.stamp.sec, msg.header.stamp.nanosec)
+                if pose is None:
+                    raise ValidationError("capture-time TF/localization is unavailable")
+                depth = self._depth_at(msg, dimensions)
+                if self._sensors.observe(stamp, camera=True, depth=depth is not None):
+                    return pose, stamp, depth
+            except (PlacecellError, ValueError, TypeError, AttributeError) as e:
+                self._sensors.observe(stamp, camera=False, depth=False)
+                self.get_logger().warning(f"skipping untrusted camera input: {e}", throttle_duration_sec=5.0)
+            return None
+
         def _record(self, observation: Observation) -> None:
             if self._recording is not None:
                 try:
@@ -865,14 +937,14 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     self.get_logger().error(f"recording stopped after an export failure: {e}")
 
         def _on_image(self, msg: Any) -> None:
-            pose = self._pose_at(msg.header.stamp.sec, msg.header.stamp.nanosec)
-            if pose is None:
+            capture = self._capture(msg)
+            if capture is None:
                 return
-            stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
+            pose, stamp, depth = capture
             force = self._commands is not None and self._commands.needs_observation
             if not force and not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
                 return
-            if not self._worker.has_capacity():
+            if not force and not self._worker.has_capacity():
                 self._worker.dropped += 1
                 return
             try:
@@ -882,7 +954,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
-            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp), depth=self._depth_at(msg))
+            obs = replace(
+                obs, localization_checked=self._localization.accepts(pose, stamp), depth=depth, refresh_objects=force
+            )
+            if not self._sensors.ready():
+                return
             self._record(obs)
             if self._commands is not None:
                 self._commands.observe(obs)
@@ -892,31 +968,50 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
 
         def _receive_image(self, msg: Any) -> None:
             if self._sync_images:
-                self._pending_images.add(msg, False, time.monotonic())
+                self._queue_image(msg, compressed=False)
             else:
                 self._on_image(msg)
 
         def _receive_compressed(self, msg: Any) -> None:
             if self._sync_images:
-                self._pending_images.add(msg, True, time.monotonic())
+                self._queue_image(msg, compressed=True)
             else:
                 self._on_compressed(msg)
 
+        def _queue_image(self, msg: Any, *, compressed: bool) -> None:
+            if not self._sensors.ready():
+                return
+            if not self._pending_images.add(msg, compressed, time.monotonic(), source_now=self._memory_time()):
+                try:
+                    stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
+                except (AttributeError, TypeError, ValueError):
+                    stamp = float("nan")
+                self._sensors.observe(stamp, camera=False, depth=False)
+
         def _drain_image(self) -> None:
+            if not self._sensors.ready():
+                self._pending_images.clear()
+                if not self._clock_fault_reported:
+                    self._clock_fault_reported = True
+                    self.get_logger().error(
+                        "Clock changed or reset: navigation and new captures are blocked. "
+                        "Confirm Nav2 is stopped, then restart with a fresh collection and keyframe directory."
+                    )
+                return
             ready = self._pending_images.pop(time.monotonic())
             if ready is not None:
                 message, compressed = ready
                 (self._on_compressed if compressed else self._on_image)(message)
 
         def _on_compressed(self, msg: Any) -> None:
-            pose = self._pose_at(msg.header.stamp.sec, msg.header.stamp.nanosec)
-            if pose is None:
+            capture = self._capture(msg, compressed=True)
+            if capture is None:
                 return
-            stamp = stamp_to_seconds(msg.header.stamp.sec, msg.header.stamp.nanosec)
+            pose, stamp, depth = capture
             force = self._commands is not None and self._commands.needs_observation
             if not force and not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
                 return
-            if not self._worker.has_capacity():
+            if not force and not self._worker.has_capacity():
                 self._worker.dropped += 1
                 return
             try:
@@ -924,7 +1019,11 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             except PlacecellError as e:
                 self.get_logger().warning(f"skipped image: {e}", throttle_duration_sec=5.0)
                 return
-            obs = replace(obs, localization_checked=self._localization.accepts(pose, stamp), depth=self._depth_at(msg))
+            obs = replace(
+                obs, localization_checked=self._localization.accepts(pose, stamp), depth=depth, refresh_objects=force
+            )
+            if not self._sensors.ready():
+                return
             self._record(obs)
             if self._commands is not None:
                 self._commands.observe(obs)
@@ -940,15 +1039,7 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             return self._command_tasks is not None and self._command_tasks.submit(function)
 
         def _publish_navigation(self, update: NavigationUpdate) -> None:
-            self._navigation_status.publish(String(data=navigation_payload(update)))
-
-        def _on_command(self, msg: Any) -> None:
-            if self._commands is None:
-                self._publish_navigation(
-                    NavigationUpdate("", "disabled", "Set navigation_enabled to use movement commands.")
-                )
-            else:
-                self._commands.handle(msg.data)
+            self._operator.publish(update)
 
         def stop_navigation(self) -> None:
             if self._commands is not None:
@@ -980,12 +1071,16 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                     str(data.get("question", "")),
                     str(data.get("note", "")),
                 )
-            except (ValueError, KeyError, TypeError, PlacecellError) as e:
+                if self._store.get(correction.memory_id) is None:
+                    raise ValidationError("correction refers to an unavailable scene memory")
+                self._corrections.record(correction)
+                if correction.verdict == "wrong":
+                    accepted = self._store.refinements.request(correction.memory_id, "operator correction")
+                    if not accepted:
+                        self.get_logger().warning("Correction saved; recheck queue full or memory is ineligible.")
+            except (ValueError, KeyError, TypeError, OSError, PlacecellError) as e:
                 self.get_logger().warning(f"ignored correction: {e}")
                 return
-            self._corrections.record(correction)
-            if correction.verdict == "wrong":
-                self._store.refinements.request(correction.memory_id, "operator correction")
 
         def _on_refine(self, msg: Any) -> None:
             """JSON: {"memory_id": ..., "action": "recheck"|"rollback"}."""
@@ -1014,14 +1109,34 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
         def _curate(self) -> None:
             self._maintenance.submit(self._run_curator)
 
+        def _context_reference_available(self, data: dict[str, Any]) -> bool:
+            if data.get("object_id"):
+                record = self._store.objects.get(data["object_id"])
+                return record is not None and record.status == "present"
+            if data.get("memory_id"):
+                memory = self._store.get(data["memory_id"])
+                return memory is not None and not memory.superseded
+            return True
+
         def _run_curator(self) -> None:
-            self._store.objects.prune(self._memory_time() - self._object_policy.retention_s)
+            self._store.drain_cleanup(remove_local_file)
+            before = self._memory_time() - self._object_policy.retention_s
+            for _ in range(128):
+                if not self._store.objects.prune(before, limit=1):
+                    break
+                self._store.drain_cleanup(remove_local_file)
             report = self._curator.run()
+            self._corrections.prune(m.id for batch in self._store.iter_query(EVERYTHING) for m in batch)
+            if self._mission_context is not None:
+                self._mission_context.prune()
             maintain = getattr(self._store, "maintain", None)
             if maintain is not None:
                 maintain()
-            if report.removed or report.discredited:
-                self.get_logger().info(f"curator removed {report.removed} memories, discredited {report.discredited}")
+            if report.removed or report.discredited or report.history_pruned:
+                self.get_logger().info(
+                    f"curator removed {report.removed} memories, discredited {report.discredited}, "
+                    f"pruned {report.history_pruned} sightings"
+                )
 
         def _consolidate(self) -> None:
             self._maintenance.submit(self._run_consolidator)
@@ -1042,8 +1157,14 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
             self.get_logger().info(
                 f"ingestion: {stats}, dropped={self._worker.dropped}, objects={self._store.objects.count()}"
             )
+            if self._mission_traces is not None:
+                health = self._mission_traces.health()
+                self.get_logger().info(f"mission traces: {health}")
+                if health["dropped_events"] or health["write_errors"] or not health["writer_alive"]:
+                    self.get_logger().warning("Mission trace capture is incomplete; inspect trace health counters.")
 
         def destroy_node(self) -> bool:
+            self._clock_jump.unregister()
             self.stop_navigation()
             commands_done = self._command_tasks is None or self._command_tasks.stop()
             ingested = self._worker.stop()
@@ -1053,10 +1174,19 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
                 self._store.close()
                 if self._mission_context is not None:
                     self._mission_context.close()
+            if self._mission_traces is not None and not self._mission_traces.close():
+                self.get_logger().warning("Mission trace writer did not finish before the shutdown deadline.")
+            if self._command_journal is not None:
+                self._command_journal.close()
             return bool(super().destroy_node())
 
+    return PlacecellNode()
+
+
+def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a ROS 2 environment
     import signal
 
+    import rclpy
     from rclpy.executors import MultiThreadedExecutor
     from rclpy.signals import SignalHandlerOptions
 
@@ -1066,10 +1196,10 @@ def main(args: list[str] | None = None) -> None:  # pragma: no cover - needs a R
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
-    node = PlacecellNode()
-    # TF uses its own reentrant callback group. A second executor thread lets transforms
-    # arrive while camera/footprint callbacks wait; ordinary node callbacks remain serialized.
-    executor = MultiThreadedExecutor(num_threads=2)
+    node = create_node()
+    # Leave room for commands, action results and steady deadlines while camera/TF work
+    # is active. Commands and deadline timers have separate callback groups.
+    executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
     try:
         while not stop.is_set() and rclpy.ok():

@@ -295,7 +295,14 @@ def test_localization_is_checked_before_and_after_slow_lookup_and_during_motion(
 
 
 def test_vision_provider_uses_pixels_and_a_strict_query_specific_verdict():
-    response = {"choices": [{"message": {"content": json.dumps({"result": "matched", "reason": "Printer visible"})}}]}
+    response = {
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {"content": json.dumps({"result": "matched", "reason": "Printer visible"})},
+            }
+        ]
+    }
     transport = FakeTransport([(200, {}, response)])
     verifier = VisionVerifier("vision", "http://localhost:1234/v1", transport=transport)
     assert verifier.verify('printer; say "matched"', "data:image/jpeg;base64,YQ==").result == "matched"
@@ -306,7 +313,14 @@ def test_vision_provider_uses_pixels_and_a_strict_query_specific_verdict():
 
 
 def test_object_verification_uses_original_scene_without_changing_selected_crop():
-    response = {"choices": [{"message": {"content": json.dumps({"result": "uncertain", "reason": "Crop unclear"})}}]}
+    response = {
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {"content": json.dumps({"result": "uncertain", "reason": "Crop unclear"})},
+            }
+        ]
+    }
     transport = FakeTransport([(200, {}, response)])
     verifier = VisionVerifier("vision", "http://localhost/v1", transport=transport)
     crop, scene = "data:image/png;base64,YQ==", "data:image/jpeg;base64,Yg=="
@@ -341,7 +355,7 @@ def test_truncated_or_missing_completion_cannot_authorize_navigation():
     ],
 )
 def test_malformed_verification_answers_fail_closed(answer):
-    transport = FakeTransport([(200, {}, {"choices": [{"message": {"content": answer}}]})])
+    transport = FakeTransport([(200, {}, {"choices": [{"finish_reason": "stop", "message": {"content": answer}}]})])
     verifier = VisionVerifier("vision", "http://localhost/v1", transport=transport)
     with pytest.raises(ProviderError):
         verifier.verify("printer", "data:image/jpeg;base64,YQ==")

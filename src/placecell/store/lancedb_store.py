@@ -22,13 +22,14 @@ from placecell.memory import SCHEMA_VERSION, SearchChannel
 from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row as _from_row
 from placecell.store.codec import to_row as _to_row
+from placecell.store.limits import StoreLimits
 from placecell.store.state import StateStore
 
 _MAX_IN_LIST = 500
 
 
 class LanceDBStore(StateStore):
-    def __init__(self, path: str | Path, info: CollectionInfo) -> None:
+    def __init__(self, path: str | Path, info: CollectionInfo, *, limits: StoreLimits | None = None) -> None:
         if info.schema_version != SCHEMA_VERSION:
             raise ValidationError(f"this code expects schema version {SCHEMA_VERSION}, got {info.schema_version}")
         try:
@@ -48,7 +49,7 @@ class LanceDBStore(StateStore):
                     f"not {info.model!r}/{info.dimension}"
                 )
             self._table = self._db.open_table(info.name)
-            if stored.schema_version in (2, 3, 4, 5, 6, 7) and info.schema_version == SCHEMA_VERSION:
+            if stored.schema_version in (2, 3, 4, 5, 6, 7, 8) and info.schema_version == SCHEMA_VERSION:
                 if stored.schema_version == 2:
                     self._upgrade_sightings()
                 else:
@@ -117,7 +118,7 @@ class LanceDBStore(StateStore):
             self._table = self._db.create_table(info.name, schema=schema)
             self._write_info(info)
         self._projection_lock = threading.RLock()
-        super().__init__(info, self._path / f"{info.name}.state.sqlite3")
+        super().__init__(info, self._path / f"{info.name}.state.sqlite3", limits=limits)
         if not self._conn.execute("SELECT 1 FROM settings WHERE key='imported'").fetchone():
             for batch in self._table.search().limit(None).to_batches(batch_size=256):
                 super().upsert(_from_row(row) for row in batch.to_pylist())

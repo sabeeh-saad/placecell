@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- Add 23 deterministic mission scenarios and a CI execution checkpoint requiring 100 distinct mission cases and 1,000 executions; report component checks separately.
+
+- Bound memory admission, detailed sightings, refinement requests and evidence cleanup; keep job-owned images and externally owned recordings safe during retention.
+- Persist conversation row/content/age limits with whole-request pruning and explicit missing-history boundaries; exclude unavailable target references from follow-up context.
+- Bound correction logs, commit files before changing verdicts, and prune only feedback for deleted memories; add a no-cost ROS retention/restart check to CI.
+
+- Ground configured place names and purpose-based search queries without relaxing destination checks; prefer the learned viewing side and visually verify the unique crop selected by embedding, rival and geometry checks.
+- Use reliable RGB-D transport in simulation, refresh object geometry through normal arrival ingestion, and start Nav2 after lifecycle service discovery settles.
+- Add a selectable three-product Gazebo scene and bounded live multi-stop evaluation, scoring exact visit order, purpose-based descriptions, repeated visits and an absent target with camera and decision-trace evidence.
+- Distinguish object evidence changes from scan scheduling, run independent arrival checks together, omit unused arrival caption embeddings, and retry expired captures within the original deadline.
+- Keep arrival capture available under ingestion backpressure; retain observed surface samples for removal/movement checks and upgrade existing collections to schema 9.
+- Reject tiny color artifacts in the deterministic Gazebo detector and keep sensor forwarding active during world-change service calls.
+- Require usable localized geometry for object updates in configured RGB-D pipelines; incomplete captures remain scene-only and do not consume the object scan interval.
+- Wait for aligned depth before starting object arrival verification, retaining the original arrival deadline and capture-age checks.
+- Rate-limit Nav2 distance feedback and coalesce pending trace progress; prioritize critical events and expose critical-drop counts under bounded queue saturation.
+- Add bounded live-provider and deterministic-provider Gazebo mission checkpoints, including duplicate commands, stops, sensor loss and changed targets.
+- Prefer newer complete RGB-D captures after a dropped pair's wait expires; keep recent depth trust until its existing freshness deadline without refreshing it from RGB-only frames.
+- Recheck target references immediately before dispatch and after arrival checks; bound arrival capture age through queueing and provider work, including paused source time.
+- Compare current and pre-departure lookalikes across category labels, reject conflicting object-to-scene fallback, and invalidate identity verdicts when evidence changes during final checks.
+- Expose retrieval, identity, geometry and execution failure stages in operator status, snapshots, mission history and traces; add target regressions and nine repeatable fault scenarios.
+- Guard navigation with live sensor freshness and trust generations; lost/recovered localization or camera/depth cannot turn an interrupted mission into success.
+- Latch backward/source-clock changes, block new captures/goals until a fresh run, validate capture-time TF and image timestamps, and use steady RGB-D waits.
+- Add 13 sensor-provenance fault scenarios and an isolated DDS sensor/clock check through the production node, included in CI.
+- Reject ambiguous or malformed provider replies: duplicate JSON fields, refusals beside decisions, missing completion evidence, unsupported actions, extra visual fields and oversized content.
+- Bound HTTP responses and model task data, validate retry/timeouts, and keep observation text separate from trusted model instructions. Live-model semantic robustness remains unqualified.
+- Add 14 provider-contract fault scenarios, malformed-response checks over ROS, and regressions proving late invalid/failed model replies cannot revive stopped work.
+- Add version 2 scoped command IDs, durable bounded retry suppression, conflicting-reuse refusal and command receipts. Preserve deliberate repeated visits and legacy input.
+- Bind identified stop/choice commands to the current request; keep text stop available during journal admission and prevent a pending write from starting work after stop.
+- Exercise command expiry, capacity, clock rollback, concurrent claims, crash reservations and real DDS retries/restart; active Nav2 reconciliation remains separate work.
+- Preserve cancellation intent atomically with terminal Nav2 results, enforce deadlines even when polling is delayed, and prevent stale trip callbacks from canceling a replacement trip.
+- Send cancellation before stop-status persistence; isolate ROS commands/action callbacks and use steady-clock deadline timers with a four-thread executor.
+- Add controlled ROS action/latency checks to CI and expand offline fault coverage to 46 scenarios. Define the startup ownership contract; crash reconciliation remains outstanding.
+- Run Python and ROS/Gazebo CI for all pull requests and main pushes, with merge-queue/manual triggers; add offline ROS operator checks and retain test reports on failure.
+- Build wheel/source distributions and validate both in separate clean environments across the Python CI matrix, including installed entry points, memory, mission evaluation, fault checks and trace export.
+- Add strict version 1 JSON commands, versioned status events, and a retained mission snapshot with a read-only ROS service for reconnecting operators. Preserve text commands and expose controller instance/event ordering.
+- Keep rejected inputs from replacing mission state; report arrival verification explicitly and clear single-goal choices on stop or expiry.
+- Add optional persistent mission traces with correlated planning/review, retrieval and visual checks, Nav2 events, stage timings and reported provider usage; enable bounded trace capture in the reference mission profile.
+- Add a read-only trace exporter and trace completeness checks to the offline fault suite. Diagnostic write failures and queue overflow remain separate from navigation decisions.
 - Add an offline fault runner covering planning, review, visual verification, localization, Nav2, context persistence and interrupted SQLite writes, with per-case JSON reports and CI artifacts.
 - Preserve transport-initiated cancellation in the mission controller: a late Nav2 success after a timeout no longer launches the next destination.
 

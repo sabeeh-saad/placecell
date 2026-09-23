@@ -7,6 +7,7 @@ server errors with exponential backoff, honouring `Retry-After` when the server 
 from __future__ import annotations
 
 import json
+import math
 import time
 import urllib.error
 import urllib.request
@@ -15,6 +16,17 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from placecell.errors import ProviderError, RateLimitedError, ValidationError
+from placecell.providers._contracts import strict_json
+from placecell.tracing import current_trace, provider_usage, trace_span
+
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+def _read_body(response: Any) -> Any:
+    raw = response.read(MAX_RESPONSE_BYTES + 1)
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise ProviderError("provider response exceeds the 8 MiB byte limit")
+    return decode_body(raw)
 
 
 class Transport(Protocol):
@@ -38,9 +50,10 @@ class UrllibTransport:
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310 - scheme checked above
-                return response.status, dict(response.headers.items()), decode_body(response.read())
+                return response.status, dict(response.headers.items()), _read_body(response)
         except urllib.error.HTTPError as e:
-            return e.code, dict(e.headers.items()), decode_body(e.read())
+            with e:
+                return e.code, dict(e.headers.items()), _read_body(e)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             raise ProviderError(f"request to {url} failed: {e}") from e
 
@@ -52,9 +65,11 @@ def check_http_url(url: str) -> None:
 
 def decode_body(raw: bytes) -> Any:
     try:
-        return json.loads(raw) if raw else None
-    except json.JSONDecodeError:
+        return strict_json(raw.decode("utf-8"), max_chars=MAX_RESPONSE_BYTES) if raw else None
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return raw.decode("utf-8", errors="replace")
+    except ValueError as e:
+        raise ProviderError(f"invalid provider JSON: {e}") from e
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,13 +79,22 @@ class RetryPolicy:
     max_delay_s: float = 8.0
 
     def __post_init__(self) -> None:
-        if self.attempts < 1 or self.base_delay_s < 0 or self.max_delay_s < self.base_delay_s:
+        if (
+            type(self.attempts) is not int
+            or not 1 <= self.attempts <= 32
+            or not math.isfinite(self.base_delay_s)
+            or not math.isfinite(self.max_delay_s)
+            or self.base_delay_s < 0
+            or self.max_delay_s < self.base_delay_s
+        ):
             raise ValidationError("retry policy out of range")
 
     def delay(self, attempt: int, retry_after: str | None) -> float:
         if retry_after:
             try:
-                return min(float(retry_after), self.max_delay_s)
+                delay = float(retry_after)
+                if math.isfinite(delay) and delay >= 0:
+                    return min(delay, self.max_delay_s)
             except ValueError:
                 pass
         return min(self.base_delay_s * 2.0**attempt, self.max_delay_s)
@@ -100,8 +124,8 @@ class Endpoint:
         extra_headers: Mapping[str, str] | None,
     ) -> Endpoint:
         check_http_url(base_url)
-        if timeout_s <= 0:
-            raise ValidationError("timeout_s must be greater than zero")
+        if not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValidationError("timeout_s must be finite and greater than zero")
         headers = {**(extra_headers or {})}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -116,8 +140,24 @@ class Endpoint:
 
     def post(self, payload: Mapping[str, Any]) -> Any:
         """POST until a 200 comes back or the retry budget is spent. Returns the decoded body."""
+        context = current_trace()
+        if context:
+            context.store.register_secrets(
+                [
+                    value.removeprefix("Bearer ")
+                    for key, value in self.headers.items()
+                    if key.casefold() in {"authorization", "x-api-key", "x-goog-api-key"}
+                ]
+            )
+        with trace_span("provider_request", model=payload.get("model"), usage=provider_usage(None)) as details:
+            return self._post(payload, details)
+
+    def _post(self, payload: Mapping[str, Any], details: dict[str, Any]) -> Any:
         for attempt in range(self.retry.attempts):
+            details["attempts"] = attempt + 1
             status, headers, body = self.transport.post_json(self.url, self.headers, payload, self.timeout_s)
+            details["http_status"] = status
+            details["usage"] = provider_usage(body)
             if status == 200:
                 return body
             if status == 429 or status >= 500:
@@ -142,5 +182,5 @@ def message(body: Any) -> str:
     if isinstance(body, dict):
         error = body.get("error")
         if isinstance(error, dict) and "message" in error:
-            return str(error["message"])
+            return str(error["message"])[:200]
     return str(body)[:200]

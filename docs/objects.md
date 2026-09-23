@@ -29,12 +29,15 @@ contain compressed depth and the original camera transform, so retries cannot ac
 pair an old RGB image with new depth or a new pose. Both built-in stores support these
 records; LanceDB remains the derived index for scene memories. Object retrieval scans
 bounded pages of SQLite vectors without loading all crop images into memory.
-Collections upgrade to schema 8, so older clients reject them instead of deleting shared
+Collections upgrade to schema 9, so older clients reject them instead of deleting shared
 keyframes without accounting for object references. Back up the collection before upgrading.
 
 Defaults allow 1,000 objects, four recent views and 32 change events per object. The ROS
-curator removes objects not seen for 30 days. Detection runs at most once every 15 seconds
-per robot/camera/map, independently of scene sampling. Stationary scene sampling still
+curator removes objects not seen for 30 days. Routine detection runs at most once every
+15 seconds per robot/camera/map, independently of scene sampling. An arrival capture
+sets `Observation.refresh_objects` so normal ingestion can refresh its objects even
+inside that interval. The flag persists with queued jobs; replayed or older timestamps
+remain blocked, and all depth and identity checks still apply. Stationary scene sampling still
 controls when a new frame is available, normally every 60 seconds. Crop embeddings are
 batched. At most four visual absence checks run per scan. These limits bound stored data
 and provider work, but API latency and cost must be measured on your camera recordings.
@@ -63,8 +66,18 @@ localization or uncertain vision results do not count. Three confirmations at le
 minutes apart mark it `missing`; a new matched observation clears misses. Pending absence
 evidence already blocks navigation to that object.
 
-Without usable depth, crops and identities can still update from nearly the same robot
-viewpoint and image region. RGB-only data cannot establish disappearance or a larger move.
+When the ROS node has a nonempty `depth_topic`, object updates require localization and
+a usable position within the association uncertainty limit (default 0.35 m). Incomplete
+RGB-D captures still support scene memory, but cannot create or refresh object identities.
+A capture with no usable detected positions does not consume the object scan interval,
+so a following complete capture can be used immediately. This prevents an unpaired view
+from creating a second identity for the same object. It does not merge or delete existing
+ambiguous records, and does not change the separate fresh-arrival lookalike checks.
+
+The library's `ObjectPolicy(require_position=False)` default, and ROS sources with an
+empty `depth_topic`, retain RGB-only object tracking: crops and identities can update
+from nearly the same robot viewpoint and image region. Set `require_position=True` for
+an aligned RGB-D library pipeline. RGB-only data cannot establish disappearance or a larger move.
 Very small objects, reflective surfaces, overlapping objects and large localization error
 can leave positions unknown or associations ambiguous. Uncertainty is a conservative
 engineering estimate, not a calibrated probability; tune it using measured camera and

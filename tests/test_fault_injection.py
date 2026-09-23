@@ -117,3 +117,26 @@ def test_cli_rejects_invalid_selection(tmp_path, args):
     with pytest.raises(SystemExit) as exc:
         faults.main(["--output", str(path), *args])
     assert exc.value.code == 2 and not path.exists()
+
+
+def test_execution_gate_excludes_components_and_requires_case_diversity():
+    component = {"case_id": "depth", "scope": "sensor_boundary", "passed": True}
+    mission = {"case_id": "one", "scope": "mission", "passed": True}
+    gate = faults.execution_gate([component] * 1000 + [mission] * 1000)
+    assert gate["runs"] == 1000 and gate["cases"] == 1
+    assert gate["excluded_component_runs"] == 1000
+    assert not gate["coverage_met"] and not gate["passed"]
+    distinct = [{**mission, "case_id": str(i)} for i in range(100)]
+    assert not faults.execution_gate(distinct)["passed"]
+    assert faults.execution_gate(distinct * 10)["passed"]
+    assert not faults.execution_gate(distinct * 10 + [{**component, "passed": False}])["passed"]
+    assert not faults.execution_gate(distinct * 10 + [{**mission, "passed": False}])["passed"]
+
+
+def test_execution_gate_cli_refuses_insufficient_passing_evidence(tmp_path, capsys):
+    path = tmp_path / "gate.json"
+    assert faults.main(["--output", str(path), "--case", "control_ordered_mission", "--execution-gate"]) == 1
+    report = json.loads(path.read_text())
+    assert report["summary"]["failed"] == 0
+    assert report["execution_gate"]["runs"] == 1 and not report["execution_gate"]["passed"]
+    assert json.loads(capsys.readouterr().out)["passed"] == 1

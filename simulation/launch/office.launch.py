@@ -1,5 +1,6 @@
 """Launch the bundled office, robot and ROS sensor bridge."""
 
+import os
 from pathlib import Path
 
 import xacro
@@ -21,13 +22,14 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     root = Path(__file__).resolve().parents[1]
+    world = Path(os.environ.get("PLACECELL_SIM_WORLD", root / "worlds/office.sdf"))
     description = xacro.process_file(
         str(root / "models/robot/robot.urdf.xacro"),
         mappings={"mesh_root": (root / "models/robot/meshes").as_uri()},
     ).toxml()
     clock = {"use_sim_time": True}
     server = ExecuteProcess(
-        cmd=["xvfb-run", "-a", "gz", "sim", "-s", "-r", "-v", "3", str(root / "worlds/office.sdf")],
+        cmd=["xvfb-run", "-a", "gz", "sim", "-s", "-r", "-v", "3", str(world)],
         output="screen",
     )
     bridge = Node(

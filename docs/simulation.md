@@ -11,6 +11,10 @@ For interactive multi-goal instructions, use the separate
 `check-pipeline` test remains a single-goal test; `start-nav` alone does not start PlaceCell
 or its planning agents.
 
+The [multi-product evaluation](product-missions.md) adds a microwave and fire
+extinguisher, scores ordered and repeated visits, and records the current live-model
+failures as well as the working stages. Its opt-in world leaves the default scene unchanged.
+
 ![RGB camera view of the printer and desk in the bundled Gazebo office](assets/gazebo-camera.png)
 
 The image above is an actual 320 × 240 camera capture from the original headless smoke test.
@@ -26,6 +30,13 @@ conservative collision volume. The authored mesh is bundled and can be regenerat
 with `python3 simulation/scripts/make_robot_mesh.py`; no external robot assets are needed.
 The simulation gives RGB-D callbacks up to one wall-clock second to pair under
 software rendering (`rgbd_wait_s`); the 80 ms capture-time skew limit remains unchanged.
+The camera bridge and application use reliable RGB, depth and calibration delivery
+(`rgbd_reliable: true`) to avoid losing one half of a capture. Hardware deployments
+default to sensor-data QoS; enable reliable subscriptions only with a compatible
+publisher. Capture timestamps and freshness limits still apply.
+
+The no-cost `simulation/sim check-retention` check validates the reference node’s
+[memory and history bounds](memory-retention.md) in an isolated container.
 
 The [humanoid validation report](simulation-humanoid-validation.json) records the
 2026-09-16 sensor and live navigation checks. From 5.71 m away from the remembered
@@ -90,7 +101,10 @@ unset OPENROUTER_API_KEY
 ```
 
 The test uses `google/gemini-embedding-2` for image/text vectors and
-`google/gemini-2.5-flash` for captions, detection and verification. These are paid API
+`google/gemini-2.5-flash` for captions and destination verification, and
+`google/gemini-3.1-flash-lite` for object learning. The mission profile uses
+`google/gemini-2.5-flash-lite` for arrival detection and comparison to fit its capture-age
+bound. These are paid API
 calls. It starts a fresh Placecell database and:
 
 1. Drives to a viewpoint and waits for a visually detected printer with trustworthy

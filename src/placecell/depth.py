@@ -42,12 +42,18 @@ class ObjectPosition:
     z: float
     uncertainty_m: float
     radius_m: float
+    surface_points: tuple[tuple[float, float, float], ...] = ()
 
     def __post_init__(self) -> None:
         if not all(math.isfinite(v) for v in (self.x, self.y, self.z, self.uncertainty_m, self.radius_m)):
             raise ValidationError("object position must be finite")
         if self.uncertainty_m <= 0 or self.radius_m <= 0:
             raise ValidationError("position uncertainty and extent must be positive")
+        if len(self.surface_points) > 25 or any(
+            len(point) != 3 or not all(math.isfinite(v) for v in point) for point in self.surface_points
+        ):
+            raise ValidationError("object surface support must contain at most 25 finite 3D points")
+        object.__setattr__(self, "surface_points", tuple(tuple(p) for p in self.surface_points))
 
     def distance(self, other: ObjectPosition) -> float:
         return math.dist((self.x, self.y, self.z), (other.x, other.y, other.z))
@@ -155,7 +161,8 @@ class DepthSnapshot:
     def locate(self, box: Box) -> ObjectPosition | None:
         # The central half excludes many background pixels near an imprecise detector boundary.
         dx, dy = (box.right - box.left) / 4, (box.bottom - box.top) / 4
-        patch = self._patch(Box(box.left + dx, box.top + dy, box.right - dx, box.bottom - dy))
+        core = Box(box.left + dx, box.top + dy, box.right - dx, box.bottom - dy)
+        patch = self._patch(core)
         valid = patch[patch > 0]
         if len(valid) < 9 or len(valid) < patch.size * 0.8:
             return None
@@ -171,22 +178,55 @@ class DepthSnapshot:
         if spread > max(0.15, radius):
             return None
         u, v = (box.left + box.right) * self.width / 2, (box.top + box.bottom) * self.height / 2
-        point = np.asarray(self.map_from_camera).reshape(4, 4) @ [
+        transform = np.asarray(self.map_from_camera).reshape(4, 4)
+        point = transform @ [
             (u - self.cx) * z / self.fx,
             (v - self.cy) * z / self.fy,
             z,
             1,
         ]
+        # Preserve bounded samples of the surface we actually observed. A bounding
+        # sphere also contains unobserved background/support furniture; requiring
+        # that whole sphere to become empty prevents a tabletop object disappearing.
+        support: list[tuple[float, float, float]] = []
+        if min(patch.shape) >= 3:
+            ys = np.unique(np.linspace(0, patch.shape[0] - 1, min(5, patch.shape[0]), dtype=int))
+            xs = np.unique(np.linspace(0, patch.shape[1] - 1, min(5, patch.shape[1]), dtype=int))
+            for row in ys:
+                for col in xs:
+                    distance = float(patch[row, col])
+                    if distance <= 0:
+                        support = []
+                        break
+                    px = int(core.left * self.width) + col
+                    py = int(core.top * self.height) + row
+                    mapped = transform @ [
+                        (px - self.cx) * distance / self.fx,
+                        (py - self.cy) * distance / self.fy,
+                        distance,
+                        1,
+                    ]
+                    support.append((float(mapped[0]), float(mapped[1]), float(mapped[2])))
+                if not support:
+                    break
         return ObjectPosition(
             float(point[0]),
             float(point[1]),
             float(point[2]),
             self.position_error_m + spread / 2 + z * (0.02 + math.sin(self.angular_error_rad)),
             max(0.05, radius),
+            tuple(support),
         )
 
     def clear_region(self, position: ObjectPosition) -> Box | None:
-        """A fully framed old extent with depth behind it; foreground/unknown depth means no evidence."""
+        """Require valid background behind every ray through the observed surface.
+
+        This is geometric evidence for a separate visual absence check, not a claim
+        that an object's hidden volume is empty. Legacy positions without sampled
+        surfaces keep the conservative enclosing-sphere path.
+        """
+        if len(position.surface_points) >= 9:
+            return self._clear_surface(position)
         camera = np.linalg.inv(np.asarray(self.map_from_camera).reshape(4, 4)) @ [position.x, position.y, position.z, 1]
         x, y, z = (float(v) for v in camera[:3])
         radius = (
@@ -205,5 +245,28 @@ class DepthSnapshot:
         patch = self._patch(box)
         # Every sampled ray must have valid background depth. Conservative by design.
         if patch.size < 9 or not np.all(patch > z + radius + 0.15):
+            return None
+        return box
+
+    def _clear_surface(self, position: ObjectPosition) -> Box | None:
+        if any(
+            math.dist(point, (position.x, position.y, position.z)) > position.radius_m + position.uncertainty_m
+            for point in position.surface_points
+        ):
+            return None  # Corrupt or independently relocated support is not evidence.
+        transform = np.linalg.inv(np.asarray(self.map_from_camera).reshape(4, 4))
+        points = np.array([(*point, 1) for point in position.surface_points]) @ transform.T
+        if np.any(points[:, 2] <= 0.2) or np.any(points[:, 2] >= 8):
+            return None
+        xs = (self.fx * points[:, 0] / points[:, 2] + self.cx) / self.width
+        ys = (self.fy * points[:, 1] / points[:, 2] + self.cy) / self.height
+        left, right, top, bottom = float(xs.min()), float(xs.max()), float(ys.min()), float(ys.max())
+        if not (0.02 < left < right < 0.98 and 0.02 < top < bottom < 0.98):
+            return None
+        box = Box(left, top, right, bottom)
+        farthest = float(points[:, 2].max())
+        margin = position.uncertainty_m + self.position_error_m + farthest * math.sin(self.angular_error_rad) + 0.15
+        patch = self._patch(box)
+        if patch.size < 9 or not np.all(patch > farthest + margin):
             return None
         return box

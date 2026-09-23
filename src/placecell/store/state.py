@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import heapq
 import json
+import math
 import sqlite3
 import threading
 from collections.abc import Callable, Iterable, Iterator
@@ -28,6 +29,7 @@ from placecell.memory import Evidence, EvidenceKind, Memory, SearchChannel, Sigh
 from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row, to_row
 from placecell.store.jobs import WorkJournal
+from placecell.store.limits import StoreLimits
 from placecell.store.objects import ObjectJournal
 from placecell.store.refinements import RefinementJournal
 
@@ -35,8 +37,11 @@ HISTORY_PREVIEW = 64
 
 
 class StateStore:
-    def __init__(self, info: CollectionInfo, path: str | Path = ":memory:") -> None:
+    def __init__(
+        self, info: CollectionInfo, path: str | Path = ":memory:", *, limits: StoreLimits | None = None
+    ) -> None:
         self._info = info
+        self.limits = limits or StoreLimits()
         self._lock = threading.RLock()
         self._depth = 0
         self._conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False, timeout=30)
@@ -70,14 +75,16 @@ class StateStore:
 
         columns = {r[1] for r in self._conn.execute("PRAGMA table_info(memories)")}
         with self.transaction():
+            if "history_before" not in columns:
+                self._conn.execute("ALTER TABLE memories ADD COLUMN history_before REAL NOT NULL DEFAULT 0")
             if "caption_vector" not in columns:
                 self._conn.execute("ALTER TABLE memories ADD COLUMN caption_vector BLOB")
             if "embedding_kind" not in columns:
                 self._conn.execute("ALTER TABLE memories ADD COLUMN embedding_kind TEXT NOT NULL DEFAULT 'legacy'")
 
-        self.jobs = WorkJournal(self._conn, self.transaction)
-        self.refinements = RefinementJournal(self._conn, self.transaction)
-        self.objects = ObjectJournal(self._conn, self.transaction, info.model, info.dimension)
+        self.jobs = WorkJournal(self._conn, self.transaction, self.enqueue_cleanup)
+        self.refinements = RefinementJournal(self._conn, self.transaction, self.limits.max_refinement_jobs)
+        self.objects = ObjectJournal(self._conn, self.transaction, info.model, info.dimension, self.enqueue_cleanup)
 
     @property
     def info(self) -> CollectionInfo:
@@ -116,6 +123,8 @@ class StateStore:
         with self.transaction():
             for memory in batch:
                 previous = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory.id,)).fetchone()
+                if previous is None and self.count(Filter(include_superseded=True)) >= self.limits.max_memories:
+                    raise ValidationError("memory capacity reached; prune retained memories or raise max_memories")
                 if previous and previous["consolidated_into"]:
                     old = json.loads(previous["payload"])
                     if any(old[k] != getattr(memory, k) for k in ("caption", "last_seen", "superseded")) or (
@@ -242,8 +251,19 @@ class StateStore:
 
     def append_sightings(self, memory_id: str, sightings: Iterable[Sighting]) -> None:
         with self.transaction():
+            row = self._conn.execute(
+                "SELECT history_before,last_seen FROM memories WHERE id=?", (memory_id,)
+            ).fetchone()
+            if row is None:
+                raise ValidationError("cannot append sightings to a missing memory")
             self._conn.executemany(
-                "INSERT OR IGNORE INTO sightings VALUES (?,?,?)", ((memory_id, s.id, s.timestamp) for s in sightings)
+                "INSERT OR IGNORE INTO sightings VALUES (?,?,?)",
+                ((memory_id, s.id, s.timestamp) for s in sightings if s.timestamp >= row[0] or s.timestamp == row[1]),
+            )
+            self._conn.execute(
+                "DELETE FROM sightings WHERE memory_id=? AND rowid NOT IN "
+                "(SELECT rowid FROM sightings WHERE memory_id=? ORDER BY timestamp DESC,observation_id DESC LIMIT ?)",
+                (memory_id, memory_id, self.limits.max_sightings),
             )
 
     def sightings(
@@ -278,10 +298,15 @@ class StateStore:
             return tuple(Sighting(r[0], r[1]) for r in rows)
 
     def prune_history(self, before: float, *, where: Filter | None = None, limit: int = 4096) -> int:
-        if limit < 1:
-            raise ValidationError("history pruning limit must be positive")
+        if type(limit) is not int or limit < 1 or not math.isfinite(before):
+            raise ValidationError("history pruning needs a positive limit and finite cutoff")
         expr, params = self._predicate(where or Filter(include_superseded=True))
         with self.transaction():
+            self._conn.execute(
+                "UPDATE memories SET history_before=MAX(history_before,?) WHERE id IN "
+                "(SELECT m.id FROM memories m WHERE " + expr + ")",
+                [before, *params],
+            )
             return self._conn.execute(
                 "DELETE FROM sightings WHERE rowid IN (SELECT s.rowid FROM sightings s "
                 "JOIN memories m ON m.id=s.memory_id WHERE s.timestamp<? AND s.timestamp<m.last_seen AND "
@@ -439,6 +464,13 @@ class StateStore:
         with self.transaction():
             for e in evidence:
                 uri = e.uri.removeprefix("file://")
+                if (
+                    not self._conn.execute("SELECT 1 FROM cleanup WHERE uri=?", (uri,)).fetchone()
+                    and self._conn.execute("SELECT COUNT(*) FROM cleanup").fetchone()[0] >= self.limits.max_cleanup
+                ):
+                    raise ValidationError(
+                        "evidence cleanup capacity reached; restore cleanup before accepting more media"
+                    )
                 self._conn.execute(
                     "INSERT OR IGNORE INTO cleanup VALUES (?,?)",
                     (

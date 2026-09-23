@@ -17,7 +17,8 @@ in [missions](missions.md).
   checks and explicit visual absence verification before counting object misses.
 - **Corrections.** An operator can mark an answer right or wrong, on `/placecell/correct` in
   ROS 2 or through `CorrectionLog` in the library. Wrong verdicts halve a memory's rank, and
-  repeated ones get it superseded by the curator. The log is append-only and mergeable.
+  repeated ones get it superseded by the curator. The log is bounded and replaced
+  atomically; feedback for retained memories is never silently evicted.
 - **Decay and curation.** Confidence halves every week unless reinforced. Faded, aged-out and
   superseded memories are removed with their keyframes.
 - **Consolidation.** Clusters of similar sightings in one map cell are summarised into one
@@ -35,8 +36,8 @@ in [missions](missions.md).
 Use a persistent `db_path` for restart recovery. Each collection now has a
 `<collection>.state.sqlite3` file containing authoritative memory metadata, observation
 history, ingestion jobs and cleanup intents. LanceDB supplies a derived vector index.
-Schema 2–7 collections import into schema 8 in bounded batches when opened. The
-original sighting history is retained during import; older clients reject schema 8.
+Schema 2–8 collections import into schema 9 in bounded batches when opened. The
+original sighting history is retained during import; older clients reject schema 9.
 Stop writers and back up the entire database directory and keyframe directory together
 before an upgrade. Do not remove the state file when rebuilding a vector index.
 
@@ -60,6 +61,10 @@ Questions use `question_workers` (2) and `question_queue` (8). Overflow receives
 busy response. Maintenance runs in one background worker with one waiting slot. The node
 logs queued and failed jobs, oldest job age and dropped observations every 30 seconds.
 
+Scene admission defaults to 10,000 records, and each memory retains at most 1,024 detailed
+sightings. Capacity refusal is transactional; updates to existing records remain allowed.
+See [memory retention](memory-retention.md) for configuration and cleanup limits.
+
 Memory records contain at most 64 recent sightings. To read older retained events, page
 through `store.sightings(memory_id, limit=64, after=(timestamp, observation_id))` until empty.
 Time filters consult the full retained history, including gaps. `store.iter_query()` pages
@@ -68,7 +73,8 @@ inside the state store. Calling `query()` without a limit explicitly requests al
 
 Default retention expires memories after 90 days without a sighting, including reinforced
 memories (`RetentionPolicy.max_idle_s`). Detailed sightings older than 90 days are pruned
-in bounded passes (`history_age_s`), while retaining each memory's latest sighting. These
+in bounded passes (`history_age_s`), while retaining each memory's latest sighting. A stored
+cutoff prevents stale metadata updates from restoring expired rows. These
 settings limit history and inactivity, not bytes on disk; size them for the robot's storage
 and observation rate. Disable the idle cap explicitly with `max_idle_s=None` if required.
 Replay deduplication of merged observations is guaranteed within retained history.
@@ -91,7 +97,7 @@ Time queries match actual sighting timestamps, not the interval between the firs
 visit. Results expose matching times through `RankedMemory.observed_at`; agent tool results
 and ROS answers include `observed_at` and `last_seen`. Nearby agent queries honor `map_id`.
 
-Existing schema 2–7 collections are upgraded to schema 8 when opened. The upgrade retains
+Existing schema 2–8 collections are upgraded to schema 9 when opened. The upgrade retains
 stored rows, captions, evidence and lifecycle counts. It can preserve the recorded first
 and last times, but cannot reconstruct intermediate sightings or observation ids that the
 older schema discarded. Replay detection for merged observations is complete for sightings
@@ -120,6 +126,7 @@ is correct. Visual destination checks and fresh arrival checks are described in 
 
 Keyframes produced by the video and ROS sources are marked as managed files. Ingestion
 removes rejected or replaced managed files once no memory references them; caller-supplied
-evidence is unmanaged by default. The ROS curator removes evidence after deleting its final
-memory reference. Failed library ingestion keeps pending keyframes and rolls back segmentation
+evidence is unmanaged by default. Automatic curation removes managed evidence after its
+final memory, object-view and job reference is gone; externally owned recordings remain.
+Failed library ingestion keeps pending keyframes and rolls back segmentation
 so the same observations can be retried; completed writes are recognized before captioning.

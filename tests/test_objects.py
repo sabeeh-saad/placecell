@@ -182,6 +182,29 @@ def test_rgb_refresh_preserves_depth_age_and_reembedding_handles_rgb_first_histo
     target.close()
 
 
+def test_arrival_capture_refreshes_objects_between_regular_scans_without_replaying(setup, tmp_path):
+    store, _, detector, tracker = setup
+    first = ingest(tracker, observation(tmp_path))[0]
+    assert ingest(tracker, observation(tmp_path, 1002))[0].last_seen == 1000
+    arrival = replace(observation(tmp_path, 1003), refresh_objects=True)
+    refreshed = ingest(tracker, arrival)[0]
+    assert refreshed.id == first.id and refreshed.position_timestamp == refreshed.last_seen == 1003
+    assert detector.calls == 2
+    for stamp in (1002, 1003, 1004):
+        ingest(tracker, replace(observation(tmp_path, stamp), refresh_objects=stamp <= 1003))
+    assert store.objects.get(first.id) == refreshed and detector.calls == 2
+
+
+@pytest.mark.parametrize("fault", ["depth", "localization", "appearance"])
+def test_arrival_refresh_retains_geometry_and_identity_requirements(setup, tmp_path, fault):
+    store, _, _, tracker = setup
+    tracker.policy = replace(tracker.policy, require_position=True)
+    first = ingest(tracker, observation(tmp_path))[0]
+    arrival = observation(tmp_path, 1003, colors=("blue" if fault == "appearance" else "red",), depth=fault != "depth")
+    ingest(tracker, replace(arrival, refresh_objects=True, localization_checked=fault != "localization"))
+    assert store.objects.get(first.id).position_timestamp == 1000
+
+
 def test_occlusion_does_not_prove_move(setup, tmp_path):
     _, _, detector, tracker = setup
     before = ingest(tracker, observation(tmp_path))[0]
@@ -468,7 +491,7 @@ def test_explicit_forget_removes_object_crops_and_releases_shared_frames(setup, 
     assert removed == [obs.evidence]
 
 
-@pytest.mark.parametrize("version", [6, 7])
+@pytest.mark.parametrize("version", [6, 7, 8])
 def test_schema_upgrade_preserves_vectors_and_adds_object_ownership(tmp_path, version):
     import json
 
@@ -481,11 +504,13 @@ def test_schema_upgrade_preserves_vectors_and_adds_object_ownership(tmp_path, ve
     Ingester(embedder, store).ingest([observation(tmp_path)], preselected=True)
     before = store.query()[0]
     old_object = None
-    if version == 7:
+    if version >= 7:
         old_object = ingest(ObjectTracker(store, embedder, Detector()), observation(tmp_path, 2000))[0]
         row = store._conn.execute("SELECT payload FROM objects WHERE id=?", (old_object.id,)).fetchone()
         payload = json.loads(row[0])
-        payload.pop("position_timestamp")
+        if version == 7:
+            payload.pop("position_timestamp")
+        payload["position"].pop("surface_points", None)
         store._conn.execute("UPDATE objects SET payload=? WHERE id=?", (json.dumps(payload), old_object.id))
     store.close()
     metadata = tmp_path / "db" / "old.collection.json"
@@ -493,11 +518,11 @@ def test_schema_upgrade_preserves_vectors_and_adds_object_ownership(tmp_path, ve
     data["schema_version"] = version
     metadata.write_text(json.dumps(data))
     upgraded = LanceDBStore(tmp_path / "db", info)
-    assert upgraded.info.schema_version == SCHEMA_VERSION == 8
+    assert upgraded.info.schema_version == SCHEMA_VERSION == 9
     assert upgraded.get(before.id).same_embeddings(before)
     if old_object is not None:
-        assert upgraded.objects.get(old_object.id).position == old_object.position
-        assert upgraded.objects.get(old_object.id).position_timestamp is None
+        assert upgraded.objects.get(old_object.id).position == replace(old_object.position, surface_points=())
+        assert upgraded.objects.get(old_object.id).position_timestamp == (None if version == 7 else 2000)
     tracker = ObjectTracker(upgraded, embedder, Detector())
     ingest(tracker, observation(tmp_path, 2000))
     upgraded.rebuild_index()

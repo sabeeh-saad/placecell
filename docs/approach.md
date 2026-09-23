@@ -59,7 +59,10 @@ that their exact footprint could traverse.
 At most three candidates are queried through Nav2's native
 [ComputePathToPose action](https://api.nav2.org/actions/humble/computepathtopose.html).
 Partial paths, foreign frames, paths starting away from the current robot pose, paths
-longer than 30 m and paths with collisions are rejected. The shortest checked path selects
+longer than 30 m and paths with collisions are rejected. Candidates closest to the learned
+viewing side are checked first; among valid paths, viewing-angle consistency takes priority
+over path length. This preserves identifying details rather than choosing a shorter route
+to an object's unfamiliar side. The best checked path selects
 the goal. Defaults allow two seconds per action request and eight seconds overall,
 controlled by `approach_request_timeout_s` and `approach_planning_timeout_s`. These planning
 queries do not move the robot. Cancellation and timeouts also cancel late accepted queries.

@@ -21,29 +21,56 @@ class PendingImages:
     deadline. Missing depth never receives a fabricated position. Call from one callback group.
     """
 
-    def __init__(self, max_skew_s: float = 0.08, wait_s: float = 0.3, capacity: int = 8) -> None:
-        if not math.isfinite(max_skew_s) or not math.isfinite(wait_s) or min(max_skew_s, wait_s, capacity) <= 0:
+    def __init__(
+        self, max_skew_s: float = 0.08, wait_s: float = 0.3, capacity: int = 8, max_age_s: float = 5.0
+    ) -> None:
+        if (
+            any(not math.isfinite(v) or v <= 0 for v in (max_skew_s, wait_s, max_age_s))
+            or type(capacity) is not int
+            or capacity < 1
+        ):
             raise ValidationError("invalid image synchronization bounds")
         self.depth: deque[Any] = deque(maxlen=capacity)
         self.info: deque[Any] = deque(maxlen=capacity)
         self._images: deque[tuple[Any, bool, float]] = deque(maxlen=capacity)
         self._skew, self._wait = max_skew_s, wait_s
         self._last_stamp = -math.inf
+        self._age = max_age_s
 
     @staticmethod
     def stamp(message: Any) -> float:
         return stamp_to_seconds(message.header.stamp.sec, message.header.stamp.nanosec)
 
-    def add(self, message: Any, compressed: bool, now: float) -> None:
-        timestamp = self.stamp(message)
+    def add(self, message: Any, compressed: bool, now: float, *, source_now: float | None = None) -> bool:
+        try:
+            timestamp = self.stamp(message)
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if source_now is not None and (timestamp <= 0 or not 0 <= source_now - timestamp <= self._age):
+            return False
         if timestamp <= self._last_stamp or (self._images and timestamp <= self.stamp(self._images[-1][0])):
-            return
+            return False
         self._images.append((message, compressed, now))
+        return True
 
-    def pop(self, now: float) -> tuple[Any, bool] | None:
-        if not self._images:
-            return None
-        message, compressed, received = self._images[0]
+    def add_depth(self, message: Any, *, calibration: bool = False) -> bool:
+        try:
+            stamp = self.stamp(message)
+            if not message.header.frame_id or (not calibration and stamp <= 0):
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+        (self.info if calibration else self.depth).append(message)
+        return True
+
+    def clear(self) -> None:
+        """Discard all cached messages when their clock provenance is invalid."""
+        self._images.clear()
+        self.depth.clear()
+        self.info.clear()
+        self._last_stamp = -math.inf
+
+    def _paired(self, message: Any) -> bool:
         timestamp = self.stamp(message)
         frame = message.header.frame_id
         depth_ready = any(
@@ -53,11 +80,23 @@ class PendingImages:
             i.header.frame_id == frame and (self.stamp(i) == 0 or abs(self.stamp(i) - timestamp) <= self._skew)
             for i in self.info
         )
-        if not (depth_ready and info_ready) and 0 <= now - received < self._wait:
-            return None
-        self._images.popleft()
-        self._last_stamp = timestamp
-        return message, compressed
+        return depth_ready and info_ready
+
+    def pop(self, now: float) -> tuple[Any, bool] | None:
+        while self._images:
+            message, compressed, received = self._images[0]
+            paired = self._paired(message)
+            if not paired and 0 <= now - received < self._wait:
+                return None
+            self._images.popleft()
+            self._last_stamp = self.stamp(message)
+            if not paired and any(self._paired(newer) for newer, _, _ in self._images):
+                # A dropped packet is not a lost depth stream. Prefer a later complete
+                # capture after this one's delivery deadline instead of revoking live
+                # depth provenance immediately before delivering that healthy capture.
+                continue
+            return message, compressed
+        return None
 
 
 def aligned_snapshot(
@@ -81,7 +120,9 @@ def aligned_snapshot(
     depth_stamp = stamp_to_seconds(depth.header.stamp.sec, depth.header.stamp.nanosec)
     info_stamp = stamp_to_seconds(info.header.stamp.sec, info.header.stamp.nanosec)
     if (
-        not rgb_frame
+        not math.isfinite(rgb_stamp)
+        or rgb_stamp <= 0
+        or not rgb_frame
         or depth.header.frame_id != rgb_frame
         or info.header.frame_id != rgb_frame
         or abs(rgb_stamp - depth_stamp) > max_skew_s

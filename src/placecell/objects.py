@@ -44,8 +44,11 @@ class ObjectPolicy:
     visit_interval_s: float = 600
     retention_s: float = 30 * 86400
     min_interval_s: float = 15
+    require_position: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.require_position) is not bool:
+            raise ValidationError("require_position must be boolean")
         if (
             min(
                 self.max_objects,
@@ -113,8 +116,15 @@ class ObjectTracker:
         )
         with self.store.transaction():
             generation = journal.generation
+            if p.require_position and (observation.depth is None or not observation.localization_checked):
+                # Aligned RGB-D sources may fall back to scene-only captures. Those
+                # cannot establish another object identity from a changed viewpoint.
+                return PreparedObjects(generation, (), observation.timestamp)
             last_scan = journal.scan_time(scan_key)
-            if last_scan is not None and observation.timestamp - last_scan < p.min_interval_s:
+            if last_scan is not None and (
+                observation.timestamp <= last_scan
+                or (observation.refresh_objects is not True and observation.timestamp - last_scan < p.min_interval_s)
+            ):
                 return PreparedObjects(generation, (), observation.timestamp)
             records = journal.records(
                 robot_id=observation.robot_id,
@@ -130,6 +140,16 @@ class ObjectTracker:
             observation.depth.locate(v.box) if observation.depth and observation.localization_checked else None
             for v in fresh
         ]
+        if p.require_position:
+            usable = [
+                (view, position)
+                for view, position in zip(fresh, positions, strict=True)
+                if position is not None and position.uncertainty_m <= p.max_association_uncertainty_m
+            ]
+            if fresh and not usable:
+                # Do not consume the scan interval while waiting for usable geometry.
+                return PreparedObjects(generation, (), observation.timestamp)
+            fresh, positions = [v for v, _ in usable], [position for _, position in usable]
         similarities: dict[tuple[int, str], float] = {}
         for i, view in enumerate(fresh):
             assert view.memory.embedding is not None
@@ -305,13 +325,22 @@ class ObjectTracker:
                 result[i] = identity
         return result
 
-    def detect_views(self, observation: Observation) -> list[ObjectView]:
+    def detect_views(self, observation: Observation, *, include_captions: bool = True) -> list[ObjectView]:
         """Detect and embed crops without changing records, scan timestamps or sighting counts."""
+        return self.embed_crops(
+            self.crop_views(observation, self.detector.detect(observation.evidence)), include_captions=include_captions
+        )
+
+    def crop_views(
+        self,
+        observation: Observation,
+        detections: list[Detection],
+    ) -> list[ObjectView]:
+        """Create bounded, deduplicated crops without embedding or changing object memory."""
         try:
             from PIL import Image
         except ImportError as e:  # pragma: no cover
             raise PlacecellError("object crops require pip install 'placecell[objects]'") from e
-        detections = self.detector.detect(observation.evidence)
         if len(detections) > self.policy.max_detections:
             raise ValidationError("detector exceeded max_detections")
         kept: list[Detection] = []
@@ -319,12 +348,7 @@ class ObjectTracker:
             if all(detection.box.overlap(d.box) < 0.7 for d in kept):
                 kept.append(detection)
         views = []
-        memories = []
-        crops = []
-        with (
-            Image.open(observation.evidence.uri.removeprefix("file://")) as source,
-            tempfile.TemporaryDirectory() as tmp,
-        ):
+        with Image.open(observation.evidence.uri.removeprefix("file://")) as source:
             if source.width * source.height > 16_000_000:
                 raise ValidationError("object images must not exceed 16 megapixels")
             source.load()
@@ -349,30 +373,36 @@ class ObjectTracker:
                 data = buffer.getvalue()
                 if len(data) > 1_000_000:
                     raise ValidationError("object crop exceeds size limit")
-                path = Path(tmp) / f"{i}.png"
-                path.write_bytes(data)
                 memory = Memory.create(
                     observation.robot_id,
                     observation.camera_id,
                     observation.timestamp,
                     observation.pose,
-                    Evidence(EvidenceKind.FRAME, str(path)),
+                    observation.evidence,
                     f"{detection.label.casefold().strip()}: {detection.description}",
                 )
                 identity = str(uuid.uuid5(uuid.NAMESPACE_URL, f"placecell:object:{memory.id}:{i}"))
-                memories.append(replace(memory, id=identity))
-                crops.append((box, data))
-            embedded, rejected = embed_memories(memories, self.embedder)
+                memory = replace(memory, id=identity, localization_checked=observation.localization_checked)
+                views.append(ObjectView(identity, memory, box, data))
+        return views
+
+    def embed_crops(self, views: list[ObjectView], *, include_captions: bool = True) -> list[ObjectView]:
+        """Embed the exact crops also supplied to independent visual comparison."""
+        with tempfile.TemporaryDirectory() as tmp:
+            memories = []
+            for i, view in enumerate(views):
+                path = Path(tmp) / f"{i}.png"
+                path.write_bytes(view.crop_png)
+                memories.append(replace(view.memory, evidence=Evidence(EvidenceKind.FRAME, str(path))))
+            embedded, rejected = embed_memories(memories, self.embedder, include_captions=include_captions)
             if rejected:
                 raise ValidationError("object embedder rejected a crop")
-            for memory, (box, data) in zip(embedded, crops, strict=True):
+            result = []
+            for memory, view in zip(embedded, views, strict=True):
                 if memory.embedding is None or not np.any(memory.embedding):
                     raise ValidationError("object crop produced an empty embedding")
-                view_memory = replace(
-                    memory, evidence=observation.evidence, localization_checked=observation.localization_checked
-                )
-                views.append(ObjectView(memory.id, view_memory, box, data))
-        return views
+                result.append(replace(view, memory=replace(memory, evidence=view.memory.evidence)))
+            return result
 
     def commit(self, prepared: PreparedObjects) -> None:
         with self.store.transaction():

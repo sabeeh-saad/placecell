@@ -36,6 +36,11 @@ This boundary is intentional: flexible language does not grant capabilities the 
 Both agents may use the same model or different tool-calling models. Separate contexts are
 not proof of independent errors, and a reviewer can also approve an incorrect interpretation.
 
+Both roles receive the names of configured places in the current map, without coordinates.
+This resolves a configured `home`; it is not an inventory or whitelist of object destinations.
+Unlisted object names and functional descriptions are grounded by the executor after review.
+The catalog cannot add visits, waive image checks, or turn an absent target into a success.
+
 ## Enable the ROS interface
 
 For the bundled Gazebo office, the [reference deployment guide](reference-deployment.md)
@@ -94,6 +99,11 @@ It adds:
 - `mission_destinations`: the reviewed ordered descriptions.
 
 Each step has its own `request_id`, also separating late feedback from previous goals.
+
+For persistent diagnostic evidence beyond live status, enable [mission tracing](mission-tracing.md).
+It links these IDs to planning/review, retrieval candidates, visual checks and action results,
+with stage durations and reported provider usage. The reference mission profile enables it;
+export a report by mission ID after a failure or before removing the simulation container.
 The current destination includes its map pose, target, memory/object IDs and source.
 Subscribers can combine the goal index and destination list to display pending goals.
 For example, an abbreviated event during the second goal is:
@@ -112,7 +122,10 @@ For example, an abbreviated event during the second goal is:
 New states are `planning`, `planned`, `clarification_required` and `step_succeeded`.
 `step_succeeded` completes an intermediate visit; only the last visit produces mission
 `succeeded`. Existing resolution, motion, arrival and failure states continue to apply.
-This topic is a live event stream, not a latched mission snapshot service.
+This topic remains a live event stream. Reconnecting clients can read
+`/placecell/get_mission_snapshot` or subscribe to the retained `/placecell/mission_snapshot`
+topic without replaying a command. The [operator interface](operator-interface.md) specifies
+the versioned JSON command/status payloads, snapshot fields and delivery semantics.
 
 Each next goal is resolved against current memory when its turn begins. An earlier lookup
 is not reused throughout a long mission. Memory goals advance only after fresh arrival
@@ -136,9 +149,14 @@ Planning and review receive up to twenty recent history events within a 16,000-c
 serialized context budget, with timestamps and
 actual outcomes. They can use them to interpret follow-ups such as "take me there again";
 the destination must still be retrieved and verified now. Missing or ambiguous references
-should prompt clarification. The database keeps older events for inspection, but the model
-window is bounded; there is no automatic long-term conversation summarization or retention
-policy yet. Text history is separate from image/object memory and does not rewrite it.
+should prompt clarification. Persistent history now has row, content and age limits:
+1,000 events, 2 MiB and 30 days by default, across all scopes sharing that database.
+Pruning removes whole requests and exposes a history boundary. Deleted or superseded
+scene/object references remove their request and older events from the planning window;
+an older destination is never substituted for an unavailable latest reference. Both
+agents are told to clarify when required context is missing. See the
+[retention contract](memory-retention.md) for settings, failures and measured checks.
+Text history remains separate from image/object memory and does not rewrite it.
 
 Restarting loads context only. It never resumes movement or replays unfinished steps.
 A new instruction is always needed. History is untrusted context, not executable work.

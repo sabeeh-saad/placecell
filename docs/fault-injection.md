@@ -5,7 +5,8 @@ destination resolver, mission controller, localization gate and Nav2 adapter. Sc
 providers and a controlled action client inject failures at their interfaces. Context uses
 a real temporary SQLite database. No API key, ROS installation or robot is needed.
 
-The suite has **36 scenarios: 34 fault cases and two successful controls**. Its checks
+The suite has **105 scenarios: 102 mission cases and three component cases**, including
+five successful mission controls. Its checks
 specify expected status, dispatch count and mission ownership at intermediate checkpoints,
 as well as the final outcome. A successful fault check means the software handled the
 specified failure; it does not mean a navigation mission succeeded.
@@ -43,6 +44,10 @@ any checks cannot pass. Each repetition starts with fresh state and a new tempor
 - **Planning and review:** provider timeouts, malformed replies, replies arriving after the
   controller deadline, reviewer rejection, and stop during review must dispatch no goal.
   The late-reply cases explicitly poll the controller while the scripted provider is active.
+- **Provider contracts:** duplicate decision/verdict fields, unknown tools/actions, extra
+  fields, oversized explanations, missing completion evidence, refusal-plus-positive output
+  and HTTP errors must report a reason with zero dispatches. These cases exercise the actual
+  chat/vision adapters against injected HTTP bodies.
 - **Nav2:** unavailable server and rejected goals cannot advance a mission. A send error,
   late acceptance, lost terminal result, delayed cancel acknowledgement or rejected cancel
   retains ownership until a terminal result resolves the trip. New instructions receive
@@ -66,11 +71,39 @@ any checks cannot pass. Each repetition starts with fresh state and a new tempor
   another SQLite transaction, then exits without cleanup. Reopening must preserve committed
   history, discard the incomplete success record, and never automatically replay motion.
 
-The controls complete two named destinations in order and one remembered destination with
+The original controls complete two named destinations in order and one remembered destination with
 scripted candidate and fresh-arrival verification. They prevent “always refuse” behavior
 from appearing as a healthy suite.
 
+Day 14 adds successful repeated-visit, mixed named/memory and ambiguity-choice chains,
+alongside command identity, queued-work, stale-callback and retained-context scenarios.
+The [execution checkpoint](execution-gate.md) runs ten repetitions and enforces at least
+100 mission cases and 1,000 executions with `--execution-gate`. Component checks remain
+required but are excluded from both execution denominators.
+
+Day 8 adds ten cancellation cases: stop during planning/candidate/arrival work, stop before
+acceptance, deadlines enforced without a timely poll, and terminal results deliberately
+delivered before cancellation events. Named and memory goals keep their distinct outcomes.
+These forced callback interleavings are deterministic; threaded regressions and the
+[real ROS cancellation check](cancellation-ownership.md) supply separate scheduling evidence.
+
+Day 10 adds 14 [provider-contract scenarios](model-input-contracts.md). New malformed
+planner and visual replies were reproduced before repair; positive controls remain required.
+
+Day 11 adds 13 [sensor/clock provenance scenarios](sensor-clock-contracts.md), including
+recovery before polling, late success after trust loss, camera/depth-dependent refusal,
+paused source time and reset clocks. The separate `simulation/sim check-sensors` command
+exercises real DDS and production-node capture callbacks; deterministic fixtures do not
+stand in for that transport evidence.
+
 ## Read the report
+
+Day 12 adds nine [target-freshness scenarios](target-freshness.md) and checks failure-stage
+preservation in traces. Each result records `failure_stage`; `summary.final_failure_stages`
+counts terminal attribution independently of the contract pass/fail totals. An expected
+refusal is a passing software check, not a successful robot mission. The empty-string
+bucket includes successful controls and cases without terminal failure attribution.
+Target scenarios use a 30-second arrival phase to isolate the 5-second capture-age bound.
 
 The JSON report includes:
 
@@ -81,8 +114,16 @@ The JSON report includes:
   ROS topic, retaining request/mission/step IDs and goal descriptions. Events are collected
   in-process; DDS delivery is not tested.
 - Goal submission attempts, cancellation calls, final ownership, queued tasks, scripted
-  provider calls, virtual elapsed time and measured wall duration.
+  Python model/verifier fixture calls, virtual elapsed time and measured wall duration.
+  For the adapter-boundary scenarios, injected HTTP calls are recorded by the scenario's
+  `one bounded provider call` check; they are separate from the Python fixture counters.
 - Explicit limitations and zero paid API calls/cost.
+
+Day 4 adds a `trace` report to each result. It captures production-stage events and checks
+that published statuses, submission attempts and cancellation requests match their trace
+events, with no observed loss. The harness's temporary database is removed after each case;
+the exported trace remains in the report. See [mission tracing](mission-tracing.md) for the
+schema, persistent ROS setup and exporter.
 
 The runner uses shorter virtual deadlines (5 s lookup, 3 s arrival, 2 s Nav2 response,
 10 s trip) to exercise exact boundary conditions without waiting. These are harness
@@ -110,3 +151,5 @@ separate integration/qualification runs. Passing this suite alone is not product
 
 The [Day 3 validation record](validation/day-03.json) records the observed regression,
 fix, source hashes and local check results.
+The [Day 8 record](validation/day-08.json) records the expanded suite, concurrent callback
+repairs and controlled ROS latency checks. Startup goal reconciliation remains outstanding.

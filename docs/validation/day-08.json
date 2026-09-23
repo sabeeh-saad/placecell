@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-22",
+  "created_at": "2026-09-22T09:19:30.434072+00:00",
+  "scope": "Day 8 cancellation, in-process Nav2 goal ownership, callback races and controlled ROS latency",
+  "git_head": "abfe375a5c01a8e7bb6d7815ed051680d1a67f52",
+  "source_state": "Local Days 4\u20138 working tree; identified by hashes, no commit or push in Day 8",
+  "sources_sha256": {
+    "src/placecell/__init__.py": "c6508e702c386c6ea34350cbe89a90cea0540ef638f88b96bdc96d1421bba048",
+    "src/placecell/agent.py": "eb9af5659ac3a4d878807d5bb0220af51c6602b565d80c9e068a3a1c9af85799",
+    "src/placecell/approach.py": "b19aa2a01b11dcda99094f9265ebbb849519010675034a8d3ba03e6b93f21933",
+    "src/placecell/chat.py": "e85e28f43263a6fcbdac8d669b830d246529aacec5d79f83545923653df6db97",
+    "src/placecell/consolidation.py": "23033a699a82933fbc38ca57b6681d74498dbe9300a1d013facdc78940bffcb6",
+    "src/placecell/corrections.py": "11e6b2714cc22165c4dd951ed59304c7e20105b4821d7b22c52d081f4cdf98a1",
+    "src/placecell/depth.py": "0a76ec0b9ef533a99025fb3dcd7276f63aca8d8ed1bcd690312f1695b2149e63",
+    "src/placecell/errors.py": "2dd925ab5cef9a1904564b62b0ae333f9efdee2e19ca5dbf3a550de5cda1d451",
+    "src/placecell/evaluation.py": "dcd8e4e80cb1dc588ad31ecf5256465827fa901e3622920f64e5417cff711ee3",
+    "src/placecell/fault_injection.py": "94cae8cece92c264a39b68fbcc908d43a5b61ae88f26ca048b43e56b4cb7017e",
+    "src/placecell/lifecycle.py": "940b76b672ba864906df126810f9c0914c8c293269330837e20674b0afee7bea",
+    "src/placecell/localization.py": "d7c8ff8a8b350973dcacdb5625e48ac1cfdd55a5b427f2440fadbcae7f9edb03",
+    "src/placecell/memory.py": "5254b5f47691a435954d2ccc1b89dafc8c99118e8b28b7672edb04c4cab1001c",
+    "src/placecell/migrate.py": "46d1e4eff55bbb9ad5dcb00e1f5d55a2019c2610a85ec5ab8aed820c30ad535d",
+    "src/placecell/mission_context.py": "044d45cc2fc6d7f17c13f12ce2ae1b6dcc2c51fcb3f9be8fd1a44cc7296f474c",
+    "src/placecell/mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+    "src/placecell/missions.py": "0237a5204bae7377590101709f377a9ab0bfc74bcc19e53f23231bfb1a31e10c",
+    "src/placecell/navigation.py": "9e99070e91a51ed13d4263150e3bc5b19e989f7ec680297d6085d439b3cf8c43",
+    "src/placecell/object_arrival.py": "900bca7e23f8cb70cf18e1a241ae736b9062d0ce331ef3da71b5f7e6d0a6329c",
+    "src/placecell/object_evaluation.py": "374a99700563884cae9e231bb715227b43915ef4a6ac9fa06b0b4e9b26822179",
+    "src/placecell/object_search.py": "7d970c0783d36f245a9218c952194a687d1e30711661ee10aa9d11fb7fe70286",
+    "src/placecell/object_types.py": "1f0100479bbb9bb8692e34a322a0859a05821a777697908d9cec4b1572282404",
+    "src/placecell/objects.py": "89100b0e217aac0dc160a5eb0c2ad6e769f1f31975e19c7655ccd0ee4078da05",
+    "src/placecell/observer.py": "6e3669b09583eb40d51ce0d79c7008c220809cf6dafd48e78f85da24cf0b2e2a",
+    "src/placecell/operator.py": "87b7e8437fc9e9aba4b566fa0e00b4489ab2bcfa646d7c459e641ac9e52471f2",
+    "src/placecell/pipeline.py": "69210df11bc30e0f89896f552ac143d57a417fee3f8535efe99eb19ffeb5deac",
+    "src/placecell/providers/__init__.py": "a8c6d4daa5119f3b92fa6b8833152143b122ef43df459bb780a54872bfc56b9d",
+    "src/placecell/providers/_http.py": "6e6e4eeae64f0e8cdc20dad2ec45fd21132474578f694548acc00640de649c97",
+    "src/placecell/providers/base.py": "85e63d710fcb861876c3f1f73c5c5923afdb2dae78f72f7dc8f03e67a1688bca",
+    "src/placecell/providers/captioning.py": "6631813e84bb50d21de4e6592cb6cee6befacededbf1588053ef5921c406c048",
+    "src/placecell/providers/chat.py": "42abfd773e19695203448773b14af289f587693b96aa7a2890725404ab660e01",
+    "src/placecell/providers/clip.py": "4af556a1b0f808bbf15323e3c79a1a1b4c743dba5ccdf759f7df62f6f0f81e1d",
+    "src/placecell/providers/embedding.py": "ea2c50e76c9d3b9df4134374c13c0f8f914649af790fc8881aaccfc32841908e",
+    "src/placecell/providers/gemini.py": "7b612e927131d2e97721686dcc8956b53d78e566eabb15faaaac316f81cf54ea",
+    "src/placecell/providers/hashing.py": "e798dad790d74c76732169f84f27e89d27ae2881f8ca57e2d442b71e75572f71",
+    "src/placecell/providers/object_detection.py": "43c217c9a34300d014a26bb76e016764789983c86acfda0a52ad1e58e73e69c9",
+    "src/placecell/providers/openai_compatible.py": "89900bd84cf77e7fcc39bbc9ad3b460faf94f34f2ec86c70f0f95fcbb7a6a437",
+    "src/placecell/providers/openrouter.py": "333319f1b4aaaef099a5f32b5b59dd5ac5102123ad02191b208902bc06742757",
+    "src/placecell/recordings.py": "52ff54579bd16151c1c373c9a58d29ac806e44346a134ceaf3c29e1957b64522",
+    "src/placecell/refinement.py": "8c814c06b9f951ac52e590b332545a3f0762bf8560eec87a55aecaf5d79d3142",
+    "src/placecell/retrieval.py": "215ebccf4cfab9f055302a3c6975f840eb58d3d98090452c6dc3e2f8c2a6bdbf",
+    "src/placecell/ros2/__init__.py": "940365c14b76882518d9a28665cbc1d8c9b8ea899aabfc14a8db3c33f15f8db1",
+    "src/placecell/ros2/approach.py": "580c3afec4e1d53411f647794b8f59c0ddfe425c274040aa4b3e083d5ae11afa",
+    "src/placecell/ros2/bridge.py": "228902d34cb4f7d5e9969341634928ce091d554869a8d10415bb0206e8b85174",
+    "src/placecell/ros2/depth.py": "e6221ae223b2b7b2a2809f57ec395b308e24852bfc2dff1d2f9638e275ff058b",
+    "src/placecell/ros2/navigation.py": "485e340b730fc6c17ec8a714b2389f8a97a27a87ffe46e9568a51d050cb6bb5a",
+    "src/placecell/ros2/node.py": "a655467a04e7f76c4034d153fc6aebcb1ee7fc36ab3e49767e3b481e4ea4bdbb",
+    "src/placecell/ros2/operator.py": "eb8039c2e27b5fecb6007cc90bdf6921729df15e39f5e85d8929337a340b2f70",
+    "src/placecell/ros2/speech.py": "8d36d5dd7b9c80035ae980102cc4597d7c81a7fcf93f99284c9a71119a394b3f",
+    "src/placecell/sources/__init__.py": "c47d4e85dec0f6b068ead36c31e842a27b21609fb6450b2e2ea3252f921bb613",
+    "src/placecell/sources/pose_log.py": "7386c8a53f10ac52c6d37ddbc7100f1e3cea9a8972ecba8bc405c8e17e4b16b0",
+    "src/placecell/sources/video.py": "4769ad5ce3cf3668de1b3aa6e98e080ba872691a386875096da25bbe9433652f",
+    "src/placecell/speech.py": "a4e80bb56a3ed7f01341b45798f9bf558ff2ebf0c532da7a1594918b136830e1",
+    "src/placecell/store/__init__.py": "226f74ed34c4b6ef38462f4f710e4b2fc4629a562fd2fc1bd5dcf40ea63f5971",
+    "src/placecell/store/base.py": "0751bcb6cdd5973431ee9d0506ed9e0050b2dc28f02e80341dbfb4b357b56a2b",
+    "src/placecell/store/codec.py": "2f2c647ffcd07909c35b9a43081d594ebff367de19869d28ef7e8882b923c108",
+    "src/placecell/store/in_memory.py": "928a5f85939a0950ed9ffd671c8cd5c62dcdb8d79004b70721cf1095b14c82f9",
+    "src/placecell/store/jobs.py": "f0a1137b6919f53305429911595137ced10d9c8c2058c0800dc3f7c64c58f22e",
+    "src/placecell/store/lancedb_store.py": "337cf924b1ef82833874c19eec10e71f92ce13035ba72dd746664894d82d6761",
+    "src/placecell/store/objects.py": "b3f78b6f099f18159609d17fbb853f2556ff72e08151fda971dac289e1aa54f5",
+    "src/placecell/store/refinements.py": "3f78bccbf0d1ae9d72477fe770c5e154ce0a956b9bc9b576467ad396e7de32e8",
+    "src/placecell/store/state.py": "f32294e839ff74ed306355e4b4c6d76e0ed75dee61a13ee026978fa8b579acc7",
+    "src/placecell/trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+    "src/placecell/tracing.py": "c43a68020962acd4b0dd227f2d3fcb65184b58700ee02056e53037dcebcf8098",
+    "src/placecell/verification.py": "2203d1e6b17b3a5c637257cb45f9a528f30bcd0dd92f148411071ee9f2585cb0",
+    "simulation/scripts/cancellation_test.py": "8baf3fb7b2e4ae9194899a54c3b75962c95672520ee886cca4e22dae03b7b5fe",
+    "simulation/scripts/operator_test.py": "97caa878d7409ac87983945b674114f088bd201fbcc7448e2373af51c13598b1",
+    "simulation/Dockerfile": "1227d659db99931e98c6632c20226438a807faee7ef469851670ff2f27309452",
+    "simulation/sim": "f120fc6450f29391a400eb249f7427d64bda8a19fa1d251b766b3ab760cd988e",
+    ".github/workflows/simulation.yml": "6c6e44f39afd3d9b2a88174586b99c13fd13ebf707bcacd81f582c7a2f0fa13d",
+    "tests/test_navigation_races.py": "9f0dd29ea231e0fec11384f58853902437bfd1c12300897b73eba1eef054ea40",
+    "tests/test_nav2.py": "87abf901e16c76e16f6bd6124b8ffb1239e60739ef10935d247c89bf62813de3",
+    "tests/test_missions.py": "786050f8529057fc4b243917afbd102d9058cfce50ba928570e67f06742cde37",
+    "tests/test_ros2_operator.py": "4b90ca0a733fafc29a5f99bede836a767ea4b6471545292b6befb7f8b13aed2d",
+    "tests/test_ci_contract.py": "e848395f2f6e7c37d681107c8d81d7225817c6f80ba6c7759aa080628771633b",
+    "tests/test_fault_injection.py": "e43a1f2c3d4367e2f95ec7bb1c6021c854ad3d9dd186494519226ec99fe9e61e",
+    "docs/cancellation-ownership.md": "670dbaa28b6ab8fa07d5451a8a879272f5bebf0a1fc106832704f5095e2773b7",
+    "docs/navigation.md": "9088e68544b577ca406e47409506524a8a80920d7c458adb26e51d636dfe9a89",
+    "docs/operator-interface.md": "ee2d27043c138f094c84fb0e8e1f5964d5ab9689e50422acab527c3441b15994",
+    "docs/ci.md": "362a93056d6e5a130d9e3cc9f0a7b614f05904389689876519bb261d081d52f0",
+    "docs/fault-injection.md": "49b88308d30b41eec536a84039752e3f447ee5cc3cff1aee6d9c7cbdd92bc893",
+    "docs/roadmap.md": "a47fa51910f440a6a3f42853ad46bc5b8c9f5e49bdb800a8f922833a6b7b4236",
+    "docs/production-readiness.md": "98db90b5d620ecf38e251cfa4dfcfa8f465a8c74205dc0fd68b52188a0d602d6",
+    "CHANGELOG.md": "b6c16f938fcd19cbe66678d8c4dc9b21072b2d160312ee877ea6e74ccac71a84"
+  },
+  "artifacts_sha256": {
+    "simulation/artifacts/day-08/boundaries.xml": "619b1193dc9dc23d9fe672a007020ef56f31a62e39e6bbe3208ad817c79b408c",
+    "simulation/artifacts/day-08/coverage-final.json": "0adc7c769221dd3bc1454ba0cbccd56b29fd9c91924a04dca4603a4737343ac0",
+    "simulation/artifacts/day-08/faults.json": "5eded8c00f5dbafad5ce0383ccb65faf1f123949b778179e3160f8edd3caa61e",
+    "simulation/artifacts/day-08/regressions-before.xml": "a1464f697460e38641eeca482a381c0f7ced5de90919b3b78fc1e72fb31d134d",
+    "simulation/artifacts/day-08/ros-trace-summary-before.json": "33516100b806ba47456c75e640b61e28132eda9b38a19a0fc0d5025f07fb594d",
+    "simulation/artifacts/day-08/ros-trace-summary-final.json": "9424aebc1216588563233f73a6ab9f88897da841e7c98a06f6cf4fcf1bd69db9",
+    "simulation/artifacts/day-08/sandbox-attempt.json": "54d8d33897dfe8842c78b695308d406f27e07aa69eb6225f0fdb7c0e9803b8d2",
+    "simulation/artifacts/day-08/targeted.xml": "4c11b0eda1bc3bc09bcb9e77cd4cac5f3fdfa48fa76e03d47aeea8a19d94b3e8",
+    "simulation/artifacts/day-08/tests-final.xml": "990c3a1b313a73891051f1a6928b054a19c14613b541f81a33b5a814056a64f4",
+    "simulation/artifacts/day-08/trace-capture-audit-before.json": "563b8790be08295a54bd8f52c319a2615dbccb98b1b8bd221dfe209daa2fc75a",
+    "simulation/artifacts/check-cancel-20260922T091605Z-135973/report.json": "5a0edab137e78ba4073c578d766b028dcc0872800d841ff727ed5f412322d8c6",
+    "simulation/artifacts/check-cancel-20260922T091605Z-135973/context.sqlite3": "b55a47401e568f58c1fc583ca6c6a06413359ea42a25874c7a196bc8666513ac",
+    "simulation/artifacts/check-cancel-20260922T091605Z-135973/traces.sqlite3": "719a0b34d605a47e108a90e456f1b72d8f3aa67b417bc3f8261936a0ea5ee01a",
+    "simulation/artifacts/check-operator-20260922T090813Z-127852/report.json": "acd2b3f1495f53044ea45fe9e6261e39d72a56ac565220f52f7e31d7487b9acd",
+    "simulation/artifacts/check-cancel-20260922T085051Z-113819/report.json": "5937f45bd31f6a4cb64066fec8343a78b17ff8bce38de91fedfbdfffcd2eb59d",
+    "simulation/artifacts/check-cancel-20260922T090811Z-127731/report.json": "3fb34746fa4c5992744ba8b79ef8d486ca5fab67d616f61936b770824ac33129"
+  },
+  "runtime_changed_since_day7": [
+    "src/placecell/fault_injection.py",
+    "src/placecell/navigation.py",
+    "src/placecell/ros2/navigation.py",
+    "src/placecell/ros2/node.py",
+    "src/placecell/ros2/operator.py"
+  ],
+  "fixes": [
+    "Carry cancellation intent atomically with terminal transport events; timeout/result reordering cannot advance a mission",
+    "Enforce response/trip deadlines on callback arrival when timer polling is delayed",
+    "Use exact trip identity in asynchronous cancellation paths; ignore duplicate acceptance registration",
+    "Issue cancel API call before cancellation status persistence/publication; preserve synchronous terminal outcomes",
+    "Dedicated command group, reentrant action client and independent 100 ms steady timers with four executor threads",
+    "Ten added offline boundary cases and required CI cancellation integration",
+    "Validation harness now drains traces outside timing windows and verifies complete capture"
+  ],
+  "regressions_before_fix": {
+    "report": "simulation/artifacts/day-08/regressions-before.xml",
+    "summary": {
+      "tests": 5,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0,
+      "time": 0.114
+    },
+    "reproduced_failures": [
+      "Late-acceptance terminal success advanced mission before response-timeout event delivery",
+      "Terminal success advanced mission before trip-timeout event delivery",
+      "Old result-error callback canceled a new trip sharing a textual transport ID"
+    ],
+    "runtime_source_provenance": "Runtime hashes in docs/validation/day-07.json; test file subsequently extended to seven cases"
+  },
+  "validation": {
+    "full_suite": {
+      "tests": 928,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "time": 94.899
+    },
+    "coverage_percent": 95.80189180571793,
+    "python": "3.12.3",
+    "ruff": "passed",
+    "ruff_format": "118 files checked",
+    "mypy": "passed on 65 source files",
+    "bash_syntax": "passed",
+    "git_diff_check": "passed",
+    "full_suite_command": "COVERAGE_FILE=/tmp/placecell-day8-full.coverage timeout 300 .venv/bin/pytest --cov=placecell --cov-report=term --cov-report=json:simulation/artifacts/day-08/coverage-final.json --junitxml=simulation/artifacts/day-08/tests-final.xml",
+    "sandbox_attempt": "Timed out at 300 seconds after stalling in storage-backed tests; retained separately and not counted as a pass",
+    "offline_faults": {
+      "summary": {
+        "runs": 138,
+        "passed": 138,
+        "failed": 0,
+        "wall_duration_ms": 43701.678378
+      },
+      "unique_scenarios": 46,
+      "repeat": 3,
+      "case_ids": [
+        "control_ordered_mission",
+        "control_visual_arrival",
+        "planner_timeout",
+        "planner_malformed",
+        "planner_late",
+        "planner_stop",
+        "review_timeout",
+        "review_late",
+        "review_malformed",
+        "review_reject",
+        "review_stop",
+        "lookup_stop",
+        "arrival_wait_stop",
+        "arrival_verification_stop",
+        "nav_stop_before_acceptance",
+        "nav_unpolled_late_acceptance",
+        "nav_unpolled_late_success",
+        "nav_timeout_result_race",
+        "nav_timeout_visual_result_race",
+        "nav_response_result_race",
+        "nav_unavailable",
+        "nav_rejected",
+        "nav_send_error",
+        "nav_late_acceptance",
+        "nav_late_acceptance_success",
+        "nav_lost_result",
+        "nav_timeout_late_success",
+        "nav_timeout_visual_success",
+        "nav_cancel_delayed",
+        "nav_cancel_rejected",
+        "localization_stale_before",
+        "localization_stale_motion",
+        "localization_paused_clock",
+        "visual_lookup_timeout",
+        "arrival_missing_camera",
+        "arrival_stale_camera",
+        "arrival_untrusted_pose",
+        "arrival_verifier_timeout",
+        "storage_instruction",
+        "storage_read",
+        "storage_dispatch",
+        "storage_motion",
+        "storage_step",
+        "depth_missing",
+        "depth_stale",
+        "storage_interrupted"
+      ],
+      "limit": "Deterministic scripted boundary/interleaving checks; repetitions do not add independent scenarios"
+    },
+    "ros_operator": {
+      "report": "simulation/artifacts/check-operator-20260922T090813Z-127852/report.json",
+      "passed": true,
+      "checks": [
+        "snapshot refresh continues while simulated time is paused",
+        "late subscriber recovers planning without replay or model work",
+        "invalid command is visible without replacing active mission state",
+        "late subscriber recovers complete multi-goal outcome",
+        "stop retains ownership and late success cannot advance the mission",
+        "new controller has a new instance and does not receive old retained commands",
+        "production node snapshot and service: navigation_enabled=False",
+        "production node snapshot and service: navigation_enabled=True"
+      ],
+      "reuse": "Run on image sha256:19518bb8f397946f31179b384741fb87272c9ec5a0b54918e03b24052104d534; runtime unchanged afterward. Only cancellation harness trace draining changed in final image."
+    },
+    "ros_cancellation": {
+      "report": "simulation/artifacts/check-cancel-20260922T091605Z-135973/report.json",
+      "passed": true,
+      "trial_count": 106,
+      "loaded_latency_ms": {
+        "count": 100,
+        "p50": 0.7185640006355243,
+        "p95": 1.2650569988181815,
+        "p99": 1.3814689991704654,
+        "max": 1.704177000647178,
+        "method": "nearest-rank; monotonic command callback receipt to async cancel API return",
+        "threshold_ms": 500
+      },
+      "special_trials": [
+        {
+          "id": 1,
+          "mode": "planner",
+          "passed": true
+        },
+        {
+          "id": 2,
+          "mode": "reviewer",
+          "passed": true
+        },
+        {
+          "id": 3,
+          "mode": "late_accept",
+          "passed": true,
+          "accept_to_cancel_ms": 4.624459999831743,
+          "cancel_to_ack_ms": 8.491226000842289
+        },
+        {
+          "id": 4,
+          "mode": "reject",
+          "passed": true,
+          "command_to_cancel_ms": 0.6803470005252166,
+          "cancel_to_ack_ms": 8.450835999610717
+        },
+        {
+          "id": 5,
+          "mode": "missing_ack",
+          "passed": true,
+          "command_to_cancel_ms": 1.7719810002745362,
+          "cancel_to_ack_ms": 452.06337600029656
+        },
+        {
+          "id": 106,
+          "mode": "ordered_success_control",
+          "passed": true
+        }
+      ],
+      "checks": [
+        "stop while planner blocked; late reply discarded",
+        "stop while reviewer blocked; late reply discarded",
+        "late_accept: ownership retained, next goal refused, terminal cancels mission",
+        "reject: ownership retained, next goal refused, terminal cancels mission",
+        "missing_ack: ownership retained, next goal refused, terminal cancels mission",
+        "loaded cancellation with persistent context/traces and paused simulation clock",
+        "positive control: two real action goals complete in order without cancellation"
+      ],
+      "workload": {
+        "command_executor_threads": 4,
+        "controlled_server_threads": 4,
+        "observation_input_hz": 5,
+        "default_group_callback_delay_s": 0.75,
+        "command_qos_depth": 1,
+        "sim_time": "paused at zero",
+        "persistent_context_and_traces": true
+      },
+      "trace_health": {
+        "dropped_events": 0,
+        "write_errors": 0,
+        "trimmed_events": 0,
+        "truncated_events": 0,
+        "unclean_shutdowns": 0,
+        "last_error_type": "",
+        "pending": 0,
+        "writer_alive": false
+      },
+      "trace_closed": true,
+      "trace_statuses_match": true,
+      "trace_event_count": 4514,
+      "observation_callbacks": 63,
+      "earlier_runs": [
+        {
+          "report": "simulation/artifacts/check-cancel-20260922T085051Z-113819/report.json",
+          "latency_ms": {
+            "count": 100,
+            "p50": 0.7081089997882373,
+            "p95": 1.7637499995544204,
+            "p99": 3.4723850003501866,
+            "max": 70.9082089997537,
+            "method": "nearest-rank; monotonic command callback receipt to async cancel API return"
+          },
+          "qualification": "Earlier timing result only; original harness did not validate trace drain. Use final run for complete evidence."
+        },
+        {
+          "report": "simulation/artifacts/check-cancel-20260922T090811Z-127731/report.json",
+          "latency_ms": {
+            "count": 100,
+            "p50": 0.7521779989474453,
+            "p95": 2.4370229984924663,
+            "p99": 7.1490770005766535,
+            "max": 12.160328000391019,
+            "method": "nearest-rank; monotonic command callback receipt to async cancel API return"
+          },
+          "qualification": "Earlier timing result only; original harness did not validate trace drain. Use final run for complete evidence."
+        }
+      ],
+      "limits": [
+        "Controlled NavigateToPose action server; no Gazebo, physical motion or live models",
+        "Synthetic slow observation callback, not the full RGB-D ingestion workload",
+        "No cross-process goal reconciliation or physical stop measurement",
+        "Missing-handle delay is reported separately; no cancel can be sent before its handle exists"
+      ],
+      "capture_repair": "Original harness ignored bounded trace-close result; audit retained in trace-capture-audit-before.json. Batch drains occur outside cancellation timing intervals."
+    }
+  },
+  "environment": {
+    "host": "Linux-6.17.0-1032-oem-x86_64-with-glibc2.39",
+    "host_cpu": "Intel Core Ultra 9 285H, 16 logical CPUs",
+    "host_exclusive": false,
+    "host_other_workloads": "Existing digital-twin and Buzzator containers left untouched; software suite/operator checks overlapped the earlier timing run",
+    "image": "placecell-sim:jazzy",
+    "image_id": "sha256:2b792d31301874bccfbbaada7f1b25c05cf222825579ae0dd1c4e40dcf4ba090",
+    "ros": "Jazzy",
+    "ros_packages": {
+      "rclpy": "7.1.12-1noble.20260902.053513",
+      "nav2_msgs": "1.3.13-1noble.20260902.082014"
+    },
+    "container_limits": {
+      "cpus": 8,
+      "memory_gib": 16,
+      "network": "none"
+    },
+    "controlled_transport": "Actual ROS DDS and NavigateToPose client/server; scripted server responses, no simulator or physical robot"
+  },
+  "startup_contract": {
+    "state": "Specified, not machine-enforced; Day 15 implementation required",
+    "rule": "Refuse new movement while pre-crash goal ownership is unknown; reconcile exact robot/map/action-server/goal identity or independently establish clean Nav2 state. Never replay saved movement or cancel unrelated clients.",
+    "current_behavior": "Fresh idle snapshot is not proof of Nav2 quiescence; operator must establish termination before replacement controller commands."
+  },
+  "evidence_reuse": {
+    "day6": "Prior runtime results are historical after five runtime files changed; current core tests, faults and ROS checks above replace affected software evidence. Packaging/hosted/full Gazebo qualification must be run for a candidate.",
+    "operator_same_runtime": true,
+    "full_suite_after_final_runtime_change": true,
+    "subsequent_changes": "Cancellation test harness and documentation only; no runtime changes after full suite and final offline fault run."
+  },
+  "remaining": [
+    "Post-crash active-goal reconciliation and persistent ownership admission (Day 15)",
+    "At least 100 separately specified execution cases and 1000 deterministic qualification executions (Day 14)",
+    "Full RGB-D/provider workload cancellation under saturation/endurance; current measurement uses a synthetic slow callback",
+    "Stable command IDs and retry deduplication (Day 9)",
+    "Candidate package, hosted Python matrix and affected Gazebo qualification; no release gate fully passed"
+  ],
+  "paid_api_calls": 0,
+  "physical_robot_commands": 0,
+  "endurance_started": false,
+  "release_qualification": "partial execution evidence; retain prerelease"
+}

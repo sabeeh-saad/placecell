@@ -48,8 +48,14 @@ class MemoryRevision:
 
 
 class RefinementJournal:
-    def __init__(self, connection: sqlite3.Connection, transaction: Callable[[], AbstractContextManager[None]]) -> None:
+    def __init__(
+        self,
+        connection: sqlite3.Connection,
+        transaction: Callable[[], AbstractContextManager[None]],
+        max_jobs: int = 256,
+    ) -> None:
         self._conn, self._transaction = connection, transaction
+        self._max_jobs = max_jobs
         self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS refinement_jobs (
                 memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
@@ -90,6 +96,11 @@ class RefinementJournal:
                     (memory_id,),
                 ).fetchone()
                 is None
+            ):
+                return False
+            if (
+                not self._conn.execute("SELECT 1 FROM refinement_jobs WHERE memory_id=?", (memory_id,)).fetchone()
+                and self._conn.execute("SELECT COUNT(*) FROM refinement_jobs").fetchone()[0] >= self._max_jobs
             ):
                 return False
             self._conn.execute(

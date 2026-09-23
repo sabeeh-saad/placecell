@@ -2,5 +2,6 @@
 
 from placecell.store.base import CollectionInfo, Filter, Hit, VectorStore
 from placecell.store.in_memory import InMemoryStore
+from placecell.store.limits import StoreLimits
 
-__all__ = ["CollectionInfo", "Filter", "Hit", "InMemoryStore", "VectorStore"]
+__all__ = ["CollectionInfo", "Filter", "Hit", "InMemoryStore", "StoreLimits", "VectorStore"]

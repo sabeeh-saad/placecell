@@ -1,0 +1,332 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-22",
+  "scope": "Day 6 CI trigger coverage, clean wheel/source installation checks and offline ROS smoke integration",
+  "runtime_base_commit": "eb0ba8719b170d76fb7fb64dcb5cdd55163c2126",
+  "source_state": "Local Day 4\u20136 working tree identified by hashes; no Day 6 commit or push performed",
+  "sources_sha256": {
+    ".github/workflows/ci.yml": "6d42f60afb72eab9b0f46e9e977e39d2988f574886a9505a8792c903320ba287",
+    ".github/workflows/simulation.yml": "c4bcfad01cafcbc0b5c80da0be7e48c420b4f48dbad0c518d4306e2182235005",
+    "scripts/check_distribution.py": "b7e21e7959812525db63341b8f689274562c48bbdb3ffa83db36e4857837a2ca",
+    "scripts/smoke_installed.py": "25ad4a1fae98a408bd198af0fc60fcaa381360737dc1abbc92e50da4a383f5b6",
+    "simulation/sim": "b9805871a6afc5f349d831adb60005bd2b837bcb3535080b69cb0b0d72ce13dd",
+    "simulation/scripts/operator_test.py": "97caa878d7409ac87983945b674114f088bd201fbcc7448e2373af51c13598b1",
+    "tests/test_ci_contract.py": "5425329fbbcc11dcdaf7864d08b78f22e2fd04cee048b7e78ba3be141b07d3cf",
+    "pyproject.toml": "0af52eb3119408aa68613dd03174489f1a1db9a788176490cf132384657faf06",
+    "docs/ci.md": "49c0a78b044bf2dfa3ec7dbd30b144815df0ee1c365f9a7962736d8f08410127",
+    "src/placecell/__init__.py": "c6508e702c386c6ea34350cbe89a90cea0540ef638f88b96bdc96d1421bba048",
+    "src/placecell/agent.py": "eb9af5659ac3a4d878807d5bb0220af51c6602b565d80c9e068a3a1c9af85799",
+    "src/placecell/approach.py": "b19aa2a01b11dcda99094f9265ebbb849519010675034a8d3ba03e6b93f21933",
+    "src/placecell/chat.py": "e85e28f43263a6fcbdac8d669b830d246529aacec5d79f83545923653df6db97",
+    "src/placecell/consolidation.py": "23033a699a82933fbc38ca57b6681d74498dbe9300a1d013facdc78940bffcb6",
+    "src/placecell/corrections.py": "11e6b2714cc22165c4dd951ed59304c7e20105b4821d7b22c52d081f4cdf98a1",
+    "src/placecell/depth.py": "0a76ec0b9ef533a99025fb3dcd7276f63aca8d8ed1bcd690312f1695b2149e63",
+    "src/placecell/errors.py": "2dd925ab5cef9a1904564b62b0ae333f9efdee2e19ca5dbf3a550de5cda1d451",
+    "src/placecell/evaluation.py": "dcd8e4e80cb1dc588ad31ecf5256465827fa901e3622920f64e5417cff711ee3",
+    "src/placecell/fault_injection.py": "db8a314f52b367d8c756128447739a13179bcad36332a07f4b6447b3817a6bfd",
+    "src/placecell/lifecycle.py": "940b76b672ba864906df126810f9c0914c8c293269330837e20674b0afee7bea",
+    "src/placecell/localization.py": "d7c8ff8a8b350973dcacdb5625e48ac1cfdd55a5b427f2440fadbcae7f9edb03",
+    "src/placecell/memory.py": "5254b5f47691a435954d2ccc1b89dafc8c99118e8b28b7672edb04c4cab1001c",
+    "src/placecell/migrate.py": "46d1e4eff55bbb9ad5dcb00e1f5d55a2019c2610a85ec5ab8aed820c30ad535d",
+    "src/placecell/mission_context.py": "044d45cc2fc6d7f17c13f12ce2ae1b6dcc2c51fcb3f9be8fd1a44cc7296f474c",
+    "src/placecell/mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+    "src/placecell/missions.py": "0237a5204bae7377590101709f377a9ab0bfc74bcc19e53f23231bfb1a31e10c",
+    "src/placecell/navigation.py": "438afd087a3cc1af2b6ccb4cfdda01ac7e6140f6cac290e63b6fde29d92d94e4",
+    "src/placecell/object_arrival.py": "900bca7e23f8cb70cf18e1a241ae736b9062d0ce331ef3da71b5f7e6d0a6329c",
+    "src/placecell/object_evaluation.py": "374a99700563884cae9e231bb715227b43915ef4a6ac9fa06b0b4e9b26822179",
+    "src/placecell/object_search.py": "7d970c0783d36f245a9218c952194a687d1e30711661ee10aa9d11fb7fe70286",
+    "src/placecell/object_types.py": "1f0100479bbb9bb8692e34a322a0859a05821a777697908d9cec4b1572282404",
+    "src/placecell/objects.py": "89100b0e217aac0dc160a5eb0c2ad6e769f1f31975e19c7655ccd0ee4078da05",
+    "src/placecell/observer.py": "6e3669b09583eb40d51ce0d79c7008c220809cf6dafd48e78f85da24cf0b2e2a",
+    "src/placecell/operator.py": "87b7e8437fc9e9aba4b566fa0e00b4489ab2bcfa646d7c459e641ac9e52471f2",
+    "src/placecell/pipeline.py": "69210df11bc30e0f89896f552ac143d57a417fee3f8535efe99eb19ffeb5deac",
+    "src/placecell/providers/__init__.py": "a8c6d4daa5119f3b92fa6b8833152143b122ef43df459bb780a54872bfc56b9d",
+    "src/placecell/providers/_http.py": "6e6e4eeae64f0e8cdc20dad2ec45fd21132474578f694548acc00640de649c97",
+    "src/placecell/providers/base.py": "85e63d710fcb861876c3f1f73c5c5923afdb2dae78f72f7dc8f03e67a1688bca",
+    "src/placecell/providers/captioning.py": "6631813e84bb50d21de4e6592cb6cee6befacededbf1588053ef5921c406c048",
+    "src/placecell/providers/chat.py": "42abfd773e19695203448773b14af289f587693b96aa7a2890725404ab660e01",
+    "src/placecell/providers/clip.py": "4af556a1b0f808bbf15323e3c79a1a1b4c743dba5ccdf759f7df62f6f0f81e1d",
+    "src/placecell/providers/embedding.py": "ea2c50e76c9d3b9df4134374c13c0f8f914649af790fc8881aaccfc32841908e",
+    "src/placecell/providers/gemini.py": "7b612e927131d2e97721686dcc8956b53d78e566eabb15faaaac316f81cf54ea",
+    "src/placecell/providers/hashing.py": "e798dad790d74c76732169f84f27e89d27ae2881f8ca57e2d442b71e75572f71",
+    "src/placecell/providers/object_detection.py": "43c217c9a34300d014a26bb76e016764789983c86acfda0a52ad1e58e73e69c9",
+    "src/placecell/providers/openai_compatible.py": "89900bd84cf77e7fcc39bbc9ad3b460faf94f34f2ec86c70f0f95fcbb7a6a437",
+    "src/placecell/providers/openrouter.py": "333319f1b4aaaef099a5f32b5b59dd5ac5102123ad02191b208902bc06742757",
+    "src/placecell/recordings.py": "52ff54579bd16151c1c373c9a58d29ac806e44346a134ceaf3c29e1957b64522",
+    "src/placecell/refinement.py": "8c814c06b9f951ac52e590b332545a3f0762bf8560eec87a55aecaf5d79d3142",
+    "src/placecell/retrieval.py": "215ebccf4cfab9f055302a3c6975f840eb58d3d98090452c6dc3e2f8c2a6bdbf",
+    "src/placecell/ros2/__init__.py": "940365c14b76882518d9a28665cbc1d8c9b8ea899aabfc14a8db3c33f15f8db1",
+    "src/placecell/ros2/approach.py": "580c3afec4e1d53411f647794b8f59c0ddfe425c274040aa4b3e083d5ae11afa",
+    "src/placecell/ros2/bridge.py": "228902d34cb4f7d5e9969341634928ce091d554869a8d10415bb0206e8b85174",
+    "src/placecell/ros2/depth.py": "e6221ae223b2b7b2a2809f57ec395b308e24852bfc2dff1d2f9638e275ff058b",
+    "src/placecell/ros2/navigation.py": "e90e52e02db12b77a9d3d2ee644638e435faffd9ff702e132aa7e3cda82a8cff",
+    "src/placecell/ros2/node.py": "54ad776d69c2ef11043dad8b2864b5f2866cbc19023a5d62d876f2b741c68dbd",
+    "src/placecell/ros2/operator.py": "b220600c7b949da37f33e7535d10f3cf3ee097ff8fa89181650e8ff60be6f79b",
+    "src/placecell/ros2/speech.py": "8d36d5dd7b9c80035ae980102cc4597d7c81a7fcf93f99284c9a71119a394b3f",
+    "src/placecell/sources/__init__.py": "c47d4e85dec0f6b068ead36c31e842a27b21609fb6450b2e2ea3252f921bb613",
+    "src/placecell/sources/pose_log.py": "7386c8a53f10ac52c6d37ddbc7100f1e3cea9a8972ecba8bc405c8e17e4b16b0",
+    "src/placecell/sources/video.py": "4769ad5ce3cf3668de1b3aa6e98e080ba872691a386875096da25bbe9433652f",
+    "src/placecell/speech.py": "a4e80bb56a3ed7f01341b45798f9bf558ff2ebf0c532da7a1594918b136830e1",
+    "src/placecell/store/__init__.py": "226f74ed34c4b6ef38462f4f710e4b2fc4629a562fd2fc1bd5dcf40ea63f5971",
+    "src/placecell/store/base.py": "0751bcb6cdd5973431ee9d0506ed9e0050b2dc28f02e80341dbfb4b357b56a2b",
+    "src/placecell/store/codec.py": "2f2c647ffcd07909c35b9a43081d594ebff367de19869d28ef7e8882b923c108",
+    "src/placecell/store/in_memory.py": "928a5f85939a0950ed9ffd671c8cd5c62dcdb8d79004b70721cf1095b14c82f9",
+    "src/placecell/store/jobs.py": "f0a1137b6919f53305429911595137ced10d9c8c2058c0800dc3f7c64c58f22e",
+    "src/placecell/store/lancedb_store.py": "337cf924b1ef82833874c19eec10e71f92ce13035ba72dd746664894d82d6761",
+    "src/placecell/store/objects.py": "b3f78b6f099f18159609d17fbb853f2556ff72e08151fda971dac289e1aa54f5",
+    "src/placecell/store/refinements.py": "3f78bccbf0d1ae9d72477fe770c5e154ce0a956b9bc9b576467ad396e7de32e8",
+    "src/placecell/store/state.py": "f32294e839ff74ed306355e4b4c6d76e0ed75dee61a13ee026978fa8b579acc7",
+    "src/placecell/trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+    "src/placecell/tracing.py": "c43a68020962acd4b0dd227f2d3fcb65184b58700ee02056e53037dcebcf8098",
+    "src/placecell/verification.py": "2203d1e6b17b3a5c637257cb45f9a528f30bcd0dd92f148411071ee9f2585cb0"
+  },
+  "artifacts_sha256": {
+    "simulation/artifacts/day-06/build.log": "d2227f68a3c435b918314c893ab6165651e65cf6fa553817cf371068899f7ce2",
+    "simulation/artifacts/day-06/coverage.json": "0b48dca0eb90d4653863b35bc7105fe6bb9be3789284e3c35dad9091cbfb6d3e",
+    "simulation/artifacts/day-06/dist/placecell-0.1.0a1-py3-none-any.whl": "062a03dfa6468a216bc759079399bdcf4b9a41eb1c6afa5d41337ce543e27e76",
+    "simulation/artifacts/day-06/dist/placecell-0.1.0a1.tar.gz": "25ce6484238cf2c1b974234d84178b3bab15a0440726da1e79e01f0802e433b7",
+    "simulation/artifacts/day-06/navigation.json": "042a5270f949322b867ddbfb3d3b6573e83092ec3200ebe02501caa7910f4f3c",
+    "simulation/artifacts/day-06/operator.json": "acd2b3f1495f53044ea45fe9e6261e39d72a56ac565220f52f7e31d7487b9acd",
+    "simulation/artifacts/day-06/package-final-python312/report.json": "636c9443045a83f9ddf13dc91ccb3852b8801a04422906cab7ba87cf91184952",
+    "simulation/artifacts/day-06/package-final-python312/sdist/cli.log": "c6b995c447c5b70a1102381f3cb2fd231de6c904f720c2051e380d18dbb6bc41",
+    "simulation/artifacts/day-06/package-final-python312/sdist/faults.json": "326b3dae158d0506cefbe066f41206e576032d2b3985a213fd50ac0c22322629",
+    "simulation/artifacts/day-06/package-final-python312/sdist/install.log": "896878d35cbb8b09cc2b0fa2245a0e8dc72ae47ec2e8feb8fa800f30197fba17",
+    "simulation/artifacts/day-06/package-final-python312/sdist/missions.json": "a2356c72ff8bdf6b45dbcb5ef55329dcc66f758d08e0a938b6c505a23e66865f",
+    "simulation/artifacts/day-06/package-final-python312/sdist/smoke.json": "d0987539236cade01b5cb6da1f642025fac1237d226358bd4dd2df583c091150",
+    "simulation/artifacts/day-06/package-final-python312/sdist/smoke.log": "d2ecb8df009fba1d4e23cd4a8c2e26cb2d741cfbf13a56f7aba2c75d3c962269",
+    "simulation/artifacts/day-06/package-final-python312/sdist/trace-export.json": "0d1d5768a66a3162c53a03befe2726551875e165c9f5ad9748906ef26b6e1a38",
+    "simulation/artifacts/day-06/package-final-python312/sdist/traces.sqlite3": "7db7813b07d2863db3c1857bc165d5e3437f848087991fed0bac5d2edaab73df",
+    "simulation/artifacts/day-06/package-final-python312/sdist/trials.json": "95419548bdd17b5b04a11c1ef92d1af7062049ad43db5c417644176c9e2226d6",
+    "simulation/artifacts/day-06/package-final-python312/wheel/cli.log": "6f9769f7b825174a69e402a78a65913177267e72663524f2b8ad45b4c729ec44",
+    "simulation/artifacts/day-06/package-final-python312/wheel/faults.json": "08213ab5af83fa1885c0c4f40c6434a710e8fb862effee190ede37466d15e919",
+    "simulation/artifacts/day-06/package-final-python312/wheel/install.log": "c2afea879bb73f9d7a547084b08808e1bc4f7bfbd532a57063d52933fdf70c48",
+    "simulation/artifacts/day-06/package-final-python312/wheel/missions.json": "15cfa617de62399df6ab5763617348dc481a99438e8da98779fe763a47b668ae",
+    "simulation/artifacts/day-06/package-final-python312/wheel/smoke.json": "9a9b154734e8c249f0f84fb2066ce43740279f0b9d31d67cec74ed3a8f267762",
+    "simulation/artifacts/day-06/package-final-python312/wheel/smoke.log": "97ec875bbfc8f2ce6263da6993bca4f08541cec98e97192a3caefda5f3010d39",
+    "simulation/artifacts/day-06/package-final-python312/wheel/trace-export.json": "27131748e6aea14700e776db9ac498d545ebade97c56ac497524fd83fcf8d171",
+    "simulation/artifacts/day-06/package-final-python312/wheel/traces.sqlite3": "878bb4cf15b871ff849cc810d780f98a1c58514eb8022a36a269ce7d9b8d70be",
+    "simulation/artifacts/day-06/package-final-python312/wheel/trials.json": "5c78f94fc042aaa33ef6e366b79bf21b6bb20d978adab8e8b5f3ab46d598ff21",
+    "simulation/artifacts/day-06/sensors.json": "1150ac0c438c33351a4fb08411fc8922f5a79360083aedda8490c4954b7e50f2",
+    "simulation/artifacts/day-06/simulator.log": "6585b05ade8d7c119e6d82efd2807a79f77a56f1efff18eed5fe7805069355c1",
+    "simulation/artifacts/day-06/tests.xml": "65d49b3b00ea4d6bb5284ade2ba684c31f56bcfa30c90573ef2daae0d4569584"
+  },
+  "implementation": {
+    "triggers": [
+      "all pull requests",
+      "pushes to main",
+      "merge_group",
+      "workflow_dispatch"
+    ],
+    "path_filters": "Removed from simulation; neither workflow has path or job-level change filters",
+    "python_matrix": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ],
+    "runner": "ubuntu-24.04",
+    "python_checks": [
+      "lint",
+      "format",
+      "strict types",
+      "pytest with 90% coverage gate",
+      "offline fault reports"
+    ],
+    "package_checks": {
+      "formats": [
+        "wheel",
+        "sdist"
+      ],
+      "build": "PyPA build 1.6.1 builds a source archive, then a wheel from the archive",
+      "isolation": "Separate fresh venv per format without system packages; smoke runs with -I outside checkout",
+      "install_network": "Dependencies staged first; installs use --no-index and a local wheelhouse",
+      "runtime_extras": [],
+      "checks": [
+        "pip check",
+        "installed imports",
+        "py.typed",
+        "seven entry points",
+        "offline CLI help",
+        "memory retrieval",
+        "24-case scripted mission baseline",
+        "36 fault scenarios",
+        "persistent trace export"
+      ]
+    },
+    "ros_and_gazebo": [
+      "build image",
+      "network-disabled operator contracts",
+      "sensor/motion/command-timeout check",
+      "fresh-world localization and Nav2 route check",
+      "always collect logs/artifacts and stop simulator"
+    ],
+    "reports": "Per-Python JUnit/coverage/fault reports; per-format install/smoke logs and distributions; ROS/Gazebo artifacts",
+    "paid_evaluation": "No provider credentials or paid mission/pipeline commands in ordinary CI",
+    "regression_tests": "Trigger/matrix/smoke-gate checks and package-failure propagation; five passing tests"
+  },
+  "validation": {
+    "hosted_github_run": "Not run; requires pushing the changes",
+    "local_python": "3.12.3",
+    "tests": {
+      "total": 911,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "duration_s": 88.717,
+      "command": "COVERAGE_FILE=/tmp/placecell-day6.coverage timeout 300 .venv/bin/pytest --cov=placecell --cov-report=term --cov-report=json:simulation/artifacts/day-06/coverage.json --junitxml=simulation/artifacts/day-06/tests.xml"
+    },
+    "coverage_percent": 95.82839279939635,
+    "ruff_check": "passed",
+    "ruff_format_check": "passed",
+    "mypy_strict": "passed (65 source files)",
+    "shell_syntax": "bash -n simulation/sim passed",
+    "git_diff_check": "passed",
+    "distribution_build": {
+      "command": ".venv/bin/python -m build --no-isolation --outdir simulation/artifacts/day-06/dist",
+      "build_version": "1.6.1",
+      "setuptools_version": "78.1.0",
+      "note": "Local initial build reused installed tooling; the clean sdist install subsequently used isolated PEP 517 building from the staged wheelhouse"
+    },
+    "installed_packages": {
+      "result": {
+        "schema_version": 1,
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "passed": true,
+        "results": [
+          {
+            "kind": "wheel",
+            "artifact": "placecell-0.1.0a1-py3-none-any.whl",
+            "passed": true
+          },
+          {
+            "kind": "sdist",
+            "artifact": "placecell-0.1.0a1.tar.gz",
+            "passed": true
+          }
+        ]
+      },
+      "smoke_results": {
+        "wheel": {
+          "passed": true,
+          "version": "0.1.0a1",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "package_path": "/tmp/placecell-wheel-fcshtau7/venv/lib/python3.12/site-packages/placecell/__init__.py",
+          "entrypoints": [
+            "placecell-check-faults",
+            "placecell-evaluate",
+            "placecell-evaluate-missions",
+            "placecell-evaluate-objects",
+            "placecell-export-trace",
+            "placecell-listen",
+            "placecell-ros2"
+          ],
+          "mission_cases": 24,
+          "fault_runs": 36,
+          "paid_api_calls": 0,
+          "checks": [
+            "installed import",
+            "typing marker",
+            "entry points",
+            "memory/retrieval",
+            "mission baseline",
+            "fault contracts",
+            "persistent trace export"
+          ]
+        },
+        "sdist": {
+          "passed": true,
+          "version": "0.1.0a1",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "package_path": "/tmp/placecell-sdist-8_8rfstf/venv/lib/python3.12/site-packages/placecell/__init__.py",
+          "entrypoints": [
+            "placecell-check-faults",
+            "placecell-evaluate",
+            "placecell-evaluate-missions",
+            "placecell-evaluate-objects",
+            "placecell-export-trace",
+            "placecell-listen",
+            "placecell-ros2"
+          ],
+          "mission_cases": 24,
+          "fault_runs": 36,
+          "paid_api_calls": 0,
+          "checks": [
+            "installed import",
+            "typing marker",
+            "entry points",
+            "memory/retrieval",
+            "mission baseline",
+            "fault contracts",
+            "persistent trace export"
+          ]
+        }
+      },
+      "command": ".venv/bin/python scripts/check_distribution.py --dist-dir simulation/artifacts/day-06/dist --wheelhouse simulation/artifacts/day-06/wheelhouse --output simulation/artifacts/day-06/package-final-python312"
+    },
+    "ros_and_simulation": {
+      "image": "placecell-sim:jazzy",
+      "image_id": "sha256:fdf2ddb185b32a7a89749e7be8219bee7233ef4b096bc7cf586ccc827260a690",
+      "build": "simulation/sim build; runtime and simulation scripts copied into image, cached base/dependency layers reused",
+      "commands": [
+        "simulation/sim check-operator",
+        "simulation/sim start",
+        "simulation/sim check",
+        "simulation/sim start-nav",
+        "simulation/sim check-nav",
+        "simulation/sim stop"
+      ],
+      "operator": {
+        "passed": true,
+        "checks": [
+          "snapshot refresh continues while simulated time is paused",
+          "late subscriber recovers planning without replay or model work",
+          "invalid command is visible without replacing active mission state",
+          "late subscriber recovers complete multi-goal outcome",
+          "stop retains ownership and late success cannot advance the mission",
+          "new controller has a new instance and does not receive old retained commands",
+          "production node snapshot and service: navigation_enabled=False",
+          "production node snapshot and service: navigation_enabled=True"
+        ],
+        "scope": "Real ROS topics, QoS and services; scripted navigation"
+      },
+      "sensors": {
+        "rgb_size": [
+          640,
+          480
+        ],
+        "camera_frame": "camera_optical_frame",
+        "depth_valid_fraction": 0.9833333333333333,
+        "lidar_samples": 360,
+        "simulation_clock_advances": true,
+        "rgbd_accepted_by_placecell": true,
+        "forward_distance_m": 0.26294999998882584,
+        "turn_rad": 0.6955999995739703,
+        "silence_stops_robot": true
+      },
+      "navigation": {
+        "mode": "navigation",
+        "passed": true,
+        "localization_ready": true,
+        "observation_pose": {
+          "x": 0.9327863843677009,
+          "y": -0.0043755561795433134,
+          "yaw": 0.0677057725976703
+        },
+        "departure_pose": {
+          "x": -0.9395957802144945,
+          "y": 0.3088975305195925,
+          "yaw": -3.084909926408288
+        },
+        "total_distance_m": 2.920654458717558,
+        "statuses": []
+      },
+      "cleanup": "Task-created simulator and compose network stopped and removed after successful checks"
+    }
+  },
+  "limitations": [
+    "Hosted Python 3.10/3.11/3.12 workflow execution and remote required-check rules are not established by this local validation.",
+    "Local clean-install matrix exercised Python 3.12 only.",
+    "Initial local artifacts predate the final documentation-only README addition; tested runtime source and packaging configuration are unchanged.",
+    "Gazebo Nav2 routes use fixed goals; multi-goal operator checks use scripted providers/navigation. No live-model qualification or physical-robot tests.",
+    "No paid API calls. Dependency/image downloads used network access; the ROS operator check used a network-disabled container."
+  ]
+}

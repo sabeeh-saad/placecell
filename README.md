@@ -201,6 +201,12 @@ An intermediate visit emits `step_succeeded`; the last successful visit emits `s
 The topic is a live event stream. [Mission documentation](docs/missions.md#goal-feedback)
 describes the fields and failure behavior.
 
+Reconnecting clients can read `/placecell/get_mission_snapshot` or subscribe to the retained
+`/placecell/mission_snapshot` topic. The [operator interface](docs/operator-interface.md)
+documents versioned JSON commands on `/placecell/command_json`, status event ordering and
+snapshot behavior. Version 2 supports [scoped command IDs and durable retry suppression](docs/command-identity.md).
+Existing text commands remain available.
+
 Questions use `/placecell/ask`, with answers and retrieved evidence on `/placecell/answer`.
 Corrections and caption rechecks use `/placecell/correct` and `/placecell/refine`.
 
@@ -232,6 +238,7 @@ See [memory operations](docs/operations.md) for retention, upgrades, and recover
 - [Object evaluation](docs/object-evaluation.md): replaying labelled RGB-D recordings.
 - [Mission evaluation](docs/mission-evaluation.md): versioned cases, grouped splits, offline plan checks, and outcome scoring.
 - [Fault injection](docs/fault-injection.md): repeatable offline failures, expected outcomes, and JSON evidence.
+- [Mission traces](docs/mission-tracing.md): inspect plans, candidate checks, model usage, navigation events and failures by mission ID.
 - [Gazebo simulation](docs/simulation.md): setup, recorded results, and demonstrations.
 - [Memory operations](docs/operations.md) and [refinement](docs/refinement.md): persistence and maintenance.
 - [Roadmap](docs/roadmap.md) and [changelog](CHANGELOG.md): planned work and change history.
@@ -262,7 +269,9 @@ mypy
 pytest --cov
 ```
 
-CI runs on Python 3.10, 3.11, and 3.12 with a 90% coverage requirement. Contributions are
+CI runs on Python 3.10, 3.11, and 3.12 with a 90% coverage requirement. It also checks clean
+wheel/source installations and the ROS/Gazebo path. See [CI checks](docs/ci.md) for offline
+smoke tests, saved reports and local reproduction commands. Contributions are
 welcome in evaluation datasets, failure-case reproductions, model adapters, robot
 integrations, and documentation. Include relevant tests and the evidence supporting any
 accuracy or performance claim. Use the [roadmap](docs/roadmap.md) to identify current priorities.

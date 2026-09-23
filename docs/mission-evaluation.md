@@ -124,8 +124,11 @@ Use `execution: null` only when execution was not assessed. For a `gazebo_live_m
 missing execution is a failure. `dispatched_targets` records every dispatched physical
 target identity, including wrong goals, duplicates and visits before a later failure.
 It does not prove physical motion happened. `confirmed_targets` records actual successful
-completion evidence in order, not intended destinations. Live ROS status currently needs
-an adapter to produce these records; this release does not provide automatic trace export.
+completion evidence in order, not intended destinations. Day 4 provides
+[diagnostic mission trace export](mission-tracing.md). A live scoring adapter must still
+join those events with evaluator-only physical target/instance labels and emit this trial
+format; the diagnostic exporter does not provide that ground truth or automatically produce
+qualified evaluation trials. This is tracked in the [Day 7 review](readiness-review.md).
 
 The scorer rejects duplicate or unexpected trial IDs, labels with the wrong hash, nonfinite
 or negative timings/costs, and inconsistent plan records. Missing trial rows remain failed

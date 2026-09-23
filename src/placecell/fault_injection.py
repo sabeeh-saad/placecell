@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
@@ -25,20 +25,25 @@ from typing import Any
 
 from placecell.chat import ChatMessage, ChatReply, ToolCall
 from placecell.errors import ValidationError
+from placecell.execution_cases import EXECUTION_CASES
 from placecell.localization import LocalizationGate
 from placecell.memory import Evidence, EvidenceKind, Memory, Pose
 from placecell.mission_context import MissionContext
 from placecell.missions import MissionPlanner, PlanReviewAgent
 from placecell.navigation import DestinationResolver, NavigationCommands, NavigationUpdate
 from placecell.pipeline import Observation
+from placecell.providers._http import RetryPolicy
+from placecell.providers.chat import OpenAICompatibleChat
 from placecell.providers.hashing import HashingEmbedder
 from placecell.retrieval import Recall
 from placecell.ros2.depth import PendingImages
 from placecell.ros2.navigation import Nav2Navigator
 from placecell.ros2.node import navigation_payload
+from placecell.sensors import SensorHealth
 from placecell.store.base import CollectionInfo
 from placecell.store.in_memory import InMemoryStore
-from placecell.verification import SceneVerdict
+from placecell.tracing import TraceStore, read_trace
+from placecell.verification import SceneVerdict, VisionVerifier
 
 
 def _reply(review: bool = False) -> ChatReply:
@@ -56,9 +61,11 @@ class _Model:
         self.error: Exception | None = None
         self.before: Callable[[], None] = lambda: None
         self.calls = 0
+        self.inputs: list[Sequence[ChatMessage]] = []
 
     def complete(self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> ChatReply:
         self.calls += 1
+        self.inputs.append(messages)
         self.before()
         if self.error:
             raise self.error
@@ -132,12 +139,15 @@ class _Verifier:
     def __init__(self) -> None:
         self.calls = 0
         self.error: Exception | None = None
+        self.before: Callable[[], None] = lambda: None
+        self.result = "matched"
 
     def verify(self, target: str, image_url: str) -> SceneVerdict:
         self.calls += 1
+        self.before()
         if self.error:
             raise self.error
-        return SceneVerdict("matched", "Scripted match; no visual model was called.")
+        return SceneVerdict(self.result, "Scripted verdict; no visual model was called.")  # type: ignore[arg-type]
 
 
 class _Rig:
@@ -152,6 +162,7 @@ class _Rig:
         self.embedder = HashingEmbedder(64)
         self.store = InMemoryStore(CollectionInfo("faults", self.embedder.model_name, self.embedder.dimension))
         self.context = _Context(directory / "context.sqlite3")
+        self.traces = TraceStore(directory / "traces.sqlite3", queue_size=1024)
         self.client = _Client()
         self.tasks: list[Callable[[], None]] = []
         self.events: list[dict[str, Any]] = []
@@ -180,9 +191,11 @@ class _Rig:
             self.publish,
             mission_planner=MissionPlanner(self.model, PlanReviewAgent(self.reviewer)),
             mission_context=self.context,
+            trace_store=self.traces,
             clock=lambda: self.elapsed,
             observation_clock=lambda: self.stamp,
             localization_ready=self.gate.ready,
+            localization_generation=lambda: self.gate.generation,
             request_timeout_s=5,
             arrival_timeout_s=3,
         )
@@ -265,6 +278,70 @@ class _Rig:
         # Pending fake goals are evidence, not real robot jobs. Do not alter reported state during teardown.
         self.context.close()
         self.store.close()
+        self.traces.close()
+
+
+class _ContractTransport:
+    def __init__(self, body: dict[str, Any], status: int = 200) -> None:
+        self.body, self.status, self.calls = body, status, 0
+
+    def post_json(
+        self, url: str, headers: Mapping[str, str], payload: Mapping[str, Any], timeout_s: float
+    ) -> tuple[int, Mapping[str, str], Any]:
+        self.calls += 1
+        return self.status, {}, self.body
+
+
+def _provider_contract_fault(rig: _Rig, fault: str) -> None:
+    visual = fault.startswith("visual_")
+    reviewing = fault.startswith("review_")
+    arguments: dict[str, Any] = (
+        {"result": "matched", "reason": "Scripted pixels."}
+        if visual
+        else dict(_reply(reviewing).tool_calls[0].arguments)
+    )
+    if fault.endswith("extra_field"):
+        arguments["action"] = "drive_without_verification"
+    if fault.endswith("oversized"):
+        arguments["message"] = "x" * 1001
+    raw = json.dumps(arguments)
+    if fault.endswith("duplicate"):
+        field = '"result":"not_matched",' if visual else '"decision":"reject",'
+        raw = "{" + field + raw[1:]
+    msg: dict[str, Any] = {"role": "assistant", "content": raw if visual else None}
+    if not visual:
+        msg["tool_calls"] = [
+            {
+                "id": "fixture",
+                "type": "function",
+                "function": {
+                    "name": "review_navigation_plan" if reviewing else "propose_navigation_plan",
+                    "arguments": raw,
+                },
+            }
+        ]
+    if fault.endswith("unknown_tool"):
+        msg["tool_calls"][0]["function"]["name"] = "drive"
+    if fault.endswith("refusal"):
+        msg["refusal"] = "Provider refused the request."
+    choice: dict[str, Any] = {"finish_reason": "stop" if visual else "tool_calls", "message": msg}
+    if fault.endswith("missing_finish"):
+        choice.pop("finish_reason")
+    transport = _ContractTransport({"choices": [choice]}, 503 if fault.endswith("http_error") else 200)
+    if visual:
+        rig.memory_destination()
+        rig.resolver._verifier = VisionVerifier("fixture", "http://offline.test", transport=transport)
+    else:
+        model = OpenAICompatibleChat("fixture", transport=transport, retry=RetryPolicy(attempts=1))
+        rig.commands._mission_planner = MissionPlanner(
+            rig.model if reviewing else model, PlanReviewAgent(model if reviewing else rig.reviewer)
+        )
+    rig.start()
+    rig.checkpoint("invalid provider output refused", "not_found" if visual else "rejected", 0, False)
+    rig.check("one bounded provider call", transport.calls, 1)
+    rig.check("visible refusal reason", bool(rig.events[-1]["message"]), True)
+    if not visual and not reviewing:
+        rig.check("review not called after invalid proposal", rig.reviewer.calls, 0)
 
 
 def _model_fault(rig: _Rig, fault: str) -> None:
@@ -277,7 +354,7 @@ def _model_fault(rig: _Rig, fault: str) -> None:
         model.reply = ChatReply(
             None, (ToolCall("fixture", "review_navigation_plan", {"decision": "reject", "message": "Rejected."}),)
         )
-    elif fault == "review_stop":
+    elif fault.endswith("_stop"):
         model.before = lambda: rig.commands.handle("stop")
     else:
 
@@ -287,11 +364,87 @@ def _model_fault(rig: _Rig, fault: str) -> None:
 
         model.before = expire
     rig.start()
-    expected = "canceled" if fault == "review_stop" else "not_found" if fault.endswith("late") else "rejected"
+    expected = "canceled" if fault.endswith("_stop") else "not_found" if fault.endswith("late") else "rejected"
     rig.checkpoint("fault handled", expected, 0, False)
     rig.check("faulty provider called", model.calls, 1)
     if fault.startswith("planner"):
         rig.check("review never started", rig.reviewer.calls, 0)
+
+
+def _cancellation_boundary(rig: _Rig, fault: str) -> None:
+    """Force callback interleavings without relying on scheduler timing."""
+    visual = fault.startswith("arrival_") or fault in {"lookup_stop", "nav_timeout_visual_result_race"}
+    if visual:
+        evidence = rig.memory_destination()
+    if fault == "lookup_stop":
+        rig.verifier.before = lambda: rig.commands.handle("stop")
+    rig.start()
+    if fault == "lookup_stop":
+        rig.checkpoint("stop during candidate verification", "canceled", 0, False)
+        return
+    if fault.startswith("arrival_"):
+        rig.client.accept()
+        rig.finish()
+        rig.checkpoint("waiting for image", "awaiting_observation", 1, True)
+        if fault == "arrival_wait_stop":
+            rig.commands.handle("stop")
+        else:
+            rig.advance(0.1)
+            rig.verifier.before = lambda: rig.commands.handle("stop")
+            rig.commands.observe(
+                Observation("fault-robot", "front", rig.stamp, rig.pose, evidence, localization_checked=True)
+            )
+            rig.drain()
+        rig.checkpoint("arrival canceled", "canceled", 1, False)
+    elif fault == "nav_stop_before_acceptance":
+        rig.commands.handle("stop")
+        rig.checkpoint("stop with no handle", "canceling", 1, True)
+        rig.commands.handle("go to cupboard")
+        rig.checkpoint("replacement refused", "busy", 1, True)
+        handle = rig.client.accept()
+        rig.check("late handle canceled", handle.cancel_calls, 1)
+        handle.ack.set_result(SimpleNamespace(goals_canceling=[1]))
+        rig.checkpoint("ack is not terminal", "canceling", 1, True)
+        rig.finish(5)
+        rig.checkpoint("terminal releases ownership", "canceled", 1, False)
+    elif fault == "nav_unpolled_late_acceptance":
+        rig.advance(3)
+        handle = rig.client.accept()
+        rig.check("deadline enforced at acceptance without poll", handle.cancel_calls, 1)
+        rig.finish()
+        rig.checkpoint("late success does not advance", "canceled", 1, False)
+    else:
+        response_race = fault == "nav_response_result_race"
+        if not response_race:
+            rig.client.accept()
+        rig.advance(11)
+        if fault == "nav_unpolled_late_success":
+            rig.finish()
+        else:
+            emit = rig.navigator._emit
+            interleaved = False
+
+            def result_first(trip: Any, event: Any) -> None:
+                nonlocal interleaved
+                if not interleaved and event.state in {"canceling", "uncertain"}:
+                    interleaved = True
+                    if response_race:
+                        handle = _Handle(True)
+                        handle.result.set_result(SimpleNamespace(status=4, result=SimpleNamespace(error_code=0)))
+                        rig.client.handles.append(handle)
+                        rig.client.responses[-1].set_result(handle)
+                    else:
+                        rig.finish()
+                emit(trip, event)
+
+            rig.navigator._emit = result_first  # type: ignore[method-assign]
+            rig.navigator.poll()
+            rig.check("result raced ahead of cancellation event", interleaved, True)
+        rig.checkpoint("terminal carries intent", "destination_unverified" if visual else "canceled", 1, False)
+    rig.check("no queued next destination", len(rig.tasks), 0)
+    rig.check(
+        "no mission or step success", any(e["state"] in {"succeeded", "step_succeeded"} for e in rig.events), False
+    )
 
 
 def _navigation_fault(rig: _Rig, fault: str) -> None:
@@ -403,6 +556,74 @@ def _arrival_fault(rig: _Rig, fault: str) -> None:
     rig.check("no mission success", any(e["state"] in {"succeeded", "step_succeeded"} for e in rig.events), False)
 
 
+def _target_fault(rig: _Rig, fault: str) -> None:
+    evidence = rig.memory_destination()
+    # Isolate the capture freshness limit from the longer time allowed to obtain a view.
+    rig.commands._arrival_timeout = 30
+
+    def delete_selected() -> None:
+        destination = rig.commands._destination
+        assert destination is not None and destination.memory is not None
+        rig.store.delete([destination.memory.id])
+
+    if fault == "target_changed_before_send":
+        publish = rig.commands._publish_callback
+
+        def changed(update: NavigationUpdate) -> None:
+            publish(update)
+            if update.state == "submitting":
+                delete_selected()
+
+        rig.commands._publish_callback = changed
+    rig.start()
+    if fault == "target_changed_before_send":
+        rig.checkpoint("changed reference blocks dispatch", "not_found", 0, False)
+        rig.check("failure stage", rig.events[-1]["failure_stage"], "retrieval")
+        return
+    rig.client.accept()
+    rig.finish(6 if fault == "target_navigation_abort" else 4)
+    if fault == "target_navigation_abort":
+        rig.checkpoint("transport failure", "failed", 1, False)
+        rig.check("failure stage", rig.events[-1]["failure_stage"], "execution")
+        return
+    rig.advance(0.1)
+    observation = Observation("fault-robot", "front", rig.stamp, rig.pose, evidence, localization_checked=True)
+    stage = "geometry"
+
+    def age_image() -> None:
+        for _ in range(6):
+            rig.advance(1)  # Keep localization healthy while the capture itself expires.
+
+    if fault == "target_deleted_at_arrival":
+        delete_selected()
+        stage = "retrieval"
+    elif fault == "target_deleted_during_verdict":
+        rig.verifier.before = delete_selected
+        stage = "retrieval"
+    elif fault == "target_late_verdict":
+        rig.verifier.before = age_image
+    elif fault == "target_post_arrival_stale_image":
+        age_image()
+    elif fault in {"target_visual_mismatch", "target_visual_uncertain"}:
+        rig.verifier.result = "not_matched" if fault.endswith("mismatch") else "uncertain"
+        stage = "identity"
+    calls = rig.verifier.calls
+    rig.commands.observe(observation)
+    if fault == "target_queued_image_expired":
+        age_image()
+    rig.drain()
+    if fault == "target_post_arrival_stale_image":
+        rig.checkpoint("old capture refused", "awaiting_observation", 1, True)
+        rig.commands._arrival_deadline = rig.elapsed
+        rig.commands.poll()
+    if fault in {"target_post_arrival_stale_image", "target_queued_image_expired", "target_deleted_at_arrival"}:
+        rig.check("no model call on unusable evidence", rig.verifier.calls, calls)
+    rig.checkpoint("arrival remains unverified", "destination_unverified", 1, False)
+    rig.check("failure stage", rig.events[-1]["failure_stage"], stage)
+    rig.check("no next destination", bool(rig.tasks), False)
+    rig.check("no false success", any(e["state"] in {"succeeded", "step_succeeded"} for e in rig.events), False)
+
+
 def _storage_fault(rig: _Rig, fault: str) -> None:
     if fault == "storage_read":
         rig.context.fail_read = True
@@ -443,6 +664,57 @@ def _depth_fault(rig: _Rig, fault: str) -> None:
     rig.check("bounded scene-only fallback", pending.pop(0.3) == (message, False), True)
     rig.check("RGB delivered only once", pending.pop(0.4) is None, True)
     rig.checkpoint("synchronizer only; no mission requested", "idle", 0, False)
+
+
+def _provenance_fault(rig: _Rig, fault: str) -> None:
+    sensor = SensorHealth(clock=lambda: rig.stamp, monotonic=lambda: rig.elapsed)
+    camera = "camera" in fault or "depth" in fault
+    if camera:
+        rig.memory_destination()
+        rig.commands._sensor_ready = lambda _: sensor.ready(camera=True, depth="depth" in fault)
+        rig.commands._sensor_generation = lambda _: sensor.generation(depth="depth" in fault)
+    rig.commands._localization_check = lambda: sensor.ready() and rig.gate.ready()
+    if "before" in fault:
+        if not camera:
+            rig.gate.invalidate()
+        rig.start()
+        rig.checkpoint("invalid provenance blocks dispatch", "unavailable", 0, False)
+        return
+    sensor.observe(rig.stamp, camera=True, depth=True)
+    rig.start()
+    rig.client.accept()
+    if "clock_reset" in fault:
+        sensor.clock_changed.set()
+        rig.stamp -= 900
+        rig.refresh_localization()
+    elif "paused" in fault:
+        rig.elapsed += 6
+    elif "forward" in fault:
+        rig.stamp += 6
+    elif camera:
+        if "depth" in fault:
+            for _ in range(6):
+                rig.advance(1)
+                sensor.observe(rig.stamp, camera=True, depth=False)
+        else:
+            rig.advance(0.1)
+        sensor.observe(rig.stamp, camera="depth" in fault, depth=False)
+        if "recovered" in fault:
+            rig.advance(0.1)
+            sensor.observe(rig.stamp, camera=True, depth=True)
+    else:
+        rig.gate.invalidate()
+        rig.advance(0.1)
+    if "result" not in fault:
+        rig.commands.poll()
+        rig.checkpoint("provenance loss requests cancellation", "canceling", 1, True)
+        rig.check("one cancellation request", rig.client.handles[0].cancel_calls, 1)
+    rig.finish()
+    rig.checkpoint(
+        "late success cannot confirm or continue", "destination_unverified" if camera else "canceled", 1, False
+    )
+    rig.check("no next mission work", len(rig.tasks), 0)
+    rig.check("no successful step", any(e["state"] in {"succeeded", "step_succeeded"} for e in rig.events), False)
 
 
 # A child exits without connection cleanup midway through a real SQLite transaction.
@@ -535,16 +807,50 @@ CASES = (
         "control_visual_arrival", "mission", "No fault: scripted candidate and fresh arrival verification", _control
     ),
     *(
+        FaultCase(name, "provider_contract", description, _provider_contract_fault)
+        for name, description in (
+            ("planner_duplicate", "Conflicting duplicate decision fields in planner tool JSON"),
+            ("review_duplicate", "Conflicting duplicate decision fields in reviewer tool JSON"),
+            ("planner_extra_field", "Planner adds an unsupported action field"),
+            ("planner_unknown_tool", "Planner attempts a direct drive tool"),
+            ("planner_oversized", "Planner exceeds the explanation character limit"),
+            ("review_oversized", "Reviewer exceeds the explanation character limit"),
+            ("planner_missing_finish", "Planner omits completion evidence"),
+            ("planner_refusal", "Provider refusal accompanies an executable-looking plan"),
+            ("review_http_error", "Reviewer HTTP 503 is not retried or converted into approval"),
+            ("visual_duplicate", "Conflicting duplicate visual verdicts"),
+            ("visual_extra_field", "Visual verdict includes an unsupported action"),
+            ("visual_missing_finish", "Visual verification omits completion evidence"),
+            ("visual_refusal", "Visual provider refusal accompanies matched JSON"),
+            ("visual_http_error", "Visual HTTP 503 cannot authorize a destination"),
+        )
+    ),
+    *(
         FaultCase(name, "mission", description, _model_fault)
         for name, description in (
             ("planner_timeout", "Planning provider raises TimeoutError"),
             ("planner_malformed", "Planning provider returns no structured tool call"),
             ("planner_late", "Planning reply arrives after the lookup deadline is polled"),
+            ("planner_stop", "Stop during planning; late model reply cannot dispatch"),
             ("review_timeout", "Review provider raises TimeoutError"),
             ("review_late", "Review reply arrives after the lookup deadline is polled"),
             ("review_malformed", "Review provider returns no structured tool call"),
             ("review_reject", "Independent reviewer rejects a valid plan"),
             ("review_stop", "Stop arrives during plan review"),
+        )
+    ),
+    *(
+        FaultCase(name, "mission_callback_boundary", description, _cancellation_boundary)
+        for name, description in (
+            ("lookup_stop", "Stop during candidate image verification"),
+            ("arrival_wait_stop", "Stop while waiting for a fresh arrival image"),
+            ("arrival_verification_stop", "Stop during arrival verification; late verdict is discarded"),
+            ("nav_stop_before_acceptance", "Stop before a goal handle exists; late acceptance is canceled"),
+            ("nav_unpolled_late_acceptance", "Goal response expires while poll is delayed"),
+            ("nav_unpolled_late_success", "Trip deadline expires before a result without an intervening poll"),
+            ("nav_timeout_result_race", "Successful result beats delivery of the timeout cancellation event"),
+            ("nav_timeout_visual_result_race", "Visual-goal success beats the timeout event; no arrival check starts"),
+            ("nav_response_result_race", "Late acceptance has an already-complete success before timeout delivery"),
         )
     ),
     *(
@@ -593,15 +899,68 @@ CASES = (
             ("storage_step", "Context status write fails after the first completed step"),
         )
     ),
+    *(
+        FaultCase(name, "target_freshness", description, _target_fault)
+        for name, description in (
+            ("target_changed_before_send", "Selected reference changes during submission status persistence"),
+            ("target_deleted_at_arrival", "Selected memory is removed before the arrival image"),
+            ("target_deleted_during_verdict", "Selected memory is removed during visual verification"),
+            ("target_late_verdict", "Positive verdict arrives after the capture freshness bound"),
+            ("target_post_arrival_stale_image", "Post-arrival image is already too old when delivered"),
+            ("target_queued_image_expired", "Accepted image expires while waiting for the worker"),
+            ("target_visual_mismatch", "Fresh image does not match the requested target"),
+            ("target_visual_uncertain", "Fresh target identity remains uncertain"),
+            ("target_navigation_abort", "Transport aborts a trip to the selected target"),
+        )
+    ),
     FaultCase("depth_missing", "sensor_boundary", "RGB arrives without depth or calibration", _depth_fault),
     FaultCase("depth_stale", "sensor_boundary", "Only out-of-skew depth accompanies RGB", _depth_fault),
+    *(
+        FaultCase(name, "mission", description, _provenance_fault)
+        for name, description in (
+            ("provenance_localization_before", "Missing localization blocks command admission"),
+            ("provenance_camera_before", "Missing live camera blocks a remembered destination"),
+            ("provenance_depth_before", "Missing aligned depth blocks depth-dependent dispatch"),
+            ("provenance_localization_recovered", "Localization recovers before polling; old mission still cancels"),
+            ("provenance_localization_result", "Named-goal success overtakes polling after localization recovers"),
+            ("provenance_clock_reset", "Reset clock and new localization cannot resume a mission"),
+            ("provenance_clock_reset_result", "Success overtakes polling after a clock reset"),
+            ("provenance_paused_result", "Success arrives after receipt age expires on a paused clock"),
+            ("provenance_forward_result", "Source clock jumps beyond localization freshness before success"),
+            ("provenance_camera_motion", "Camera failure during motion requests cancellation"),
+            ("provenance_camera_recovered_result", "Camera recovers before success; old trust generation cannot pass"),
+            ("provenance_depth_motion", "Aligned depth fails during motion and requests cancellation"),
+            ("provenance_depth_recovered_result", "Depth recovers before success; old trust generation cannot pass"),
+        )
+    ),
     FaultCase(
         "storage_interrupted",
         "persistence_restart",
         "Child exits with an uncommitted SQLite write",
         _interrupted_storage,
     ),
+    *(FaultCase(name, "execution_boundary", description, exercise) for name, description, exercise in EXECUTION_CASES),
 )
+
+
+def execution_gate(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Count mission cases separately from component checks and require every run to pass."""
+    excluded = {"sensor_boundary", "persistence_restart"}
+    eligible = [result for result in results if result["scope"] not in excluded]
+    case_ids = sorted({result["case_id"] for result in eligible})
+    coverage = len(case_ids) >= 100 and len(eligible) >= 1000
+    return {
+        "required_cases": 100,
+        "required_runs": 1000,
+        "cases": len(case_ids),
+        "runs": len(eligible),
+        "passed_runs": sum(bool(result["passed"]) for result in eligible),
+        "excluded_component_runs": len(results) - len(eligible),
+        "coverage_met": coverage,
+        "passed": coverage and all(result["passed"] for result in results),
+        "case_ids": case_ids,
+        "qualification": "Deterministic checkpoint only; held-out, crash-recovery and workload gates remain separate.",
+    }
 
 
 def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
@@ -623,6 +982,40 @@ def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
                 except Exception as exc:
                     error = f"{type(exc).__name__}: {exc}"
                 try:
+                    flushed = rig.traces.flush()
+                    trace = read_trace(rig.traces.path)
+                    if rig.events:
+                        rig.check("trace writer flushed", flushed, True)
+                        rig.check("trace events captured", bool(trace["events"]), True)
+                        rig.check("trace reports last status", trace["summary"]["last_status"]["state"], rig.state)
+                        rig.check(
+                            "trace preserves every published status",
+                            [event["data"]["state"] for event in trace["events"] if event["stage"] == "status"],
+                            [event["state"] for event in rig.events],
+                        )
+                        rig.check(
+                            "trace preserves failure attribution",
+                            [event["data"]["failure_stage"] for event in trace["events"] if event["stage"] == "status"],
+                            [event["failure_stage"] for event in rig.events],
+                        )
+                        rig.check(
+                            "trace dispatch attempts",
+                            sum(event["stage"] == "nav2.dispatch" for event in trace["events"]),
+                            len(rig.client.goals),
+                        )
+                        rig.check(
+                            "trace cancel requests",
+                            sum(event["stage"] == "nav2.cancel_requested" for event in trace["events"]),
+                            sum(handle.cancel_calls for handle in rig.client.handles),
+                        )
+                        rig.check(
+                            "trace event loss",
+                            sum(
+                                rig.traces.health()[key]
+                                for key in ("dropped_events", "write_errors", "trimmed_events", "truncated_events")
+                            ),
+                            0,
+                        )
                     result = {
                         "case_id": case.id,
                         "iteration": iteration,
@@ -633,6 +1026,7 @@ def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
                         "checks": rig.checks,
                         "events": rig.events,
                         "final_state": rig.state,
+                        "failure_stage": rig.events[-1]["failure_stage"] if rig.events else "",
                         "mission_owned": rig.commands.busy,
                         "queued_tasks": len(rig.tasks),
                         "dispatch_attempts": [asdict(pose) for pose in rig.client.goals],
@@ -640,6 +1034,7 @@ def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
                         "scripted_model_calls": rig.model.calls + rig.reviewer.calls,
                         "scripted_visual_calls": rig.verifier.calls,
                         "injected_storage_errors": rig.context.faults,
+                        "trace": trace,
                         "simulated_elapsed_s": rig.elapsed,
                     }
                 finally:
@@ -662,6 +1057,8 @@ def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
             "case_ids": [case.id for case in selected],
             "lookup_timeout_s": 5,
             "arrival_timeout_s": 3,
+            "target_case_arrival_timeout_s": 30,
+            "max_observation_age_s": 5,
             "nav_response_timeout_s": 2,
             "nav_trip_timeout_s": 10,
         },
@@ -674,10 +1071,15 @@ def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
         ],
         "paid_api_calls": 0,
         "cost_usd": 0,
+        "execution_gate": execution_gate(results),
         "summary": {
             "runs": len(results),
             "passed": sum(result["passed"] for result in results),
             "failed": sum(not result["passed"] for result in results),
+            "final_failure_stages": {
+                stage: sum(result["failure_stage"] == stage for result in results)
+                for stage in ("", "retrieval", "identity", "geometry", "execution")
+            },
             "wall_duration_ms": (time.perf_counter() - started) * 1000,
         },
         "results": results,
@@ -689,6 +1091,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True, help="New JSON report path (never overwritten)")
     parser.add_argument("--case", action="append", default=[], choices=[case.id for case in CASES])
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument(
+        "--execution-gate", action="store_true", help="Also fail unless 100 mission cases and 1000 executions pass"
+    )
     args = parser.parse_args(argv)
     if not 1 <= args.repeat <= 1000:
         parser.error("--repeat must be within 1..1000")
@@ -701,8 +1106,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     with args.output.open("x") as stream:
         json.dump(report, stream, indent=2, allow_nan=False)
         stream.write("\n")
-    sys.stdout.write(json.dumps(report["summary"]) + "\n")
-    return 1 if report["summary"]["failed"] else 0
+    summary = dict(report["summary"])
+    if args.execution_gate:
+        summary["execution_gate"] = report["execution_gate"]
+    sys.stdout.write(json.dumps(summary) + "\n")
+    return int(bool(report["summary"]["failed"]) or (args.execution_gate and not report["execution_gate"]["passed"]))
 
 
 if __name__ == "__main__":

@@ -9,7 +9,9 @@ from placecell.memory import SCHEMA_VERSION, EvidenceKind, Memory, Vector
 from placecell.providers.base import EmbeddingProvider, normalise_rows
 
 
-def embed_memories(memories: Sequence[Memory], embedder: EmbeddingProvider) -> tuple[list[Memory], list[Memory]]:
+def embed_memories(
+    memories: Sequence[Memory], embedder: EmbeddingProvider, *, include_captions: bool = True
+) -> tuple[list[Memory], list[Memory]]:
     """Keep media and caption vectors separately; media remains the lifecycle comparison vector."""
     caps = embedder.capabilities
     media_rows = [
@@ -17,7 +19,7 @@ def embed_memories(memories: Sequence[Memory], embedder: EmbeddingProvider) -> t
         for i, m in enumerate(memories)
         if m.role == "episodic" and m.evidence is not None and caps.supports(m.evidence)
     ]
-    text_rows = [i for i, m in enumerate(memories) if m.caption.strip() and caps.text]
+    text_rows = [i for i, m in enumerate(memories) if include_captions and m.caption.strip() and caps.text]
     media: dict[int, Vector] = {}
     captions: dict[int, Vector] = {}
     if media_rows:

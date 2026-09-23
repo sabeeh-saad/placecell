@@ -63,7 +63,9 @@ global_costmap:
       update_frequency: 2.0
       publish_frequency: 2.0
       resolution: 0.025
-      inflation_layer: {inflation_radius: 0.5, cost_scaling_factor: 3.0}
+      # Keep planned centres clear enough for the application's circular footprint
+      # check, including around corners between product stations.
+      inflation_layer: {inflation_radius: 1.2, cost_scaling_factor: 3.0}
       always_send_full_costmap: true
 velocity_smoother:
   ros__parameters:

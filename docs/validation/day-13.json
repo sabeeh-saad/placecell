@@ -1,0 +1,453 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-23",
+  "created_at": "2026-09-23T11:02:00.923426+00:00",
+  "scope": "Day 13: bounded persistent memory, correction logs, conversation history and evidence retention",
+  "git_head": "353408335eefc5012fea3123560d0310acaf1a92",
+  "source_state": "Uncommitted Day 13 changes on local-readiness-plan, including seven formatting-only cleanups; no push during this implementation.",
+  "sources_sha256": {
+    ".github/workflows/simulation.yml": "8a56228fe49bc46679822a41fe438db19e0a4e4c737404d7ae10b8878fe0725a",
+    "CHANGELOG.md": "b65e86319811722317887082f7f429f4b921eff8661de8c03e3de0d9034fbcfd",
+    "docs/ci.md": "17590ed37ce33c57eb865b65b54a219c8716fb10ee51d32db2020ca5e397b751",
+    "docs/memory-retention.md": "c612edac040168f6b89ed4b5e50589af6160b3da2e6be3b8f10ddfce25888fe6",
+    "docs/missions.md": "79c834296bf49fac0e9500d29dca4323aac46451e4d2a9cbd6a4b6f0cf0116b3",
+    "docs/operations.md": "cb50b0331cb013bfc011a6838e4511b3585a530f3c1a6fff1385478289288df2",
+    "docs/production-readiness.md": "a70251326f33ac1729ab51f2b1f984a038ac41ec2c357a5c0562860ee70cca85",
+    "docs/roadmap.md": "75ca87548b8d12e4f333919fb67a5baf042caf811c9fd2cc47ecf349fe4efbe6",
+    "docs/simulation.md": "3ce768e047f198a579fdce16591e5fb8ba05aa7ca29b8a79403d50349ff24070",
+    "simulation/Dockerfile": "1227d659db99931e98c6632c20226438a807faee7ef469851670ff2f27309452",
+    "simulation/Dockerfile.dockerignore": "9b97ed968819bbd42d2bef47513416eac1c38a19eb7284fd8feb1484790a1529",
+    "simulation/compose.gui.yaml": "eae86ce09d57c8557351113bb0711ac2b05e7eb7c0fff1b1b912c33839a2f342",
+    "simulation/compose.yaml": "7d635d7f2ba28e7925d6457691946fa767c956623f59cf39c3f7b83c4ee64b9d",
+    "simulation/config/bridge.yaml": "7b294ae63d8861ed63b4bd594e20217fb449ba15409513ad47b54bf1887cc57c",
+    "simulation/config/missions.yaml": "9735ae47eff1983f4b1afa20b6cfa983b3f588402f455ad9cfc3759778dc981b",
+    "simulation/config/nav2.yaml": "dc05c67e01a778e66de675bf2fe6512fdbd06c9c0eb1adc6d77a8dc9d3bf9287",
+    "simulation/config/placecell.yaml": "dad2df5ade7d7c09b28ffe4f3c7444758e428161ad66dd8013f15e1820a886b3",
+    "simulation/entrypoint.sh": "fb65372518eb7542469b94c84280adc7b3e6d1edf6515a9ff4ce334aaf2d36ed",
+    "simulation/launch/navigation.launch.py": "5aec7d49f2333212dd7198badf2c1f2633a13e4d7a6a6dd6c1d8af70e05d7cc5",
+    "simulation/launch/office.launch.py": "ee7de5303aa1a210f9a262643cf4e091512b9249ec4d41df6b7f488e027b1629",
+    "simulation/models/robot/meshes/rounded_box.dae": "a255a7aeb1e96f18e85edd06666a0c3b6155b7b86f84adc01013b661c3c1536c",
+    "simulation/models/robot/robot.urdf.xacro": "f81a53f71b49622817f222e006c791225e6bbd0af950fe2948092bc32a3ba96f",
+    "simulation/scripts/activate_navigation.py": "40299db74522780e1970cb1eb66b6ac2460ce259e52c8649c4c3a7f0beae5a89",
+    "simulation/scripts/cancellation_test.py": "8baf3fb7b2e4ae9194899a54c3b75962c95672520ee886cca4e22dae03b7b5fe",
+    "simulation/scripts/checkpoint_control.py": "df12cb3e376a5dbf6da12c2898cce62c55f86391a931ce448e85f8d7212f6419",
+    "simulation/scripts/checkpoint_fixtures.py": "b4e5cfeeeac90892634a3773cea7b7463a6157c071eaae91346129e2691234f5",
+    "simulation/scripts/checkpoint_live.py": "68ab2bbddf77da0362d7fb54e2de4bdecdd584288960f25439e7aa7a021e646b",
+    "simulation/scripts/checkpoint_sync.py": "fc2f5e910d31373b4f5468a785b2b31e1cbd466c6ff2841cbc1d40d7ac3f7050",
+    "simulation/scripts/command_demo.py": "af6d3b51af0d25cc142e12fa3e8acb4e9a8c457e52968a5993151ef267283fc5",
+    "simulation/scripts/command_guard.py": "cc18334d56d2170b50745559609ed4544a432c418ed039480d5d75321611de8a",
+    "simulation/scripts/control.py": "5beaccece54964dcf999280422e05d04bb6435f23462a9d82506312ee06dd55a",
+    "simulation/scripts/localization_updates.py": "7555947afe4eb10be0a05dc901c603044223c6b2ca55cabba14791f102bf25a6",
+    "simulation/scripts/make_map.py": "a0fd2858b26d5b7cc684bebaeac912ab21bc7344126ecdf574bcaddbb13b9a72",
+    "simulation/scripts/make_robot_mesh.py": "1d9cbf4f274c794f953b516660e02ad61e5fd3c2ffe1f7fc57581f351ebf7ef9",
+    "simulation/scripts/operator_test.py": "00cab32a3d4d261317f564d6de7954bbbe694af0b12fbb80a8777dabafe130ac",
+    "simulation/scripts/pipeline_test.py": "e35ac9d9831b132a1ba6b776e85f6f1089cf3814f8f69b9561b452b9ed3d7aa5",
+    "simulation/scripts/product_missions.py": "ab3643a331778dcc23d54482677feb14c86b05e4fc065a8b10bdec25fbd971ce",
+    "simulation/scripts/product_scene.py": "d09515eed873bd7d1e08b497f479162f444525b24c8153a1a53b841ee82bf167",
+    "simulation/scripts/retention_test.py": "eb4295b02f34952e5c24a8eda824730dfdcf0a11e489789c13fc83f52fd5f045",
+    "simulation/scripts/run_product_missions.py": "ce3bb21fc10118d0a38fbf32773e24beb7c59addb77cd820b509e595a3df6510",
+    "simulation/scripts/sensor_test.py": "6652083cc0812c29a7037552a2bfedec5f530f30f2f193bf84158d2dee96c3ea",
+    "simulation/scripts/smoke_test.py": "41ec7742eaae425883ce27b9425a592f96b07de0a315d63a4ca4395a9d7fc331",
+    "simulation/scripts/video_recorder.py": "ff259c2fad14a7298afe429529a95308dd86ac817f0499e4896c53c688831c44",
+    "simulation/sim": "4121149ba9723b51904fec9604ef133d28e9810bf61dcd620969f5954bc8a58b",
+    "simulation/worlds/office.sdf": "59e3e52e1a2b61a4af13346f387f4da69490df808d3400c18b4de396ab41aae9",
+    "src/placecell/__init__.py": "75473bbd41206242d12f4e922612709ab0fc7a510da42f518fd62fa48c633d6d",
+    "src/placecell/agent.py": "eb9af5659ac3a4d878807d5bb0220af51c6602b565d80c9e068a3a1c9af85799",
+    "src/placecell/approach.py": "3d728447c63443f91ab1609f321fba0e277cf419cf1f739de2b925f56a9ec8f1",
+    "src/placecell/chat.py": "e85e28f43263a6fcbdac8d669b830d246529aacec5d79f83545923653df6db97",
+    "src/placecell/command_identity.py": "8995ac9e64a99d810e6b3e1c3d91420b6c211a5e5b27f40f5ea66db9e4cc5633",
+    "src/placecell/consolidation.py": "23033a699a82933fbc38ca57b6681d74498dbe9300a1d013facdc78940bffcb6",
+    "src/placecell/corrections.py": "1595c613daa9c31acdc9468ac2d0e8b3a9da5b4341baa99cd1357cfb04c2c12d",
+    "src/placecell/depth.py": "a768281c33a10e96090f3a9ff5d65687fca32ade8e67758d460a9c638c126165",
+    "src/placecell/errors.py": "2c70ef137fc35959f229b3c8d8b562eb570e77203ec17c90f51c55c4c02387f2",
+    "src/placecell/evaluation.py": "dcd8e4e80cb1dc588ad31ecf5256465827fa901e3622920f64e5417cff711ee3",
+    "src/placecell/fault_injection.py": "25f3b6c600f9c6d21978041940eb878b1b1e0dc80accbf8e09aaad5e701ae00b",
+    "src/placecell/lifecycle.py": "8330fa4b336b4ee8f3049f61438550666248b7c1745b713749e5b10c57e1cbee",
+    "src/placecell/localization.py": "8f4efeba5e379b5bd19e44b3f91d7f5521554d33c4e742538673f794df44c3ae",
+    "src/placecell/memory.py": "307835ebe01216073063864d76cdf3c711c43afad0cb7784b9d9586d6451cd04",
+    "src/placecell/migrate.py": "46d1e4eff55bbb9ad5dcb00e1f5d55a2019c2610a85ec5ab8aed820c30ad535d",
+    "src/placecell/mission_context.py": "1a996fc6ca5477e4190845f96f13e49c6f4bc934e898d86a2c2f88c19217e61d",
+    "src/placecell/mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+    "src/placecell/missions.py": "1e951f9c18c8cb1465d818f6cd5226a1947240fd6413963ba84a9b677a32f0d8",
+    "src/placecell/navigation.py": "0baac90520ce858f0a885515bc67d0fb2e45e5fec7b9a32205d3f950f4218051",
+    "src/placecell/object_arrival.py": "75a3e62c0a79c9a3e07c0c1be5407cdf54eae60fabb62032bbea2731c8e60ed1",
+    "src/placecell/object_evaluation.py": "374a99700563884cae9e231bb715227b43915ef4a6ac9fa06b0b4e9b26822179",
+    "src/placecell/object_search.py": "7d970c0783d36f245a9218c952194a687d1e30711661ee10aa9d11fb7fe70286",
+    "src/placecell/object_types.py": "ae574a94bb2d416dd095c8816e7b613e8eafd8a2ed8bac94d719fbfbc9971e1c",
+    "src/placecell/objects.py": "96664681540c586032e537d41bb11fcaf180d5e71b2df4deee3e62d2fb49b2da",
+    "src/placecell/observer.py": "6e3669b09583eb40d51ce0d79c7008c220809cf6dafd48e78f85da24cf0b2e2a",
+    "src/placecell/operator.py": "178fdef134e71c20508d4f799b00e5c599587264d384d6502682f5f3ae71e515",
+    "src/placecell/pipeline.py": "3e4185cafedf9000f7023a1529eee2d193e4a7d7e72c81604c2ca6f8029e020a",
+    "src/placecell/providers/__init__.py": "a8c6d4daa5119f3b92fa6b8833152143b122ef43df459bb780a54872bfc56b9d",
+    "src/placecell/providers/_contracts.py": "89abc7f69c8464dc1b9b0193a22bdc140171991fcae1426e118a79351806293b",
+    "src/placecell/providers/_http.py": "9985cbca3ae09afd0247b9aafe028102ce5be02061c0503d85aa663067fa5557",
+    "src/placecell/providers/base.py": "85e63d710fcb861876c3f1f73c5c5923afdb2dae78f72f7dc8f03e67a1688bca",
+    "src/placecell/providers/captioning.py": "2f88e77113bb716ee79ee3ced1384e8fa93afb563f117fb1d652b53a5b0e9330",
+    "src/placecell/providers/chat.py": "d7146232047b4fb88bcf89f9f16e4c0cb253ae09a004bb633a0609c3ec71f4d2",
+    "src/placecell/providers/clip.py": "4af556a1b0f808bbf15323e3c79a1a1b4c743dba5ccdf759f7df62f6f0f81e1d",
+    "src/placecell/providers/embedding.py": "1d49e3419c83ec5ec9a6e022b4fb630a2be456860cdd624af93c50ccee8cc1a8",
+    "src/placecell/providers/gemini.py": "7b612e927131d2e97721686dcc8956b53d78e566eabb15faaaac316f81cf54ea",
+    "src/placecell/providers/hashing.py": "e798dad790d74c76732169f84f27e89d27ae2881f8ca57e2d442b71e75572f71",
+    "src/placecell/providers/object_detection.py": "df1f7f85fc90023fad14b0b5198bd10cfc4adcd7e41cc93f91e80f784f77ec3f",
+    "src/placecell/providers/openai_compatible.py": "89900bd84cf77e7fcc39bbc9ad3b460faf94f34f2ec86c70f0f95fcbb7a6a437",
+    "src/placecell/providers/openrouter.py": "333319f1b4aaaef099a5f32b5b59dd5ac5102123ad02191b208902bc06742757",
+    "src/placecell/recordings.py": "52ff54579bd16151c1c373c9a58d29ac806e44346a134ceaf3c29e1957b64522",
+    "src/placecell/refinement.py": "8c814c06b9f951ac52e590b332545a3f0762bf8560eec87a55aecaf5d79d3142",
+    "src/placecell/retrieval.py": "215ebccf4cfab9f055302a3c6975f840eb58d3d98090452c6dc3e2f8c2a6bdbf",
+    "src/placecell/ros2/__init__.py": "940365c14b76882518d9a28665cbc1d8c9b8ea899aabfc14a8db3c33f15f8db1",
+    "src/placecell/ros2/approach.py": "580c3afec4e1d53411f647794b8f59c0ddfe425c274040aa4b3e083d5ae11afa",
+    "src/placecell/ros2/bridge.py": "9b95c15d197c570c37f4bdb08ad88863e840b7ac369566d4ef836d69e8ab9734",
+    "src/placecell/ros2/depth.py": "a09eb1a1de3545dc97c0466f7a29e058e1dedc946dbc2fd4ebe0acb55d49bea7",
+    "src/placecell/ros2/navigation.py": "00605f572a63a89e64727dccb18533e92184c12288aa3330e6a6f83c3a9e6fb2",
+    "src/placecell/ros2/node.py": "4bc87209dc6210e6c871d3ebfaed11fa7cbc0db47779850d767b4d0e22022f37",
+    "src/placecell/ros2/operator.py": "97343dd2d9c5a6a2653bc9ddb1477b88c442de543b2a4b0096722786b044fdb6",
+    "src/placecell/ros2/speech.py": "8d36d5dd7b9c80035ae980102cc4597d7c81a7fcf93f99284c9a71119a394b3f",
+    "src/placecell/sensors.py": "16b27b4b6029a8407f5f1098476b9cd4f4c716f889737efc820adc3f91a1013a",
+    "src/placecell/sources/__init__.py": "c47d4e85dec0f6b068ead36c31e842a27b21609fb6450b2e2ea3252f921bb613",
+    "src/placecell/sources/pose_log.py": "7386c8a53f10ac52c6d37ddbc7100f1e3cea9a8972ecba8bc405c8e17e4b16b0",
+    "src/placecell/sources/video.py": "4769ad5ce3cf3668de1b3aa6e98e080ba872691a386875096da25bbe9433652f",
+    "src/placecell/speech.py": "a4e80bb56a3ed7f01341b45798f9bf558ff2ebf0c532da7a1594918b136830e1",
+    "src/placecell/store/__init__.py": "afcea33c80520ac6d028ea89a0dcf9e02791e0b62728bc1713fe81edcfdb8bf6",
+    "src/placecell/store/base.py": "0751bcb6cdd5973431ee9d0506ed9e0050b2dc28f02e80341dbfb4b357b56a2b",
+    "src/placecell/store/codec.py": "2f2c647ffcd07909c35b9a43081d594ebff367de19869d28ef7e8882b923c108",
+    "src/placecell/store/in_memory.py": "928a5f85939a0950ed9ffd671c8cd5c62dcdb8d79004b70721cf1095b14c82f9",
+    "src/placecell/store/jobs.py": "d7172e46ab00f342b4801d29e0128b6fe1c8ced8d14f30c31f7ba25f6bd4b1ee",
+    "src/placecell/store/lancedb_store.py": "2ede19716a950acc66de81c442a4cd1f72a26d05451706bbc2645896ad049906",
+    "src/placecell/store/limits.py": "5068b0dc87feb7e4b0224226b0d5b5163b6f591f22e638f9d7a8c8ba0d3481c0",
+    "src/placecell/store/objects.py": "f6967e18ca785cb693d011124d4a199bb1477bfd08f22d77a606ed97707f769f",
+    "src/placecell/store/refinements.py": "8ff01aa31024e625bb3691f2b5386e07697170c93e1632e86dd7830b1433625c",
+    "src/placecell/store/state.py": "5dbc1dec7aecf67af07835a61b80296e0b9ba68cadddf0e580d145a446d69565",
+    "src/placecell/trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+    "src/placecell/tracing.py": "6ec4d7205827ddccaecc2fad5efe65e7b0e369bb4b8035588e98e3306a480427",
+    "src/placecell/verification.py": "9b36d8537bb248144f2ed3ee98a8311fbe63260d675122e143a8cc029eadd919",
+    "tests/test_gazebo_regressions.py": "4bb22e25d13f003fea2dca6dca9856c754279986f55b18f7a52b155da336bf4d",
+    "tests/test_lifecycle.py": "23070269008b3c365e7c1bccc48690e12018e115dca6025eadd46e0b89b08378",
+    "tests/test_retention_bounds.py": "6d7dd57abc91ec7fbc6a19196568c7a635d553306db529f07ccd5f8711cb25e6"
+  },
+  "regressions": {
+    "baseline_commit": "353408335eefc5012fea3123560d0310acaf1a92",
+    "baseline": {
+      "sightings_after_prune": 1,
+      "sightings_restored_by_stale_update": 5,
+      "persistent_events_after_1100_requests": 1100,
+      "correction_after_failed_write": {
+        "memory_weight": 1.0,
+        "reopened_weight": 0.5
+      },
+      "external_recording_survived_automatic_retention": false
+    },
+    "baseline_evidence": {
+      "path": "simulation/artifacts/day13-20260923/baseline-reproductions.json",
+      "sha256": "130aadca3cfb6b497395179a5d9950559d05bcf46ea10660d5eaab4d2e828ea1"
+    },
+    "intermediate_failures_preserved": [
+      {
+        "issue": "One-entry cleanup queue stalled multi-memory curation; fixed by draining between bounded batches.",
+        "evidence": {
+          "path": "simulation/artifacts/day13-20260923/small-cleanup-reproduction.log",
+          "sha256": "6a699b1e54b56cbd2f15e8d1aaab0ba5ba0e2d269eef0c71b7fa62997f409f11"
+        }
+      },
+      {
+        "issue": "An intermediate in-memory close implementation deleted files implicitly, breaking the existing cleanup contract. Original atomic close semantics restored; overflow now has a regression test.",
+        "evidence": {
+          "path": "simulation/artifacts/day13-20260923/unit-complete.log",
+          "sha256": "e234c60a751a80d11c3beee5aeb68c83127951f90de3130d55cd6bb90e9297e8"
+        }
+      },
+      {
+        "issue": "Bulk object expiration could not fit six objects in a four-entry cleanup queue. Fixed by draining between object deletions, with at most 128 objects per maintenance pass.",
+        "evidence": {
+          "path": "simulation/artifacts/day13-20260923/object-boundary-before/report.json",
+          "sha256": "1ae37f05a4571591a93376ec8e825deb761416048664eed25e764cb8172ba47c"
+        }
+      }
+    ]
+  },
+  "validation": {
+    "python": "3.12.3",
+    "unit": {
+      "passed": 1281,
+      "failed": 0,
+      "new_parameterized_cases": 39,
+      "coverage_percent": 95.5508668929456,
+      "required_coverage_percent": 90,
+      "duration_s": 86.413,
+      "report": {
+        "path": "simulation/artifacts/day13-20260923/tests-verified.xml",
+        "sha256": "3f84a0f8775727a474c2be1a4052ef63eb2f4cbd2f8a2db080ad70d296d8c806"
+      },
+      "coverage": {
+        "path": "simulation/artifacts/day13-20260923/coverage-verified.json",
+        "sha256": "3f4b5cab6fa3be7ea4f77f34de58bef21d0958a5784d69422be6d621396c5872"
+      },
+      "log": {
+        "path": "simulation/artifacts/day13-20260923/unit-verified.log",
+        "sha256": "87e6af3fcff3c94cacf143379212e01b1d979557ad224073bf00fea2f2989a72"
+      }
+    },
+    "static": {
+      "ruff_check": "passed",
+      "ruff_format": "passed, 189 files",
+      "mypy": "passed, 69 source files",
+      "git_diff_check": "passed"
+    },
+    "faults": {
+      "summary": {
+        "runs": 246,
+        "passed": 246,
+        "failed": 0,
+        "final_failure_stages": {
+          "": 21,
+          "retrieval": 9,
+          "identity": 24,
+          "geometry": 30,
+          "execution": 162
+        },
+        "wall_duration_ms": 81416.61759899944
+      },
+      "cases": 82,
+      "repeat": 3,
+      "report": {
+        "path": "simulation/artifacts/day13-20260923/faults-release.json",
+        "sha256": "5c803a973bcdf10d3d6970e406c7fe816d3a14f7ce7136023d77dac395cbe168"
+      },
+      "tested_sources_match": true,
+      "reuse_note": "Fault runner sources match the final checkout. The subsequent fix only changed ROS maintenance batching and its integration fixture; all final ROS checks reran."
+    },
+    "ros": {
+      "retention": {
+        "passed": true,
+        "checks": [
+          "120 revisits retain one identity, eight sightings and one managed image",
+          "configured memory capacity refuses a fourth record without evicting existing targets",
+          "DDS correction overflow preserves negative feedback and bounds coalesced refinement requests",
+          "failed and in-flight ownership consume the configured two-job capacity",
+          "100 request histories retain only three whole requests within the row and byte budgets",
+          "deleted context references cannot expose an older destination; only deleted-memory feedback is pruned",
+          "maintenance preserves job-owned evidence until completion, then removes the final unreferenced image",
+          "automatic aging removes expired memory while preserving externally owned media",
+          "six expired objects are removed despite a four-entry cleanup limit",
+          "node restart preserves bounds and deletion boundaries without resuming movement"
+        ],
+        "report": {
+          "path": "simulation/artifacts/day13-20260923/final/retention/report.json",
+          "sha256": "b3fd4f82e18325fdf6c2b47d3832e1cd6838de60978bc63ddcc519a52c438baa"
+        }
+      },
+      "sensors": {
+        "passed": true,
+        "checks": [
+          "missing localization blocks DDS instruction admission",
+          "named place needs localization but no RGB-D",
+          "aligned RGB-D with static calibration reaches actual node observation path",
+          "duplicate RGB is not delivered twice or used to refresh receipt age",
+          "zero and future RGB stamps are refused without poisoning later synchronization",
+          "lost depth keeps scene observation but blocks object goal",
+          "out-of-skew depth never receives a fabricated position",
+          "depth loss during motion retains ownership and late success stays unverified",
+          "lost camera expires by monotonic age while ROS clock is paused",
+          "missing and delayed TF discard the capture; later complete capture recovers",
+          "malformed RGB cannot refresh camera trust",
+          "full ingestion queue still admits a fresh object arrival capture",
+          "invalid localization followed by recovery cannot turn old mission into success",
+          "real backward /clock jump latches fault, cancels mission and blocks new captures/goals"
+        ],
+        "report": {
+          "path": "simulation/artifacts/day13-20260923/final/sensors/report.json",
+          "sha256": "128e1f53e15f4a2105e777fab5573f55bd25238dc2a8a11221d6c498977825e2"
+        }
+      },
+      "operator": {
+        "passed": true,
+        "checks": [
+          "snapshot refresh continues while simulated time is paused",
+          "late subscriber recovers planning without replay or model work",
+          "invalid command is visible without replacing active mission state",
+          "late subscriber recovers complete multi-goal outcome",
+          "stop retains ownership and late success cannot advance the mission",
+          "new controller has a new instance and does not receive old retained commands",
+          "identified retries and conflicting reuse never duplicate planning or completed trips",
+          "busy refusals remain consumed after the active mission finishes",
+          "new IDs permit deliberate repeat visits; targeted stop retries cancel once",
+          "late first-delivery stop cannot affect a different request",
+          "expired and cross-map envelopes never dispatch",
+          "fresh controller and reopened durable journal suppress explicit retry across restart",
+          "provider contract over ROS: duplicate decision rejects without motion",
+          "provider contract over ROS: refused response rejects without motion",
+          "provider contract over ROS: unsupported action rejects without motion",
+          "provider contract over ROS: oversized response rejects without motion",
+          "provider contract over ROS: valid structured response completes ordered visits",
+          "target failure stage over ROS status, service and retained snapshot: retrieval",
+          "target failure stage over ROS status, service and retained snapshot: identity",
+          "target failure stage over ROS status, service and retained snapshot: geometry",
+          "target failure stage over ROS status, service and retained snapshot: execution",
+          "production node snapshot and service: navigation_enabled=False",
+          "production node snapshot and service: navigation_enabled=True"
+        ],
+        "report": {
+          "path": "simulation/artifacts/day13-20260923/final/operator/report.json",
+          "sha256": "a4cc1643305ed272fe0c7ed83de8cd33e07fca54bf7564de8c7557c683e7e738"
+        }
+      },
+      "cancellation": {
+        "passed": true,
+        "checks": [
+          "stop while planner blocked; late reply discarded",
+          "stop while reviewer blocked; late reply discarded",
+          "late_accept: ownership retained, next goal refused, terminal cancels mission",
+          "reject: ownership retained, next goal refused, terminal cancels mission",
+          "missing_ack: ownership retained, next goal refused, terminal cancels mission",
+          "loaded cancellation with persistent context/traces and paused simulation clock",
+          "positive control: two real action goals complete in order without cancellation"
+        ],
+        "report": {
+          "path": "simulation/artifacts/day13-20260923/final/cancellation/report.json",
+          "sha256": "c94af996aebaa925a5f82e2d8cb1f4696199e9720b5d35233c16e5b477672968"
+        }
+      }
+    }
+  },
+  "measurements": {
+    "retention": {
+      "visits": 120,
+      "retained_sightings": 8,
+      "retained_visit_images": 1,
+      "events": 6,
+      "bytes": 738,
+      "pruned_events": 194
+    },
+    "expired_objects": 6,
+    "cleanup_capacity_in_expiry_check": 4,
+    "cancellation_ms": {
+      "count": 100,
+      "p50": 0.4808919984498061,
+      "p95": 0.8547130000806646,
+      "p99": 1.3969129995530238,
+      "max": 2.2293840011116117,
+      "method": "nearest-rank; monotonic command callback receipt to async cancel API return"
+    },
+    "cancellation_target_ms": 500,
+    "trace_closed": true,
+    "trace_statuses_match": true,
+    "trace_health": {
+      "dropped_events": 0,
+      "write_errors": 0,
+      "trimmed_events": 0,
+      "truncated_events": 0,
+      "unclean_shutdowns": 0,
+      "coalesced_events": 0,
+      "dropped_critical_events": 0,
+      "last_error_type": "",
+      "pending": 0,
+      "writer_alive": false
+    }
+  },
+  "environment": {
+    "ros": "Jazzy",
+    "image": "placecell-sim:day13-20260923",
+    "manifest_list_digest": "sha256:a4e0cde0cdf8b4b3ea38b601f8f1fd334299310669131190d9bc51273234481e",
+    "image_config_digest": "sha256:745c9246025f13dee3020806be4d34f9102ea84984622a4849da5676c44837d0",
+    "layer_manifest_digest": "sha256:d63c77d9ec242faf786d0676a0f35fa6940e713b880722f8bebe1c62cfc9f37f",
+    "python": "3.12.3",
+    "image_packages": {
+      "numpy": "1.26.4",
+      "Pillow": "10.2.0",
+      "lancedb": "0.38.0",
+      "pyarrow": "21.0.0"
+    },
+    "container_limits": {
+      "cpus": 8,
+      "memory_gib": 16,
+      "network": "none"
+    },
+    "image_source_comparison": {
+      "files": 105,
+      "mismatches": 0,
+      "evidence": {
+        "path": "simulation/artifacts/day13-20260923/image-sources-final.json",
+        "sha256": "bc085c8a667124d121c60576c98bb2a6d76c6e713bac787b528e6f1686c928d2"
+      }
+    },
+    "host_exclusive": false,
+    "build": {
+      "path": "simulation/artifacts/day13-20260923/build-final.log",
+      "sha256": "d94be3e6bf0fb0ea97463a0f045ed1c8d267a21a72665c6cf9e43fb50b5a3f72"
+    }
+  },
+  "formatting_only": {
+    "files": [
+      {
+        "path": "src/placecell/depth.py",
+        "before_sha256": "0b04319e7d5663998972b1ac4654fb74eff942769ffd2a212084782fa8570db8",
+        "after_sha256": "a768281c33a10e96090f3a9ff5d65687fca32ade8e67758d460a9c638c126165",
+        "ast_equal": true
+      },
+      {
+        "path": "src/placecell/object_arrival.py",
+        "before_sha256": "5990e387c55ed4ad290394bcd9998554fca70f47232a53cc1d84c62ddc90f5b2",
+        "after_sha256": "75a3e62c0a79c9a3e07c0c1be5407cdf54eae60fabb62032bbea2731c8e60ed1",
+        "ast_equal": true
+      },
+      {
+        "path": "src/placecell/object_types.py",
+        "before_sha256": "c345552d78d90485111f6ecab5160691fe04ac8ad6df0c700dcfec31ef44820b",
+        "after_sha256": "ae574a94bb2d416dd095c8816e7b613e8eafd8a2ed8bac94d719fbfbc9971e1c",
+        "ast_equal": true
+      },
+      {
+        "path": "src/placecell/providers/object_detection.py",
+        "before_sha256": "e63caa169b5ba17f6cd7f5766a13116f2d8d1f1b0edc5f1039a8f4ac222f007b",
+        "after_sha256": "df1f7f85fc90023fad14b0b5198bd10cfc4adcd7e41cc93f91e80f784f77ec3f",
+        "ast_equal": true
+      },
+      {
+        "path": "src/placecell/tracing.py",
+        "before_sha256": "1c0311e129aa01a41ac90369ab4a77657bcc3d2d32e23ea91ffbdf7352d22ab0",
+        "after_sha256": "6ec4d7205827ddccaecc2fad5efe65e7b0e369bb4b8035588e98e3306a480427",
+        "ast_equal": true
+      },
+      {
+        "path": "tests/test_gazebo_regressions.py",
+        "before_sha256": "5f65a5082657154677c94ddaa989380a7a87e152eb3bf977eda2326aa854bcf8",
+        "after_sha256": "4bb22e25d13f003fea2dca6dca9856c754279986f55b18f7a52b155da336bf4d",
+        "ast_equal": true
+      },
+      {
+        "path": "simulation/scripts/sensor_test.py",
+        "before_sha256": "9baa0f241e3600c0d915ce03244f68576b2f907b837350b590fa6a9603dad121",
+        "after_sha256": "6652083cc0812c29a7037552a2bfedec5f530f30f2f193bf84158d2dee96c3ea",
+        "ast_equal": true
+      }
+    ],
+    "note": "AST equality checked for pre-existing formatting corrections. Final full tests and ROS runs include the formatted sources."
+  },
+  "reproduce": [
+    ".venv/bin/ruff check .",
+    ".venv/bin/ruff format --check .",
+    ".venv/bin/mypy",
+    ".venv/bin/pytest --cov=placecell",
+    ".venv/bin/placecell-check-faults --output fault-report.json --repeat 3",
+    "simulation/sim build",
+    "simulation/sim check-retention",
+    "simulation/sim check-sensors",
+    "simulation/sim check-operator",
+    "simulation/sim check-cancel --samples 100"
+  ],
+  "limits": [
+    "Logical row/content limits are not a filesystem quota; SQLite allocation, vector versions, recordings and evaluation artifacts have separate lifetimes.",
+    "No 20 GiB disk enforcement or 24-hour endurance qualification.",
+    "Retention uses authored observations and real ROS/DDS/SQLite/LanceDB, without Gazebo movement, camera recognition or live model calls.",
+    "History boundary and reference filtering are software contracts; arbitrary live-model follow-up interpretation remains unqualified.",
+    "Clean node recreation is not abrupt process-crash recovery or surviving Nav2-goal reconciliation.",
+    "Cancellation uses a controlled ROS action server and synthetic callback load, not full RGB-D/provider saturation or physical stopping.",
+    "Cleanup capacity must fit one atomic object release plus pending job-owned evidence. Smaller limits refuse safely.",
+    "Hosted Python 3.10/3.11 CI was not run locally; these runs use Python 3.12.",
+    "Raw artifacts are retained locally under simulation/artifacts and ignored by git; this manifest retains results and hashes."
+  ],
+  "paid_api_calls": 0,
+  "physical_robot_commands": 0,
+  "deferred_live_product_missions": "Five-mission rerun remains paused as requested.",
+  "release_qualification": "Day 13 software scope complete; no release gate newly marked passed.",
+  "next": "Day 14 execution gate: at least 100 separately specified cases and 1,000 deterministic executions; current fault matrix is 82 cases and 246 runs."
+}

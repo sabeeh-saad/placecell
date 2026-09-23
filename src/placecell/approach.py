@@ -253,8 +253,13 @@ class ApproachPlanner:
             )
             if (region is None or region.candidate(goal)) and snapshot.costmap.free(goal, snapshot.footprint_radius_m):
                 candidates.append(goal)
-        candidates.sort(key=lambda goal: goal.distance_to(snapshot.robot_pose))
-        valid: list[tuple[float, ApproachPlan]] = []
+        # Preserve the learned side of the object before optimizing travel distance.
+        # A shorter route to its back/side can hide the details used for identification.
+        reference_heading = Pose(0, 0, direction + math.pi - p.camera_yaw_offset_rad)
+        candidates.sort(
+            key=lambda goal: (goal.heading_difference(reference_heading), goal.distance_to(snapshot.robot_pose))
+        )
+        valid: list[tuple[float, float, ApproachPlan]] = []
         for goal in candidates[: p.max_path_requests]:
             if canceled() or self.monotonic() >= deadline:
                 raise ValidationError("approach planning canceled or timed out")
@@ -262,10 +267,16 @@ class ApproachPlanner:
             if path is None or not self._usable_path(path, snapshot, goal, region):
                 continue
             length = sum(a.distance_to(b) for a, b in pairwise(path))
-            valid.append((length, ApproachPlan(record, view.memory.pose, goal, path, self.clock(), region)))
+            valid.append(
+                (
+                    goal.heading_difference(reference_heading),
+                    length,
+                    ApproachPlan(record, view.memory.pose, goal, path, self.clock(), region),
+                )
+            )
         if not valid:
             raise ValidationError("no collision-checked approach path is available")
-        plan = min(valid, key=lambda item: item[0])[1]
+        plan = min(valid, key=lambda item: item[:2])[2]
         if not self.valid(plan, canceled):
             raise ValidationError("approach became unavailable while planning")
         return plan
