@@ -1,0 +1,430 @@
+{
+  "day": 18,
+  "date": "2026-09-24",
+  "status": "Runner preparation and authorized development checks complete; held-out qualification pending",
+  "branch": "restart-recovery",
+  "base_commit": "76900778084da4f18606b4f51bfc1d404fcb3f92",
+  "commit_state": "Uncommitted Day 15-18 changes; not pushed",
+  "authorization": {
+    "reported_cost_limit_usd": 0.5,
+    "max_requests": 1600,
+    "scope": "Prepare runner and run development checks; leave held-out evaluation pending",
+    "deferred_product_missions": "remain paused"
+  },
+  "runtime": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1032-oem-x86_64-with-glibc2.39",
+    "packages": {
+      "numpy": "2.5.3",
+      "lancedb": "0.38.0",
+      "pyarrow": "25.0.1",
+      "pytest": "9.1.1",
+      "ruff": "0.16.8",
+      "mypy": "2.3.1"
+    }
+  },
+  "source_sha256": {
+    "evaluation/missions/baseline-v1.json": "5ac552960f59ab5446c7b8d037232a0bd37111d6f12b73c6cec13e6ee47ee1bb",
+    "pyproject.toml": "8ff0b6eb19466cba1d10228279b62be3366700a336b1e1b488683fa7ddfc93f1",
+    "scripts/check_distribution.py": "b7e21e7959812525db63341b8f689274562c48bbdb3ffa83db36e4857837a2ca",
+    "scripts/smoke_installed.py": "6f4f4a38aa00eb4657d78f87e178232de2e1c390b011afc13f8790f1231af503",
+    "src/placecell/__init__.py": "75473bbd41206242d12f4e922612709ab0fc7a510da42f518fd62fa48c633d6d",
+    "src/placecell/agent.py": "eb9af5659ac3a4d878807d5bb0220af51c6602b565d80c9e068a3a1c9af85799",
+    "src/placecell/approach.py": "3d728447c63443f91ab1609f321fba0e277cf419cf1f739de2b925f56a9ec8f1",
+    "src/placecell/backup.py": "c75deab340fc796c2139c8543a351ee73dc2f92c8d7776b83ef85f26a18d165b",
+    "src/placecell/chat.py": "e85e28f43263a6fcbdac8d669b830d246529aacec5d79f83545923653df6db97",
+    "src/placecell/command_identity.py": "9c74ea010fd1fd7ab3cbc5461fcbb38c565b64c1f2bd9c7ba41b3916ca8f5fb3",
+    "src/placecell/consolidation.py": "23033a699a82933fbc38ca57b6681d74498dbe9300a1d013facdc78940bffcb6",
+    "src/placecell/corrections.py": "e3db1f093e0f377b7c47bb11f29aab385749c69dd46c1af8b2c47dc187c42522",
+    "src/placecell/depth.py": "a768281c33a10e96090f3a9ff5d65687fca32ade8e67758d460a9c638c126165",
+    "src/placecell/errors.py": "606a5894144a65378d7f895ecfd11cbd7d3427c77dd21cf2a4a62f9e97baa6bb",
+    "src/placecell/evaluation.py": "dcd8e4e80cb1dc588ad31ecf5256465827fa901e3622920f64e5417cff711ee3",
+    "src/placecell/evaluation_budget.py": "70f2983f38f6e7d78c8c91c0ffe98b3aac74e5dd613e71750dfa4d7260769f10",
+    "src/placecell/execution_cases.py": "22e96743f3f42157301d02f11a9f89ab9597f2b07e1a7368be3b3e7ff52197ab",
+    "src/placecell/fault_injection.py": "78df1d129431d9381c7784ece5dec1b86916ed965b4318b5324efc761e1279aa",
+    "src/placecell/lifecycle.py": "8330fa4b336b4ee8f3049f61438550666248b7c1745b713749e5b10c57e1cbee",
+    "src/placecell/live_evaluation.py": "e1b6a463d97f93200dc4147f8f77eebb48645cdef3d10f8b7fec4180975572f8",
+    "src/placecell/localization.py": "8f4efeba5e379b5bd19e44b3f91d7f5521554d33c4e742538673f794df44c3ae",
+    "src/placecell/maintenance.py": "b060425f5def787f4b9a7b39e4cbb5bb41d973f6bec36576e7a2376835447cc2",
+    "src/placecell/memory.py": "307835ebe01216073063864d76cdf3c711c43afad0cb7784b9d9586d6451cd04",
+    "src/placecell/migrate.py": "46d1e4eff55bbb9ad5dcb00e1f5d55a2019c2610a85ec5ab8aed820c30ad535d",
+    "src/placecell/mission_context.py": "1a996fc6ca5477e4190845f96f13e49c6f4bc934e898d86a2c2f88c19217e61d",
+    "src/placecell/mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+    "src/placecell/missions.py": "1e951f9c18c8cb1465d818f6cd5226a1947240fd6413963ba84a9b677a32f0d8",
+    "src/placecell/navigation.py": "972be608b355315db00ab1826fde3eaeeb2ed7ed7b22381c0cc812ac4857ccfd",
+    "src/placecell/navigation_ownership.py": "4d8210e3fe973b89c6d3c1149c8a480257330133153684536869ddb322aae724",
+    "src/placecell/object_arrival.py": "75a3e62c0a79c9a3e07c0c1be5407cdf54eae60fabb62032bbea2731c8e60ed1",
+    "src/placecell/object_evaluation.py": "374a99700563884cae9e231bb715227b43915ef4a6ac9fa06b0b4e9b26822179",
+    "src/placecell/object_search.py": "7d970c0783d36f245a9218c952194a687d1e30711661ee10aa9d11fb7fe70286",
+    "src/placecell/object_types.py": "ae574a94bb2d416dd095c8816e7b613e8eafd8a2ed8bac94d719fbfbc9971e1c",
+    "src/placecell/objects.py": "96664681540c586032e537d41bb11fcaf180d5e71b2df4deee3e62d2fb49b2da",
+    "src/placecell/observer.py": "6e3669b09583eb40d51ce0d79c7008c220809cf6dafd48e78f85da24cf0b2e2a",
+    "src/placecell/operator.py": "178fdef134e71c20508d4f799b00e5c599587264d384d6502682f5f3ae71e515",
+    "src/placecell/pipeline.py": "3e4185cafedf9000f7023a1529eee2d193e4a7d7e72c81604c2ca6f8029e020a",
+    "src/placecell/providers/__init__.py": "a8c6d4daa5119f3b92fa6b8833152143b122ef43df459bb780a54872bfc56b9d",
+    "src/placecell/providers/_contracts.py": "89abc7f69c8464dc1b9b0193a22bdc140171991fcae1426e118a79351806293b",
+    "src/placecell/providers/_http.py": "650f2d435c8e3ae98f2c1efadacca310f576095a3ba140774b35bbe0e97f0cb2",
+    "src/placecell/providers/base.py": "85e63d710fcb861876c3f1f73c5c5923afdb2dae78f72f7dc8f03e67a1688bca",
+    "src/placecell/providers/captioning.py": "2f88e77113bb716ee79ee3ced1384e8fa93afb563f117fb1d652b53a5b0e9330",
+    "src/placecell/providers/chat.py": "d7146232047b4fb88bcf89f9f16e4c0cb253ae09a004bb633a0609c3ec71f4d2",
+    "src/placecell/providers/clip.py": "4af556a1b0f808bbf15323e3c79a1a1b4c743dba5ccdf759f7df62f6f0f81e1d",
+    "src/placecell/providers/embedding.py": "1d49e3419c83ec5ec9a6e022b4fb630a2be456860cdd624af93c50ccee8cc1a8",
+    "src/placecell/providers/gemini.py": "7b612e927131d2e97721686dcc8956b53d78e566eabb15faaaac316f81cf54ea",
+    "src/placecell/providers/hashing.py": "e798dad790d74c76732169f84f27e89d27ae2881f8ca57e2d442b71e75572f71",
+    "src/placecell/providers/object_detection.py": "df1f7f85fc90023fad14b0b5198bd10cfc4adcd7e41cc93f91e80f784f77ec3f",
+    "src/placecell/providers/openai_compatible.py": "89900bd84cf77e7fcc39bbc9ad3b460faf94f34f2ec86c70f0f95fcbb7a6a437",
+    "src/placecell/providers/openrouter.py": "333319f1b4aaaef099a5f32b5b59dd5ac5102123ad02191b208902bc06742757",
+    "src/placecell/recordings.py": "52ff54579bd16151c1c373c9a58d29ac806e44346a134ceaf3c29e1957b64522",
+    "src/placecell/refinement.py": "8c814c06b9f951ac52e590b332545a3f0762bf8560eec87a55aecaf5d79d3142",
+    "src/placecell/retrieval.py": "215ebccf4cfab9f055302a3c6975f840eb58d3d98090452c6dc3e2f8c2a6bdbf",
+    "src/placecell/ros2/__init__.py": "940365c14b76882518d9a28665cbc1d8c9b8ea899aabfc14a8db3c33f15f8db1",
+    "src/placecell/ros2/approach.py": "580c3afec4e1d53411f647794b8f59c0ddfe425c274040aa4b3e083d5ae11afa",
+    "src/placecell/ros2/bridge.py": "9b95c15d197c570c37f4bdb08ad88863e840b7ac369566d4ef836d69e8ab9734",
+    "src/placecell/ros2/depth.py": "8086b014c749000cf9a6ba9f636b08e22e911450d4b43e5476aef2a841568c1c",
+    "src/placecell/ros2/navigation.py": "eb51902374f75be2d0629c1d9ea98fdc48584f3cbe4ba0d9538d495275eb1a38",
+    "src/placecell/ros2/node.py": "4adbede8fbb188a490a01e2191e5c8aca63511790f9516e66b0d21a13a26e417",
+    "src/placecell/ros2/operator.py": "97343dd2d9c5a6a2653bc9ddb1477b88c442de543b2a4b0096722786b044fdb6",
+    "src/placecell/ros2/recovery.py": "8fa67cc49ca92403bef60783962d8f9b32b70cb1495ec781c971c555fcafd739",
+    "src/placecell/ros2/speech.py": "8d36d5dd7b9c80035ae980102cc4597d7c81a7fcf93f99284c9a71119a394b3f",
+    "src/placecell/sensors.py": "16b27b4b6029a8407f5f1098476b9cd4f4c716f889737efc820adc3f91a1013a",
+    "src/placecell/sources/__init__.py": "c47d4e85dec0f6b068ead36c31e842a27b21609fb6450b2e2ea3252f921bb613",
+    "src/placecell/sources/pose_log.py": "7386c8a53f10ac52c6d37ddbc7100f1e3cea9a8972ecba8bc405c8e17e4b16b0",
+    "src/placecell/sources/video.py": "4769ad5ce3cf3668de1b3aa6e98e080ba872691a386875096da25bbe9433652f",
+    "src/placecell/speech.py": "a4e80bb56a3ed7f01341b45798f9bf558ff2ebf0c532da7a1594918b136830e1",
+    "src/placecell/store/__init__.py": "afcea33c80520ac6d028ea89a0dcf9e02791e0b62728bc1713fe81edcfdb8bf6",
+    "src/placecell/store/base.py": "0751bcb6cdd5973431ee9d0506ed9e0050b2dc28f02e80341dbfb4b357b56a2b",
+    "src/placecell/store/codec.py": "2f2c647ffcd07909c35b9a43081d594ebff367de19869d28ef7e8882b923c108",
+    "src/placecell/store/in_memory.py": "928a5f85939a0950ed9ffd671c8cd5c62dcdb8d79004b70721cf1095b14c82f9",
+    "src/placecell/store/jobs.py": "6a3a2cad659ad896b5b2cfc758b8a013830e82822295b143e9101211881ae929",
+    "src/placecell/store/lancedb_store.py": "eebd12ac9278caf70961780777c5ca0ed51aab33e59b1fe764cef3bab78d9837",
+    "src/placecell/store/limits.py": "5068b0dc87feb7e4b0224226b0d5b5163b6f591f22e638f9d7a8c8ba0d3481c0",
+    "src/placecell/store/objects.py": "f6967e18ca785cb693d011124d4a199bb1477bfd08f22d77a606ed97707f769f",
+    "src/placecell/store/refinements.py": "8ff01aa31024e625bb3691f2b5386e07697170c93e1632e86dd7830b1433625c",
+    "src/placecell/store/schema.py": "90b8b1428bfe35b30ab4665e45cef5c97c031449a7868ed3cbc8ea3d16164b6e",
+    "src/placecell/store/state.py": "18ce65fd3f8f32a48adeeb4a4a317849a734c2eac1f210bc1f49f4283314f389",
+    "src/placecell/trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+    "src/placecell/tracing.py": "6ec4d7205827ddccaecc2fad5efe65e7b0e369bb4b8035588e98e3306a480427",
+    "src/placecell/verification.py": "9b36d8537bb248144f2ed3ee98a8311fbe63260d675122e143a8cc029eadd919",
+    "tests/test_live_evaluation.py": "00bdbb650e214999bb0f292adf293a1dde06adda7c11583085d0e96504fa5ea0"
+  },
+  "live_source_sha256": {
+    "__init__.py": "75473bbd41206242d12f4e922612709ab0fc7a510da42f518fd62fa48c633d6d",
+    "agent.py": "eb9af5659ac3a4d878807d5bb0220af51c6602b565d80c9e068a3a1c9af85799",
+    "approach.py": "3d728447c63443f91ab1609f321fba0e277cf419cf1f739de2b925f56a9ec8f1",
+    "backup.py": "c75deab340fc796c2139c8543a351ee73dc2f92c8d7776b83ef85f26a18d165b",
+    "chat.py": "e85e28f43263a6fcbdac8d669b830d246529aacec5d79f83545923653df6db97",
+    "command_identity.py": "9c74ea010fd1fd7ab3cbc5461fcbb38c565b64c1f2bd9c7ba41b3916ca8f5fb3",
+    "consolidation.py": "23033a699a82933fbc38ca57b6681d74498dbe9300a1d013facdc78940bffcb6",
+    "corrections.py": "e3db1f093e0f377b7c47bb11f29aab385749c69dd46c1af8b2c47dc187c42522",
+    "depth.py": "a768281c33a10e96090f3a9ff5d65687fca32ade8e67758d460a9c638c126165",
+    "errors.py": "606a5894144a65378d7f895ecfd11cbd7d3427c77dd21cf2a4a62f9e97baa6bb",
+    "evaluation.py": "dcd8e4e80cb1dc588ad31ecf5256465827fa901e3622920f64e5417cff711ee3",
+    "evaluation_budget.py": "df4d6a9867148e0402d84ac9dc06ff8b5b1fb97509dcb144a5dbc69a9da2d6a4",
+    "execution_cases.py": "22e96743f3f42157301d02f11a9f89ab9597f2b07e1a7368be3b3e7ff52197ab",
+    "fault_injection.py": "78df1d129431d9381c7784ece5dec1b86916ed965b4318b5324efc761e1279aa",
+    "lifecycle.py": "8330fa4b336b4ee8f3049f61438550666248b7c1745b713749e5b10c57e1cbee",
+    "live_evaluation.py": "e1b6a463d97f93200dc4147f8f77eebb48645cdef3d10f8b7fec4180975572f8",
+    "localization.py": "8f4efeba5e379b5bd19e44b3f91d7f5521554d33c4e742538673f794df44c3ae",
+    "maintenance.py": "b060425f5def787f4b9a7b39e4cbb5bb41d973f6bec36576e7a2376835447cc2",
+    "memory.py": "307835ebe01216073063864d76cdf3c711c43afad0cb7784b9d9586d6451cd04",
+    "migrate.py": "46d1e4eff55bbb9ad5dcb00e1f5d55a2019c2610a85ec5ab8aed820c30ad535d",
+    "mission_context.py": "1a996fc6ca5477e4190845f96f13e49c6f4bc934e898d86a2c2f88c19217e61d",
+    "mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+    "missions.py": "1e951f9c18c8cb1465d818f6cd5226a1947240fd6413963ba84a9b677a32f0d8",
+    "navigation.py": "972be608b355315db00ab1826fde3eaeeb2ed7ed7b22381c0cc812ac4857ccfd",
+    "navigation_ownership.py": "4d8210e3fe973b89c6d3c1149c8a480257330133153684536869ddb322aae724",
+    "object_arrival.py": "75a3e62c0a79c9a3e07c0c1be5407cdf54eae60fabb62032bbea2731c8e60ed1",
+    "object_evaluation.py": "374a99700563884cae9e231bb715227b43915ef4a6ac9fa06b0b4e9b26822179",
+    "object_search.py": "7d970c0783d36f245a9218c952194a687d1e30711661ee10aa9d11fb7fe70286",
+    "object_types.py": "ae574a94bb2d416dd095c8816e7b613e8eafd8a2ed8bac94d719fbfbc9971e1c",
+    "objects.py": "96664681540c586032e537d41bb11fcaf180d5e71b2df4deee3e62d2fb49b2da",
+    "observer.py": "6e3669b09583eb40d51ce0d79c7008c220809cf6dafd48e78f85da24cf0b2e2a",
+    "operator.py": "178fdef134e71c20508d4f799b00e5c599587264d384d6502682f5f3ae71e515",
+    "pipeline.py": "3e4185cafedf9000f7023a1529eee2d193e4a7d7e72c81604c2ca6f8029e020a",
+    "providers/__init__.py": "a8c6d4daa5119f3b92fa6b8833152143b122ef43df459bb780a54872bfc56b9d",
+    "providers/_contracts.py": "89abc7f69c8464dc1b9b0193a22bdc140171991fcae1426e118a79351806293b",
+    "providers/_http.py": "650f2d435c8e3ae98f2c1efadacca310f576095a3ba140774b35bbe0e97f0cb2",
+    "providers/base.py": "85e63d710fcb861876c3f1f73c5c5923afdb2dae78f72f7dc8f03e67a1688bca",
+    "providers/captioning.py": "2f88e77113bb716ee79ee3ced1384e8fa93afb563f117fb1d652b53a5b0e9330",
+    "providers/chat.py": "d7146232047b4fb88bcf89f9f16e4c0cb253ae09a004bb633a0609c3ec71f4d2",
+    "providers/clip.py": "4af556a1b0f808bbf15323e3c79a1a1b4c743dba5ccdf759f7df62f6f0f81e1d",
+    "providers/embedding.py": "1d49e3419c83ec5ec9a6e022b4fb630a2be456860cdd624af93c50ccee8cc1a8",
+    "providers/gemini.py": "7b612e927131d2e97721686dcc8956b53d78e566eabb15faaaac316f81cf54ea",
+    "providers/hashing.py": "e798dad790d74c76732169f84f27e89d27ae2881f8ca57e2d442b71e75572f71",
+    "providers/object_detection.py": "df1f7f85fc90023fad14b0b5198bd10cfc4adcd7e41cc93f91e80f784f77ec3f",
+    "providers/openai_compatible.py": "89900bd84cf77e7fcc39bbc9ad3b460faf94f34f2ec86c70f0f95fcbb7a6a437",
+    "providers/openrouter.py": "333319f1b4aaaef099a5f32b5b59dd5ac5102123ad02191b208902bc06742757",
+    "recordings.py": "52ff54579bd16151c1c373c9a58d29ac806e44346a134ceaf3c29e1957b64522",
+    "refinement.py": "8c814c06b9f951ac52e590b332545a3f0762bf8560eec87a55aecaf5d79d3142",
+    "retrieval.py": "215ebccf4cfab9f055302a3c6975f840eb58d3d98090452c6dc3e2f8c2a6bdbf",
+    "ros2/__init__.py": "940365c14b76882518d9a28665cbc1d8c9b8ea899aabfc14a8db3c33f15f8db1",
+    "ros2/approach.py": "580c3afec4e1d53411f647794b8f59c0ddfe425c274040aa4b3e083d5ae11afa",
+    "ros2/bridge.py": "9b95c15d197c570c37f4bdb08ad88863e840b7ac369566d4ef836d69e8ab9734",
+    "ros2/depth.py": "8086b014c749000cf9a6ba9f636b08e22e911450d4b43e5476aef2a841568c1c",
+    "ros2/navigation.py": "eb51902374f75be2d0629c1d9ea98fdc48584f3cbe4ba0d9538d495275eb1a38",
+    "ros2/node.py": "4adbede8fbb188a490a01e2191e5c8aca63511790f9516e66b0d21a13a26e417",
+    "ros2/operator.py": "97343dd2d9c5a6a2653bc9ddb1477b88c442de543b2a4b0096722786b044fdb6",
+    "ros2/recovery.py": "8fa67cc49ca92403bef60783962d8f9b32b70cb1495ec781c971c555fcafd739",
+    "ros2/speech.py": "8d36d5dd7b9c80035ae980102cc4597d7c81a7fcf93f99284c9a71119a394b3f",
+    "sensors.py": "16b27b4b6029a8407f5f1098476b9cd4f4c716f889737efc820adc3f91a1013a",
+    "sources/__init__.py": "c47d4e85dec0f6b068ead36c31e842a27b21609fb6450b2e2ea3252f921bb613",
+    "sources/pose_log.py": "7386c8a53f10ac52c6d37ddbc7100f1e3cea9a8972ecba8bc405c8e17e4b16b0",
+    "sources/video.py": "4769ad5ce3cf3668de1b3aa6e98e080ba872691a386875096da25bbe9433652f",
+    "speech.py": "a4e80bb56a3ed7f01341b45798f9bf558ff2ebf0c532da7a1594918b136830e1",
+    "store/__init__.py": "afcea33c80520ac6d028ea89a0dcf9e02791e0b62728bc1713fe81edcfdb8bf6",
+    "store/base.py": "0751bcb6cdd5973431ee9d0506ed9e0050b2dc28f02e80341dbfb4b357b56a2b",
+    "store/codec.py": "2f2c647ffcd07909c35b9a43081d594ebff367de19869d28ef7e8882b923c108",
+    "store/in_memory.py": "928a5f85939a0950ed9ffd671c8cd5c62dcdb8d79004b70721cf1095b14c82f9",
+    "store/jobs.py": "6a3a2cad659ad896b5b2cfc758b8a013830e82822295b143e9101211881ae929",
+    "store/lancedb_store.py": "eebd12ac9278caf70961780777c5ca0ed51aab33e59b1fe764cef3bab78d9837",
+    "store/limits.py": "5068b0dc87feb7e4b0224226b0d5b5163b6f591f22e638f9d7a8c8ba0d3481c0",
+    "store/objects.py": "f6967e18ca785cb693d011124d4a199bb1477bfd08f22d77a606ed97707f769f",
+    "store/refinements.py": "8ff01aa31024e625bb3691f2b5386e07697170c93e1632e86dd7830b1433625c",
+    "store/schema.py": "90b8b1428bfe35b30ab4665e45cef5c97c031449a7868ed3cbc8ea3d16164b6e",
+    "store/state.py": "18ce65fd3f8f32a48adeeb4a4a317849a734c2eac1f210bc1f49f4283314f389",
+    "trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+    "tracing.py": "6ec4d7205827ddccaecc2fad5efe65e7b0e369bb4b8035588e98e3306a480427",
+    "verification.py": "9b36d8537bb248144f2ed3ee98a8311fbe63260d675122e143a8cc029eadd919"
+  },
+  "post_live_source_change": "evaluation_budget.py now also latches accounting_write_error when a successful request receipt cannot be persisted. This failure-path repair was found during final review and is covered by the final offline regression suite. The successful live request path and all model prompts, dataset labels and scoring rules are unchanged. No live rerun was used to replace the recorded outcomes.",
+  "data": {
+    "dataset": {
+      "path": "evaluation/missions/baseline-v1.json",
+      "sha256": "5ac552960f59ab5446c7b8d037232a0bd37111d6f12b73c6cec13e6ee47ee1bb"
+    },
+    "label_status": "draft, assistant-authored",
+    "selected_split": "development",
+    "unique_cases": 24,
+    "selected_groups": [
+      "synthetic-language-v1"
+    ],
+    "held_out_cases": 0,
+    "independently_reviewed_visual_labels": 0,
+    "labels_changed_after_results": false,
+    "prompts_changed_after_results": false
+  },
+  "live": {
+    "summary": {
+      "path": "simulation/artifacts/day18-20260924/live-development/summary.json",
+      "sha256": "b8ae6e65d4860bfedab46e6d694e3b766c6baa89a704e0ae74d0d480887e2215"
+    },
+    "request_ledger": {
+      "path": "simulation/artifacts/day18-20260924/live-development/requests.jsonl",
+      "sha256": "982cc6f8932c3ef946f08768459b05efc9a264c25a6bbecbb98f516a05619263"
+    },
+    "completed": true,
+    "all_plans_match_labels": false,
+    "plan": {
+      "eligible": 48,
+      "assessed": 48,
+      "passed": 28,
+      "failed": 20
+    },
+    "attempted_trials": 48,
+    "unrun_trials": 0,
+    "requested_model": "google/gemini-2.5-flash",
+    "returned_models": [
+      "google/gemini-2.5-flash"
+    ],
+    "returned_providers": [
+      "Google"
+    ],
+    "model_version_note": "Hosted alias; immutable weights not available from these responses.",
+    "repetitions": [
+      {
+        "repetition": 1,
+        "trials": {
+          "path": "simulation/artifacts/day18-20260924/live-development/trials-01.json",
+          "sha256": "ccce010eb8d4db00d015b010b5160e45ab9ba36a77b0fd5b6851d247438fef34"
+        },
+        "report": {
+          "path": "simulation/artifacts/day18-20260924/live-development/report-01.json",
+          "sha256": "899747a74836030ff695bed41329902e9ba9ae8e1002671a7b03b721cd249078"
+        },
+        "plan": {
+          "eligible": 24,
+          "assessed": 24,
+          "passed": 14,
+          "failed": 10,
+          "unassessed": 0,
+          "pass_rate": 0.5833333333333334
+        },
+        "latency": {
+          "count": 24,
+          "p50_ms": 1482.5051089974295,
+          "p95_ms": 4530.939353000576,
+          "p99_ms": 4955.801883003005
+        },
+        "errors": 0,
+        "timeouts": 0,
+        "execution": {
+          "eligible": 24,
+          "assessed": 0,
+          "passed": 0,
+          "failed": 0,
+          "unassessed": 24,
+          "pass_rate": null
+        }
+      },
+      {
+        "repetition": 2,
+        "trials": {
+          "path": "simulation/artifacts/day18-20260924/live-development/trials-02.json",
+          "sha256": "36697e9d329f9ddf30913676f3437d581588a5e472d7abbeb98494d46ca1affe"
+        },
+        "report": {
+          "path": "simulation/artifacts/day18-20260924/live-development/report-02.json",
+          "sha256": "882e8731053b70724876162084f58b1a55b4e7f30e2141cedf6aefaf477384f7"
+        },
+        "plan": {
+          "eligible": 24,
+          "assessed": 24,
+          "passed": 14,
+          "failed": 10,
+          "unassessed": 0,
+          "pass_rate": 0.5833333333333334
+        },
+        "latency": {
+          "count": 24,
+          "p50_ms": 1415.895823000028,
+          "p95_ms": 2867.580400001316,
+          "p99_ms": 2988.1961940009205
+        },
+        "errors": 0,
+        "timeouts": 0,
+        "execution": {
+          "eligible": 24,
+          "assessed": 0,
+          "passed": 0,
+          "failed": 0,
+          "unassessed": 24,
+          "pass_rate": null
+        }
+      }
+    ],
+    "budget": {
+      "requests": 74,
+      "max_requests": 1600,
+      "max_usd": 0.5,
+      "known_cost_usd": 0.0169171,
+      "charged_or_reserved_usd": 0.016917099999999977,
+      "unknown_cost_requests": 0,
+      "stop_reason": ""
+    },
+    "stage_request_counts": {
+      "camera_caption_smoke": 1,
+      "camera_verification_smoke": 1,
+      "planner": 48,
+      "reviewer": 24
+    },
+    "receipts_verified": "74 unique response IDs, all HTTP 200, matched reservation/receipt pairs, known costs below per-request reservations; all 48 trial costs reconcile with the ledger.",
+    "credential_preflight_requests": 1,
+    "credential_stored_in_repository": false,
+    "temporary_credential_removed": true,
+    "camera_smoke": {
+      "report": {
+        "path": "simulation/artifacts/day18-20260924/live-development/camera-smoke.json",
+        "sha256": "9c8981898a44e5e3d76f2e4f9cb14818247f71b43534533f9a5c405794b23322"
+      },
+      "passed": true,
+      "api_calls": 2,
+      "accuracy": "unassessed; no independent visual label",
+      "recording_sha256": "7fa27cdb281356d6d533a709793cd129bc3efbc202df50463605073e96772d81",
+      "image_sha256": "e2d88e13d3ae79f5c02199922ad72e41931fa7110becca019e21176d7778d89b"
+    },
+    "failure_diagnosis": {
+      "report": {
+        "path": "simulation/artifacts/day18-20260924/live-development/failure-analysis.json",
+        "sha256": "1966c490abc4092f7f618c78fe8d92dfc002052e588920c37ab984480a0ee16f"
+      },
+      "raw_failed_trials": 20,
+      "leading_article_only_trials": 16,
+      "decision_disagreement_trials": 4,
+      "decision_disagreements": [
+        {
+          "case": "hypothetical",
+          "actual": "clarify",
+          "expected": "reject"
+        },
+        {
+          "case": "known-reference",
+          "actual": "clarify",
+          "expected": "ready with printer"
+        }
+      ],
+      "interpretation": "The two repetitions produced identical per-case decisions/destinations. Strict draft aliases reject leading articles in eight cases. The remaining two cases withhold movement but disagree with the draft decision labels. This diagnosis is not a relabelled or alternative acceptance score."
+    }
+  },
+  "regressions": {
+    "report": {
+      "path": "simulation/artifacts/day18-20260924/tests-final.xml",
+      "sha256": "6e2ea240b4093a7d2a023d19fd049db01379c6335266eda4df63c3baf73fae24"
+    },
+    "tests": 1413,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "elapsed_s": 183.822,
+    "new_runner_cases": 35,
+    "coverage": {
+      "path": "simulation/artifacts/day18-20260924/coverage-final.json",
+      "sha256": "0f73eff09a8997b3ddf6fce7f63c4bff7a5bcc46738839afac77854cc257ae9c"
+    },
+    "coverage_percent": 95.52262587635437,
+    "budget_module_coverage_percent": 100.0,
+    "coverage_config": {
+      "path": "simulation/artifacts/day18-20260924/coverage-final.ini",
+      "sha256": "575c97ad0c9e677b66f8b04aa3998479e930caf36879b0955af283d531e71e93"
+    }
+  },
+  "packaging": {
+    "report": {
+      "path": "simulation/artifacts/day18-20260924/package-final/report.json",
+      "sha256": "636c9443045a83f9ddf13dc91ccb3852b8801a04422906cab7ba87cf91184952"
+    },
+    "passed": true,
+    "wheel": {
+      "path": "simulation/artifacts/day18-20260924/dist-final/placecell-0.1.0a1-py3-none-any.whl",
+      "sha256": "8980ec2a036b99ab6b08b7f7d7ead6c0944d7bbc70d79ad842f4868acf8190b6"
+    },
+    "sdist": {
+      "path": "simulation/artifacts/day18-20260924/dist-final/placecell-0.1.0a1.tar.gz",
+      "sha256": "570c22eb5e7064f0f038859ab4d5e85581a0cf16dcb0674a1adecbf19c0e1b88"
+    },
+    "installed_python": "3.12.3",
+    "fresh_environments": 2,
+    "network_dependencies": "none; local wheelhouse only",
+    "runtime_sources_match_final_manifest": true,
+    "new_cli_entrypoint": "placecell-evaluate-live",
+    "preflight_exercised_without_credentials": true,
+    "fault_runs_per_distribution": 105
+  },
+  "static_checks": {
+    "ruff": "passed",
+    "format": "212 files already formatted",
+    "mypy_source_files": 77,
+    "git_diff_check": "passed",
+    "tracked_coverage_file_unchanged": true
+  },
+  "preserved_development_test_failure": {
+    "report": {
+      "path": "simulation/artifacts/day18-20260924/tests-targeted.xml",
+      "sha256": "531173f0ea01ff1af228a9bd3eb8e1146fa92ffd898aaa649b2e8b12d9c78aa4"
+    },
+    "description": "A test expected the legacy scorer assessed count to exclude missing cases, but missing cases are failed denominator entries. Added explicit attempted_trials/unrun_trials counters and corrected the assertion. Final tests pass."
+  },
+  "provider_documentation_checked": [
+    "https://openrouter.ai/docs/cookbook/administration/usage-accounting",
+    "https://openrouter.ai/docs/guides/routing/provider-selection#max-price"
+  ],
+  "remaining": [
+    "Independent human review of instruction labels and image/instance labels, frozen before held-out evaluation.",
+    "At least 200 held-out instruction/perception cases across three independent layouts or sessions and 50 complete Gazebo missions are still required by Gate 2.",
+    "Caption/image/combined retrieval accuracy and labelled vision/object identity evaluation remain unassessed. The new transport bounds chat/vision requests only; embedding evaluation is not covered by this run.",
+    "Review the two decision disagreements and draft alias coverage without retroactively changing the recorded score.",
+    "Hosted model version changes require re-evaluation; repeated development cases do not establish generalization or independent uncertainty estimates.",
+    "No Gazebo navigation, physical robot validation, full RGB-D workload or 24-hour endurance was performed for Day 18.",
+    "Hosted CI/Python 3.10-3.11 checks require a pushed revision; current execution evidence is local Python 3.12."
+  ],
+  "release_qualification": "unassessed"
+}

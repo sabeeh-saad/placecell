@@ -22,12 +22,19 @@ class PendingImages:
     """
 
     def __init__(
-        self, max_skew_s: float = 0.08, wait_s: float = 0.3, capacity: int = 8, max_age_s: float = 5.0
+        self,
+        max_skew_s: float = 0.08,
+        wait_s: float = 0.3,
+        capacity: int = 8,
+        max_age_s: float = 5.0,
+        max_message_bytes: int = 8 * 1024 * 1024,
     ) -> None:
         if (
             any(not math.isfinite(v) or v <= 0 for v in (max_skew_s, wait_s, max_age_s))
             or type(capacity) is not int
             or capacity < 1
+            or type(max_message_bytes) is not int
+            or max_message_bytes < 1
         ):
             raise ValidationError("invalid image synchronization bounds")
         self.depth: deque[Any] = deque(maxlen=capacity)
@@ -36,31 +43,68 @@ class PendingImages:
         self._skew, self._wait = max_skew_s, wait_s
         self._last_stamp = -math.inf
         self._age = max_age_s
+        self._max_bytes = max_message_bytes
+        self._counts = {
+            "oversized": 0,
+            "invalid": 0,
+            "rgb_overwritten": 0,
+            "depth_overwritten": 0,
+            "info_overwritten": 0,
+        }
+
+    def accepts_size(self, message: Any) -> bool:
+        if len(getattr(message, "data", b"")) > self._max_bytes:
+            self._counts["oversized"] += 1
+            return False
+        return True
+
+    def health(self) -> dict[str, int | None]:
+        return {
+            **self._counts,
+            "rgb_queued": len(self._images),
+            "depth_queued": len(self.depth),
+            "info_queued": len(self.info),
+            "capacity_each": self._images.maxlen,
+            "max_message_bytes": self._max_bytes,
+        }
+
+    def _invalid(self) -> bool:
+        self._counts["invalid"] += 1
+        return False
 
     @staticmethod
     def stamp(message: Any) -> float:
         return stamp_to_seconds(message.header.stamp.sec, message.header.stamp.nanosec)
 
     def add(self, message: Any, compressed: bool, now: float, *, source_now: float | None = None) -> bool:
+        if not self.accepts_size(message):
+            return False
         try:
             timestamp = self.stamp(message)
         except (AttributeError, TypeError, ValueError):
-            return False
+            return self._invalid()
         if source_now is not None and (timestamp <= 0 or not 0 <= source_now - timestamp <= self._age):
-            return False
+            return self._invalid()
         if timestamp <= self._last_stamp or (self._images and timestamp <= self.stamp(self._images[-1][0])):
-            return False
+            return self._invalid()
+        if len(self._images) == self._images.maxlen:
+            self._counts["rgb_overwritten"] += 1
         self._images.append((message, compressed, now))
         return True
 
     def add_depth(self, message: Any, *, calibration: bool = False) -> bool:
+        if not calibration and not self.accepts_size(message):
+            return False
         try:
             stamp = self.stamp(message)
             if not message.header.frame_id or (not calibration and stamp <= 0):
-                return False
+                return self._invalid()
         except (AttributeError, TypeError, ValueError):
-            return False
-        (self.info if calibration else self.depth).append(message)
+            return self._invalid()
+        target = self.info if calibration else self.depth
+        if len(target) == target.maxlen:
+            self._counts["info_overwritten" if calibration else "depth_overwritten"] += 1
+        target.append(message)
         return True
 
     def clear(self) -> None:

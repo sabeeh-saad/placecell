@@ -38,6 +38,7 @@ def main() -> None:
         "placecell-evaluate",
         "placecell-evaluate-objects",
         "placecell-evaluate-missions",
+        "placecell-evaluate-live",
         "placecell-check-faults",
         "placecell-export-trace",
     }
@@ -87,6 +88,16 @@ def main() -> None:
     missions = json.loads((output / "missions.json").read_text())
     require(missions["plan"]["assessed"] > 0 and missions["plan"]["failed"] == 0, "Installed mission baseline failed")
     require(missions["total_cost_usd"] == 0, "Scripted baseline unexpectedly has provider costs")
+    cli(
+        "placecell-evaluate-live",
+        "preflight",
+        "--dataset",
+        str(fixtures / "baseline-v1.json"),
+        "--split",
+        "development",
+        "--output",
+        str(output / "live-preflight"),
+    )
     cli("placecell-check-faults", "--output", str(output / "faults.json"))
     faults = json.loads((output / "faults.json").read_text())
     require(faults["summary"]["runs"] > 0 and faults["summary"]["failed"] == 0, "Installed fault contracts failed")

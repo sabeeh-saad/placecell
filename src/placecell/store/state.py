@@ -32,6 +32,7 @@ from placecell.store.jobs import WorkJournal
 from placecell.store.limits import StoreLimits
 from placecell.store.objects import ObjectJournal
 from placecell.store.refinements import RefinementJournal
+from placecell.store.schema import STATE_VERSION, check_connection
 
 HISTORY_PREVIEW = 64
 
@@ -46,6 +47,14 @@ class StateStore:
         self._depth = 0
         self._conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False, timeout=30)
         self._conn.row_factory = sqlite3.Row
+        try:
+            self._initialize()
+        except BaseException:
+            self._conn.close()
+            raise
+
+    def _initialize(self) -> None:
+        check_connection(self._conn)
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA synchronous = FULL")
@@ -84,7 +93,10 @@ class StateStore:
 
         self.jobs = WorkJournal(self._conn, self.transaction, self.enqueue_cleanup)
         self.refinements = RefinementJournal(self._conn, self.transaction, self.limits.max_refinement_jobs)
-        self.objects = ObjectJournal(self._conn, self.transaction, info.model, info.dimension, self.enqueue_cleanup)
+        self.objects = ObjectJournal(
+            self._conn, self.transaction, self.info.model, self.info.dimension, self.enqueue_cleanup
+        )
+        self._conn.execute(f"PRAGMA user_version={STATE_VERSION}")
 
     @property
     def info(self) -> CollectionInfo:

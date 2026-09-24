@@ -22,6 +22,7 @@ from tf2_ros import TransformBroadcaster
 
 from placecell import Destination, Memory, NavigationEvent, Pose
 from placecell.navigation import Resolution
+from placecell.navigation_ownership import NavigationOwnership, NavigationScope
 from placecell.providers import HashingEmbedder
 from placecell.providers.base import Capabilities
 from placecell.ros2.node import IngestWorker, create_node
@@ -313,8 +314,14 @@ def main():
         "keyframe_dir": str(output / "images"),
         "corrections_path": str(output / "corrections.jsonl"),
         "command_journal_path": str(output / "commands.sqlite3"),
+        "navigation_ownership_path": str(output / "navigation.sqlite3"),
         "curator_interval_s": 0.0,
     }
+    owner = NavigationOwnership(
+        params["navigation_ownership_path"], NavigationScope("robot", "test-v1", "/navigate_to_pose")
+    )
+    owner.attest_clean("Isolated sensor fixture replaces navigation with a scripted transport; no Nav2 goals exist")
+    owner.close()
     path = output / "parameters.yaml"
     path.write_text(yaml.safe_dump({"placecell": {"ros__parameters": params}}))
     rclpy.init(args=["--ros-args", "--params-file", str(path)])

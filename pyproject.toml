@@ -39,8 +39,11 @@ placecell-listen = "placecell.ros2.speech:main"
 placecell-evaluate = "placecell.evaluation:main"
 placecell-evaluate-objects = "placecell.object_evaluation:main"
 placecell-evaluate-missions = "placecell.mission_evaluation:main"
+placecell-evaluate-live = "placecell.live_evaluation:main"
 placecell-check-faults = "placecell.fault_injection:main"
 placecell-export-trace = "placecell.trace_export:main"
+placecell-navigation-ownership = "placecell.navigation_ownership:main"
+placecell-backup = "placecell.backup:main"
 
 [project.urls]
 Homepage = "https://github.com/sabeeh-saad/placecell"
@@ -71,7 +74,7 @@ warn_unreachable = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy", "rclpy.*", "sensor_msgs.*", "std_msgs.*", "std_srvs.*", "tf2_ros", "tf2_ros.*", "nav2_msgs.*", "geometry_msgs.*", "vosk", "sounddevice", "sentence_transformers", "sentence_transformers.*", "PIL", "PIL.*"]
+module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy", "rclpy.*", "sensor_msgs.*", "std_msgs.*", "std_srvs.*", "tf2_ros", "tf2_ros.*", "nav2_msgs.*", "geometry_msgs.*", "action_msgs.*", "unique_identifier_msgs.*", "vosk", "sounddevice", "sentence_transformers", "sentence_transformers.*", "PIL", "PIL.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

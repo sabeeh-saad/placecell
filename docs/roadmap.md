@@ -152,6 +152,51 @@ data, post-crash active-goal reconciliation and full-workload cancellation remai
 qualification gaps. The five live product missions remain paused. Day 15 is crash/restart
 recovery.
 
+Day 15, 23 September: [crash/restart recovery](crash-recovery.md) now persists the exact
+Nav2 UUID before submission and blocks startup movement until ownership is reconciled.
+Recovery cancels only the recorded goal, requires a terminal result and never resumes
+an old mission. Missing/unknown ownership requires a supervised server reset and operator
+attestation. Final SIGKILL campaigns pass in 42 persistence trials, 42 DDS/controller
+trials and 18 real Nav2/Gazebo trials, including remapped action names and deliberately
+dropped result replies. The Gazebo runs preserve a goal across
+controller death, then confirm cancellation and stationary post-recovery samples without
+dispatching the next planned visit. See the [Day 15 record](validation/day-15.json) for
+regressions, exact sources and artifact hashes. An earlier one-second-deadline stress
+trial timed out safely with ownership retained; the record preserves that availability
+observation separately from the passing final campaigns. Power loss, backup/restore, full-workload
+endurance and the five deferred live product missions remain outside this checkpoint.
+Day 16 is backup, restore and upgrade/rollback qualification.
+
+Day 16, 23 September: [offline backup and restore](backup-restore.md) now capture the
+configured journals and image files under maintenance exclusion, verify checksums,
+SQLite integrity and evidence references, and restore into a fresh directory. Restored
+navigation remains unknown; a fresh command session prevents stale transport admission.
+The state schema now rejects unsupported future versions before migration or projection
+changes. Repeated SIGKILL trials cover snapshot/restore publication and interrupted
+upgrades, with offline data rollback tested using the actual previous main revision.
+See the [Day 16 record](validation/day-16.json) for final regressions and ROS startup
+checks. Runtime navigation after downgrading to the older controller, power loss and
+full-disk runtime qualification remain outside this checkpoint. Day 17 is saturation
+and backpressure; the five deferred live product missions remain paused.
+
+Day 17, 24 September: [saturation and backpressure](overload.md) adds atomic bounded
+task shutdown, visible queue accounting, maintenance coalescing, camera payload limits
+and question validation before admission. Ingestion owns its retry budget and persists
+a queue-wide cooldown across exhaustion, committed partial work and restart. Controlled
+overload trials exercise camera ingestion, busy responses and DDS cancellation; the
+[Day 17 record](validation/day-17.json) keeps workload limits and the earlier short-deadline
+timeout explicit. The full RGB-D/model workload and 24-hour endurance remain unqualified.
+Day 18 is held-out real-model evaluation, subject to independent labels and an agreed budget.
+
+Day 18 preparation, 24 September: the [budgeted live-model runner](live-evaluation.md)
+now executes production planning/review with persistent request accounting, before-request
+spending reservations, strict split admission and per-case checkpoints. With approval to
+use development cases while held-out labels remain unavailable, two real-model repetitions
+completed at 14/24 exact-label matches each; an unlabelled camera protocol check also passed.
+The [Day 18 record](validation/day-18.json) preserves all mismatches and $0.0169171 reported
+spend across 74 requests. Independent labels, held-out model quality and labelled visual/
+retrieval comparisons remain pending. This does not mark Day 18 qualification complete.
+
 ## Scope for this month
 
 The supported reference is a single robot, one aligned RGB-D stream, trusted localization

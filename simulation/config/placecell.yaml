@@ -10,6 +10,8 @@ placecell:
     rgbd_wait_s: 1.0
     # Reliable camera streams avoid losing one half of a large RGB-D capture.
     rgbd_reliable: true
+    # Bound retained RGB/depth payloads before encoding or synchronization.
+    camera_max_message_bytes: 8388608
     localization_required: true
     # Source and monotonic receipt age for validated RGB/TF and aligned depth.
     sensor_max_age_s: 5.0
@@ -28,6 +30,7 @@ placecell:
     approach_enabled: true
     approach_clearance_m: 0.8
     navigation_enabled: true
+    navigation_ownership_path: /home/simulator/.placecell/navigation.sqlite3
     # Calibrated on this office's printer/table/chair/monitor crops; re-evaluate for other scenes.
     navigation_min_similarity: 0.75
     # Cloud calls take wall time; the simulator continues publishing throughout.

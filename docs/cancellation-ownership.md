@@ -52,21 +52,24 @@ checks must qualify the full supported workload.
 
 ## Startup contract for Day 15
 
-Restarting PlaceCell does not establish that its previous Nav2 goal stopped. Before using
-the current implementation after a crash, the operator must establish that Nav2 has no
-surviving goal from the old controller. Do not restart to bypass uncertain ownership.
+Restarting PlaceCell does not establish that its previous Nav2 goal stopped. Day 15 now
+enforces the [durable startup ownership rule](crash-recovery.md) in the ROS node. Do not
+restart to bypass uncertain ownership.
 An idle snapshot, missing status or missing server connection is not proof of termination.
 
-The required Day 15 admission rule is: **start with ownership unknown and refuse movement
+The Day 15 admission rule is: **start with ownership unknown and refuse movement
 until surviving ownership is reconciled or an independently established clean Nav2 instance
 is available.** Persist enough robot/map/action-server/goal identity to distinguish the old
 trip, query or cancel that specific goal, and retain uncertainty when termination cannot be
 confirmed. Do not cancel other clients indiscriminately, replay a saved mission, or infer
 completion from silence. Test crashes around submission/acceptance with a surviving goal.
 
-This cross-process rule is specified, **not yet machine-enforced** by Day 8. Startup still
-creates the documented idle snapshot. It remains a release blocker; Day 8 results apply
-within one process lifetime.
+The persistent journal records the robot, map, action name and exact wire UUID before
+submission. Missing journals start uncertain; recorded pending goals are queried and
+canceled individually. Only a confirmed terminal result releases ownership. Expired or
+unknown results require the documented supervised reset and explicit operator attestation.
+Day 8 results still describe their original within-process workload; Day 15 provides the
+separate cross-process evidence.
 
 ## Reproduce and interpret validation
 

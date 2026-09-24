@@ -20,6 +20,7 @@ from std_msgs.msg import String
 from placecell import Evidence, EvidenceKind, Memory, Pose, Reinforcer
 from placecell.depth import Box
 from placecell.errors import ValidationError
+from placecell.navigation_ownership import NavigationOwnership, NavigationScope
 from placecell.object_types import ObjectRecord, ObjectView
 from placecell.pipeline import Observation
 from placecell.providers import HashingEmbedder
@@ -42,6 +43,7 @@ def main():
         "mission_model": "scripted",
         "mission_context_path": str(output / "context.sqlite3"),
         "command_journal_path": str(output / "commands.sqlite3"),
+        "navigation_ownership_path": str(output / "navigation.sqlite3"),
         "curator_interval_s": 0.0,
         "refine_interval_s": 0.0,
         "contradiction": False,
@@ -57,6 +59,11 @@ def main():
         "mission_context_max_events": 6,
         "mission_context_max_bytes": 2048,
     }
+    owner = NavigationOwnership(
+        params["navigation_ownership_path"], NavigationScope("robot", "retention-v1", "/navigate_to_pose")
+    )
+    owner.attest_clean("Isolated retention fixture starts without a Nav2 server or any movement commands")
+    owner.close()
     parameters = output / "parameters.yaml"
     parameters.write_text(yaml.safe_dump({"placecell": {"ros__parameters": params}}))
     report = {"passed": False, "checks": [], "measurements": {}, "paid_api_calls": 0}

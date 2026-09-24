@@ -319,19 +319,22 @@ class ContractCheck:
                 "corrections_path:=/tmp/operator-check/corrections.jsonl",
                 "-p",
                 "command_journal_path:=/tmp/operator-check/commands.sqlite3",
+                "-p",
+                "navigation_ownership_path:=/tmp/operator-check/navigation.sqlite3",
             ]
             with log_path.open("w") as log:
                 process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)  # noqa: S603
                 try:
                     snapshot = self.snapshot("placecell")
                     assert snapshot["navigation_enabled"] == enabled
-                    assert snapshot["status"]["state"] == ("idle" if enabled else "disabled")
+                    assert snapshot["status"]["state"] == ("uncertain" if enabled else "disabled")
+                    assert snapshot["busy"] == enabled
                     assert bool(snapshot["command_identity"]) == enabled
                     if enabled:
                         pub = self.probe.create_publisher(String, "/placecell/command_json", 1)
                         self.until(lambda pub=pub: pub.get_subscription_count() > 0)
                         pub.publish(String(data='{"schema_version":1,"command":"instruction","text":"go to 1, 2"}'))
-                        self.until(lambda: self.snapshot("placecell")["status"]["state"] == "unavailable")
+                        self.until(lambda: self.snapshot("placecell")["status"]["state"] == "uncertain")
                         self.probe.destroy_publisher(pub)
                     self.checks.append(f"production node snapshot and service: navigation_enabled={enabled}")
                 finally:

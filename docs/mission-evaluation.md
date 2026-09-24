@@ -6,6 +6,10 @@ physical target IDs and required confirmations. It does not send robot commands 
 model services. The initial dataset contains 24 **assistant-authored, draft synthetic cases**;
 they are not human-reviewed visual ground truth or a model-accuracy benchmark.
 
+The separate [budgeted live-model runner](live-evaluation.md) now executes actual planning
+and review calls with request/cost limits. Its development reports use this scoring contract;
+grounded execution and independently labelled visual/retrieval quality remain unassessed.
+
 ## Run the offline baseline
 
 From a checkout with the development dependencies installed:
@@ -80,7 +84,8 @@ physical instance continuity in saved RGB-D observations.
 
 ## Import actual runner outcomes
 
-A future live-model or Gazebo runner can save the same versioned trial format and use:
+The live planning runner saves this versioned trial format directly. Other runners,
+including a future labelled Gazebo adapter, can save matching outcomes and use:
 
 ```bash
 python -m placecell.mission_evaluation score \

@@ -4,6 +4,15 @@ Operational behavior for long-running PlaceCell collections. For robot setup, se
 [navigation](navigation.md); conversation and mission history are documented separately
 in [missions](missions.md).
 
+Use the [backup, restore and upgrade runbook](backup-restore.md) before replacing
+storage or software. `placecell-backup` requires stopped writers, validates the
+configured journals and image references, and restores only into a fresh directory.
+Restored command sessions and navigation admission have explicit recovery gates.
+
+See [saturation and backpressure](overload.md) for admission limits, queue diagnostics,
+maintenance coalescing and persistent provider cooldowns. These checks cover controlled
+overload; the full provider workload and 24-hour endurance gate remain unqualified.
+
 ## Memory lifecycle
 
 - **Reinforcement.** Seeing the same thing at the same place again strengthens the existing
@@ -56,6 +65,13 @@ jobs retain their images for inspection and continue to count toward capacity. I
 jobs with `store.jobs.complete(ids)` and drain cleanup. Startup recovers incomplete image
 creation; cleanup rechecks both memory and job references before unlinking evidence.
 Keep each collection's managed keyframes in its own directory.
+
+Navigation has a separate persistent `navigation_ownership_path` journal. First startup
+with a missing journal refuses movement until an operator establishes a clean Nav2 server.
+After a crash with a recorded goal, recovery queries/cancels only that UUID and waits for
+a terminal result. See [crash recovery](crash-recovery.md) for setup, supervision and tests.
+Keep this journal with the deployment's other persistent state; do not delete it to unblock
+navigation or restore an older copy while Nav2 continues running.
 
 Questions use `question_workers` (2) and `question_queue` (8). Overflow receives an explicit
 busy response. Maintenance runs in one background worker with one waiting slot. The node

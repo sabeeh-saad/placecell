@@ -30,6 +30,8 @@ jobs:
         run: simulation/sim check-sensors
       - name: Validate persistent retention and evidence ownership
         run: simulation/sim check-retention
+      - name: Validate bounded overload and cancellation during saturation
+        run: simulation/sim check-overload --samples 100
       - name: Start the office
         run: simulation/sim start
       - name: Validate sensors, movement and command timeout

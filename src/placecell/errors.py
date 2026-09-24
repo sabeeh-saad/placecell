@@ -38,6 +38,10 @@ class UnsupportedMediaError(PlacecellError):
 class ProviderError(PlacecellError):
     """An embedding or captioning backend failed."""
 
+    def __init__(self, message: str, *, retry_after_s: float = 0) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s
+
 
 class RateLimitedError(ProviderError):
     """The backend refused the request because of rate limits after all retries were used."""

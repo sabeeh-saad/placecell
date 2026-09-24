@@ -9,6 +9,7 @@ by `api_key_env`, never from a parameter, so it does not end up in launch files 
 from __future__ import annotations
 
 import json
+import math
 import os
 import queue
 import threading
@@ -25,9 +26,10 @@ from placecell.command_identity import CommandJournal, CommandScope
 from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.depth import DepthSnapshot
-from placecell.errors import PlacecellError, ValidationError
+from placecell.errors import PlacecellError, ProviderError, ValidationError
 from placecell.lifecycle import Curator, RetentionPolicy, remove_local_file
 from placecell.localization import LocalizationGate, LocalizationPolicy
+from placecell.maintenance import StorageLease
 from placecell.memory import Pose
 from placecell.mission_context import MissionContext
 from placecell.missions import MissionPlanner, PlanReviewAgent
@@ -38,6 +40,7 @@ from placecell.navigation import (
     NavigationUpdate,
     load_named_places,
 )
+from placecell.navigation_ownership import NavigationOwnership, NavigationScope
 from placecell.object_arrival import ObjectArrivalPolicy, ObjectArrivalVerifier
 from placecell.object_search import ObjectSearch, ObjectSearchPolicy
 from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
@@ -45,6 +48,7 @@ from placecell.observer import Observer
 from placecell.operator import navigation_payload as navigation_payload
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
 from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
+from placecell.providers._http import RetryPolicy
 from placecell.recordings import RecordingWriter
 from placecell.refinement import REFINEMENT_PROMPT, MemoryRefiner, RefinementPolicy
 from placecell.retrieval import Recall
@@ -89,6 +93,7 @@ def build_embedder(
             dimension=dimension or 768,
             base_url=base_url or OPENROUTER_BASE_URL,
             batch_size=batch_size,
+            retry=RetryPolicy(attempts=1),
         )
     if backend == "gemini":
         from placecell.providers.gemini import DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, GeminiEmbedder
@@ -99,6 +104,7 @@ def build_embedder(
             dimension=dimension or 768,
             base_url=base_url or GEMINI_BASE_URL,
             batch_size=batch_size,
+            retry=RetryPolicy(attempts=1),
         )
     if backend == "clip":
         from placecell.providers.clip import DEFAULT_CLIP_MODEL, ClipEmbedder
@@ -121,7 +127,11 @@ def build_embedder(
     from placecell.providers import OpenAICompatibleEmbedder
 
     return OpenAICompatibleEmbedder(
-        model, base_url or "https://api.openai.com/v1", api_key, dimension=dimension or None
+        model,
+        base_url or "https://api.openai.com/v1",
+        api_key,
+        dimension=dimension or None,
+        retry=RetryPolicy(attempts=1),
     )
 
 
@@ -142,7 +152,6 @@ def build_mission_planner(parameters: dict[str, Any], api_key: str | None) -> Mi
     if not parameters["mission_enabled"]:
         return None
     from placecell.providers import OpenAICompatibleChat
-    from placecell.providers._http import RetryPolicy
 
     model = parameters["mission_model"]
     if not model:
@@ -217,7 +226,12 @@ class IngestWorker:
         max_attempts: int = 5,
         retry_delay_s: float = 1,
     ) -> None:
-        if min(batch_size, max_queue, max_attempts) < 1 or retry_delay_s < 0:
+        if (
+            any(type(v) is not int or v < 1 for v in (batch_size, max_queue, max_attempts))
+            or max_attempts > 32
+            or not math.isfinite(retry_delay_s)
+            or retry_delay_s < 0
+        ):
             raise ValidationError("invalid worker limits")
         self._ingester, self._batch_size, self._max_queue = ingester, batch_size, max_queue
         self._log, self._max_attempts, self._retry_delay_s = log, max_attempts, retry_delay_s
@@ -226,6 +240,25 @@ class IngestWorker:
         self._thread = threading.Thread(target=self._run, name="placecell-ingest", daemon=True)
         self._submit_lock = threading.Lock()
         self.dropped = 0
+        self._last_drop_log = -math.inf
+
+    def reject(self) -> None:
+        """Count pre-encoding camera drops without retaining image data or flooding logs."""
+        with self._submit_lock:
+            self.dropped += 1
+            now = time.monotonic()
+            log = now - self._last_drop_log >= 5
+            if log:
+                self._last_drop_log = now
+            dropped = self.dropped
+        if log:
+            self._log.warning(f"ingest queue full or stopped, dropped {dropped} observations so far")
+
+    def health(self) -> dict[str, float | int | bool]:
+        result: dict[str, float | int | bool] = dict(self._ingester.jobs.stats())
+        with self._submit_lock:
+            result.update(capacity=self._max_queue, dropped=self.dropped, stopped=self._stop.is_set())
+        return result
 
     def start(self) -> None:
         self._thread.start()
@@ -246,10 +279,9 @@ class IngestWorker:
             if not self._stop.is_set() and self._ingester.jobs.enqueue(observation, self._max_queue):
                 self._wake.set()
                 return True
-            self.dropped += 1
+        self.reject()
         # The journal pins all accepted evidence, including failed jobs and duplicate submissions.
         self._ingester.discard([observation])
-        self._log.warning(f"ingest queue full or stopped, dropped {self.dropped} observations so far")
         return False
 
     def _run(self) -> None:
@@ -277,6 +309,8 @@ class IngestWorker:
                     str(e),
                     max_attempts=self._max_attempts,
                     retry_delay_s=self._retry_delay_s,
+                    defer_queue=True,
+                    retry_after_s=e.retry_after_s if isinstance(e, ProviderError) else 0,
                 )
                 self._log.error(f"ingest failed; work retained for retry: {e}")
             else:
@@ -292,40 +326,94 @@ class IngestWorker:
 
 
 class BoundedTasks:
-    """Fixed daemon workers and a bounded waiting queue for questions or maintenance."""
+    """Fixed workers, atomic admission/shutdown, and observable bounded waiting work."""
 
     def __init__(self, workers: int, capacity: int, log: Any) -> None:
-        if min(workers, capacity) < 1:
+        if any(type(v) is not int or v < 1 for v in (workers, capacity)):
             raise ValidationError("task limits must be positive")
-        self._queue: queue.Queue[tuple[Callable[..., None], tuple[Any, ...]]] = queue.Queue(maxsize=capacity)
+        self._queue: queue.Queue[tuple[Callable[..., None], tuple[Any, ...], str]] = queue.Queue(maxsize=capacity)
         self._stop = threading.Event()
+        self._condition = threading.Condition()
+        self._keys: set[str] = set()
+        self._active = 0
+        self._counts = {
+            "accepted": 0,
+            "completed": 0,
+            "failed": 0,
+            "discarded": 0,
+            "rejected_full": 0,
+            "rejected_stopped": 0,
+            "coalesced": 0,
+            "high_water": 0,
+        }
         self._log = log
         self._threads = [threading.Thread(target=self._run, daemon=True) for _ in range(workers)]
         for thread in self._threads:
             thread.start()
 
-    def submit(self, function: Callable[..., None], *args: Any) -> bool:
-        if self._stop.is_set():
-            return False
-        try:
-            self._queue.put_nowait((function, args))
-        except queue.Full:
-            return False
-        return True
+    def submit(self, function: Callable[..., None], *args: Any, key: str = "") -> bool:
+        with self._condition:
+            if self._stop.is_set():
+                self._counts["rejected_stopped"] += 1
+                return False
+            if key and key in self._keys:
+                self._counts["coalesced"] += 1
+                return True
+            try:
+                self._queue.put_nowait((function, args, key))
+            except queue.Full:
+                self._counts["rejected_full"] += 1
+                return False
+            if key:
+                self._keys.add(key)
+            self._counts["accepted"] += 1
+            self._counts["high_water"] = max(self._counts["high_water"], self._queue.qsize())
+            self._condition.notify()
+            return True
+
+    def health(self) -> dict[str, int | bool]:
+        with self._condition:
+            return {
+                **self._counts,
+                "active": self._active,
+                "queued": self._queue.qsize(),
+                "capacity": self._queue.maxsize,
+                "workers": len(self._threads),
+                "stopped": self._stop.is_set(),
+            }
 
     def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                function, args = self._queue.get(timeout=0.25)
-            except queue.Empty:
-                continue
+        while True:
+            with self._condition:
+                self._condition.wait_for(lambda: self._stop.is_set() or not self._queue.empty())
+                if self._stop.is_set():
+                    return
+                function, args, key = self._queue.get_nowait()
+                self._active += 1
+            outcome = "completed"
             try:
                 function(*args)
             except Exception as e:
+                outcome = "failed"
                 self._log.error(f"background task failed: {e}")
+            finally:
+                with self._condition:
+                    self._active -= 1
+                    self._counts[outcome] += 1
+                    self._keys.discard(key)
+                    self._queue.task_done()
+                # Do not retain the last request's images/context while this worker is idle.
+                del function, args
 
     def stop(self, timeout: float = 10) -> bool:
-        self._stop.set()
+        with self._condition:
+            self._stop.set()
+            while not self._queue.empty():
+                _, _, key = self._queue.get_nowait()
+                self._keys.discard(key)
+                self._queue.task_done()
+                self._counts["discarded"] += 1
+            self._condition.notify_all()
         for thread in self._threads:
             thread.join(timeout=timeout / len(self._threads))
         return all(not thread.is_alive() for thread in self._threads)
@@ -345,6 +433,8 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
         def __init__(self) -> None:
             super().__init__("placecell")
             p = self._params()
+            # Acquire before any store, keyframe, context or trace writer is opened.
+            self._storage_lease = StorageLease.for_parameters(p)
             if p["navigation_enabled"] and (not p["map_id"].strip() or not p["localization_required"]):
                 raise ValidationError("Navigation requires a versioned map_id and localization_required:=true.")
             api_key = os.environ.get(p["api_key_env"]) or None
@@ -380,7 +470,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             if p["caption_model"]:
                 from placecell.providers import OpenAICompatibleCaptioner
 
-                captioner = OpenAICompatibleCaptioner(p["caption_model"], p["caption_base_url"], api_key)
+                captioner = OpenAICompatibleCaptioner(
+                    p["caption_model"], p["caption_base_url"], api_key, retry=RetryPolicy(attempts=1)
+                )
             if captioner is None and not embedder.capabilities.image:
                 self.get_logger().warning(
                     "no caption_model and the embedder takes text only: frames cannot be stored. "
@@ -411,6 +503,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     p["object_model"],
                     api_key=os.environ.get(p["object_api_key_env"], ""),
                     base_url=p["object_base_url"],
+                    retry=RetryPolicy(attempts=1),
                 )
                 tracker = ObjectTracker(store, embedder, detector, self._object_policy)
                 self._object_recall = ObjectRecall(store, embedder, clock=self._memory_time)
@@ -502,7 +595,10 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._depth_error = p["object_position_error_m"]
             self._depth_angular_error = p["object_angular_error_rad"]
             self._pending_images = PendingImages(
-                self._depth_skew, wait_s=p["rgbd_wait_s"], max_age_s=p["sensor_max_age_s"]
+                self._depth_skew,
+                wait_s=p["rgbd_wait_s"],
+                max_age_s=p["sensor_max_age_s"],
+                max_message_bytes=p["camera_max_message_bytes"],
             )
             image_qos = (
                 QoSProfile(depth=8, reliability=ReliabilityPolicy.RELIABLE)
@@ -567,8 +663,6 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 )
                 object_arrival = None
                 if tracker is not None:
-                    from placecell.providers._http import RetryPolicy
-
                     arrival_detector = detector_type(
                         p["object_arrival_model"] or p["object_model"],
                         api_key=os.environ.get(p["object_api_key_env"], ""),
@@ -646,9 +740,17 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     ),
                 )
                 self._navigator = create_navigator(
-                    self, p["nav2_action"], p["navigation_response_timeout_s"], p["navigation_timeout_s"]
+                    self,
+                    p["nav2_action"],
+                    p["navigation_response_timeout_s"],
+                    p["navigation_timeout_s"],
+                    ownership=NavigationOwnership(
+                        p["navigation_ownership_path"],
+                        NavigationScope(self._robot_id, self._map_id, self.resolve_topic_name(p["nav2_action"])),
+                    ),
                 )
                 self._command_tasks = BoundedTasks(1, 1, self.get_logger())
+                navigator = self._navigator
                 self._commands = NavigationCommands(
                     resolver,
                     self._navigator,
@@ -668,6 +770,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     mission_planner=build_mission_planner(p, api_key),
                     mission_context=self._mission_context,
                     trace_store=self._mission_traces,
+                    startup_block_reason=lambda: navigator.startup_block_reason,
                     search=ObjectSearch(
                         approach,
                         ObjectSearchPolicy(
@@ -775,6 +878,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "max_interval_s": 60.0,
                 "ingest_attempts": 5,
                 "ingest_retry_delay_s": 1.0,
+                "camera_max_message_bytes": 8 * 1024 * 1024,
                 "question_workers": 2,
                 "question_queue": 8,
                 "min_travel_m": 0.3,
@@ -824,6 +928,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "navigation_max_observation_age_s": 5.0,
                 "navigation_arrival_max_attempts": 3,
                 "nav2_action": "navigate_to_pose",
+                "navigation_ownership_path": "~/.placecell/navigation.sqlite3",
                 "places_file": "",
                 "navigation_min_similarity": 0.5,
                 "navigation_min_confidence": 0.2,
@@ -937,6 +1042,8 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     self.get_logger().error(f"recording stopped after an export failure: {e}")
 
         def _on_image(self, msg: Any) -> None:
+            if not self._pending_images.accepts_size(msg):
+                return
             capture = self._capture(msg)
             if capture is None:
                 return
@@ -945,7 +1052,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             if not force and not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
                 return
             if not force and not self._worker.has_capacity():
-                self._worker.dropped += 1
+                self._worker.reject()
                 return
             try:
                 obs = self._builder.from_raw(
@@ -1004,6 +1111,8 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 (self._on_compressed if compressed else self._on_image)(message)
 
         def _on_compressed(self, msg: Any) -> None:
+            if not self._pending_images.accepts_size(msg):
+                return
             capture = self._capture(msg, compressed=True)
             if capture is None:
                 return
@@ -1012,7 +1121,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             if not force and not self._admission.eligible(self._robot_id, self._camera_id, stamp, pose):
                 return
             if not force and not self._worker.has_capacity():
-                self._worker.dropped += 1
+                self._worker.reject()
                 return
             try:
                 obs = self._builder.from_compressed(stamp, msg.format, bytes(msg.data), pose)
@@ -1032,6 +1141,15 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._writer.confirm(obs.evidence)
 
         def _on_ask(self, msg: Any) -> None:
+            if len(msg.data) > 2000 or not msg.data.strip():
+                self._answers.publish(
+                    String(
+                        data=json.dumps(
+                            {"question": msg.data[:128], "error": "question must contain 1..2000 characters"}
+                        )
+                    )
+                )
+                return
             if not self._questions.submit(self._answer, msg.data):
                 self._answers.publish(String(data=json.dumps({"question": msg.data, "error": "question queue full"})))
 
@@ -1098,7 +1216,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 self.get_logger().warning(f"ignored refinement request: {e}")
 
         def _refine(self) -> None:
-            self._maintenance.submit(self._run_refiner)
+            self._maintenance.submit(self._run_refiner, key="refine")
 
         def _run_refiner(self) -> None:
             if self._refiner is not None:
@@ -1107,7 +1225,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     self.get_logger().info(f"memory refinement: {report}")
 
         def _curate(self) -> None:
-            self._maintenance.submit(self._run_curator)
+            self._maintenance.submit(self._run_curator, key="curate")
 
         def _context_reference_available(self, data: dict[str, Any]) -> bool:
             if data.get("object_id"):
@@ -1139,7 +1257,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 )
 
         def _consolidate(self) -> None:
-            self._maintenance.submit(self._run_consolidator)
+            self._maintenance.submit(self._run_consolidator, key="consolidate")
 
         def _run_consolidator(self) -> None:
             if self._consolidator is None:  # pragma: no cover - timer only exists with a consolidator
@@ -1153,9 +1271,14 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 self.get_logger().info(f"consolidated {report.folded} memories into {report.summaries} summaries")
 
         def _diagnostics(self) -> None:
-            stats = self._store.jobs.stats()
+            stats = self._worker.health()
             self.get_logger().info(
                 f"ingestion: {stats}, dropped={self._worker.dropped}, objects={self._store.objects.count()}"
+            )
+            self.get_logger().info(
+                f"queues: questions={self._questions.health()}, maintenance={self._maintenance.health()}, "
+                f"commands={self._command_tasks.health() if self._command_tasks is not None else None}, "
+                f"images={self._pending_images.health()}"
             )
             if self._mission_traces is not None:
                 health = self._mission_traces.health()
@@ -1174,10 +1297,16 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 self._store.close()
                 if self._mission_context is not None:
                     self._mission_context.close()
-            if self._mission_traces is not None and not self._mission_traces.close():
+            traced = self._mission_traces is None or self._mission_traces.close()
+            if not traced:
                 self.get_logger().warning("Mission trace writer did not finish before the shutdown deadline.")
             if self._command_journal is not None:
                 self._command_journal.close()
+            if self._navigator is not None:
+                self._navigator.close()
+            if ingested and answered and maintained and commands_done and traced:
+                self._storage_lease.close()
+            # A stuck writer retains the lease until process exit.
             return bool(super().destroy_node())
 
     return PlacecellNode()

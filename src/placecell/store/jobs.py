@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import time
 from collections.abc import Callable, Iterable
@@ -73,6 +74,9 @@ class WorkJournal:
             raise ValidationError("batch size must be positive")
         now = time.time() if now is None else now
         with self._transaction():
+            cooldown = self._conn.execute("SELECT value FROM settings WHERE key='ingest_retry_not_before'").fetchone()
+            if cooldown and now < float(cooldown[0]):
+                return []
             rows = self._conn.execute(
                 "SELECT * FROM jobs WHERE failed=0 ORDER BY timestamp,id LIMIT ?", (limit,)
             ).fetchall()
@@ -103,19 +107,45 @@ class WorkJournal:
                     self._cleanup([Evidence(**evidence)])
                 self._conn.execute("DELETE FROM jobs WHERE id=?", (identity,))
 
-    def fail(self, ids: Iterable[str], error: str, *, max_attempts: int = 5, retry_delay_s: float = 1) -> None:
-        if max_attempts < 1 or retry_delay_s < 0:
+    def fail(
+        self,
+        ids: Iterable[str],
+        error: str,
+        *,
+        max_attempts: int = 5,
+        retry_delay_s: float = 1,
+        defer_queue: bool = False,
+        retry_after_s: float = 0,
+    ) -> None:
+        if (
+            type(max_attempts) is not int
+            or not 1 <= max_attempts <= 32
+            or not math.isfinite(retry_delay_s)
+            or retry_delay_s < 0
+            or not math.isfinite(retry_after_s)
+            or retry_after_s < 0
+        ):
             raise ValidationError("invalid retry policy")
         with self._transaction():
+            # A provider can fail after a memory commit. Completed jobs must not be
+            # retried, but their provider cooldown still applies to subsequent work.
+            not_before = time.time() + max(retry_after_s, min(300, retry_delay_s)) if defer_queue else 0.0
             for identity in ids:
                 row = self._conn.execute("SELECT attempts FROM jobs WHERE id=?", (identity,)).fetchone()
                 if row is None:
                     continue
                 attempts = int(row[0]) + 1
-                retry_at = time.time() + min(300, retry_delay_s * 2 ** min(attempts - 1, 20))
+                retry_at = time.time() + max(retry_after_s, min(300, retry_delay_s * 2 ** min(attempts - 1, 20)))
+                not_before = max(not_before, retry_at)
                 self._conn.execute(
                     "UPDATE jobs SET attempts=?,retry_at=?,failed=?,error=? WHERE id=?",
                     (attempts, retry_at, attempts >= max_attempts, error[:2000], identity),
+                )
+            if defer_queue and not_before:
+                self._conn.execute(
+                    "INSERT INTO settings VALUES ('ingest_retry_not_before',?) ON CONFLICT(key) "
+                    "DO UPDATE SET value=MAX(CAST(value AS REAL),CAST(excluded.value AS REAL))",
+                    (str(not_before),),
                 )
 
     def retry_failed(self) -> int:
@@ -132,8 +162,10 @@ class WorkJournal:
     def stats(self) -> dict[str, float | int]:
         with self._transaction():
             row = self._conn.execute("SELECT COUNT(*),COALESCE(SUM(failed),0),MIN(enqueued_at) FROM jobs").fetchone()
+            cooldown = self._conn.execute("SELECT value FROM settings WHERE key='ingest_retry_not_before'").fetchone()
             return {
                 "queued": int(row[0]),
                 "failed": int(row[1]),
                 "oldest_age_s": max(0, time.time() - row[2]) if row[2] is not None else 0.0,
+                "retry_wait_s": max(0, float(cooldown[0]) - time.time()) if cooldown else 0.0,
             }

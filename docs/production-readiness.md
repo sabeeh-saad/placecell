@@ -1,7 +1,7 @@
 # Production-readiness contract
 
-Status: **version 1 targets frozen; Day 14 deterministic checkpoint added, no gate fully satisfied**,
-23 September 2026. The [Day 7 review](readiness-review.md) separates partial software
+Status: **version 1 targets frozen; Day 18 development diagnostics added, no gate fully satisfied**,
+24 September 2026. The [Day 7 review](readiness-review.md) separates partial software
 evidence from unassessed model/endurance quality and ranks the remaining release blockers.
 This document defines what must be demonstrated; it does not certify the current alpha
 or turn a deadline into a guarantee. Provider spending and the ingestion-age budget remain
@@ -127,6 +127,18 @@ cases, 30 passing component checks, and reused ROS evidence. This closes only th
 report passes; surviving Nav2 goals after a process crash and cancellation under the full
 supported workload remain unqualified. There are no independent held-out mission cases.
 
+Day 15 adds [durable goal ownership and startup reconciliation](crash-recovery.md).
+The [validation record](validation/day-15.json) covers repeated controller deaths during
+reservation, planning/review, submission, acceptance and terminal persistence. Forty-two
+DDS trials preserve an unrelated client's goal, and 18 real Nav2/Gazebo trials confirm
+that a surviving goal is canceled without replaying later mission steps. Missing/unknown
+ownership remains blocked; an explicit operator-established server reset is the fallback.
+This closes the tested process-restart gap. Full supported-workload cancellation and
+physical-robot stopping remain unqualified.
+An earlier remapped stress run retained uncertain ownership after result confirmation
+timed out; later instrumented and deliberate-reply-loss runs passed. This safe blocked
+outcome remains recorded, without claiming intermittent transport delays are eliminated.
+
 Release blockers include any observed:
 
 - Goal execution before required plan review, localization or destination checks.
@@ -171,6 +183,13 @@ Report uncertainty and sample size. Zero observed critical errors in a finite si
 set is not a guarantee of zero real-world error. If the live-model budget or labelled data
 is unavailable, this gate remains unassessed; scripted answers cannot satisfy it.
 
+Day 18's [development evaluation](live-evaluation.md) exercises actual planning/review
+models and two vision adapter calls. Its [record](validation/day-18.json) preserves 28/48
+exact-label matches across two repetitions of 24 draft cases. Article/alias mismatches and
+two repeated clarification disagreements require label/behavior review. There are still
+zero independently reviewed held-out cases; vision identity and retrieval comparisons are
+unassessed. This preparation does not close Gate 2 or resume the deferred product missions.
+
 ## Gate 3: Persistence and recovery
 
 Fault trials must cover process termination around accepted writes/jobs, provider failures,
@@ -192,6 +211,24 @@ cutoff, whole-request conversation pruning and atomic correction-file replacemen
 The [retention checks](memory-retention.md) cover write failure, evidence ownership and
 clean node recreation without movement replay. They do not qualify abrupt process death,
 active Nav2 goal reconciliation, corruption recovery or upgrade/rollback.
+
+Day 15 adds 42 repeated SIGKILL persistence checks, preserving acknowledged state,
+accepted-job evidence, failure counts and idempotent recovery across model work,
+SQLite transactions, cleanup and LanceDB projection writes. Together with the separate
+DDS/Gazebo restart trials, this qualifies the documented process-crash boundaries.
+It does not cover power loss, restoring backups, repairing damaged storage, disk exhaustion
+or interrupted schema upgrades. Those remaining requirements keep this gate partial.
+
+Day 16 adds [offline verified backup and fresh-instance restore](backup-restore.md),
+including image references, failed work and command/context journals. Repeated process
+deaths exercise atomic publication and the version-0-to-1 SQLite upgrade. A pre-upgrade
+backup is restored and read by the actual previous main revision for offline data
+rollback. ROS startup checks verify maintenance exclusion, relocated retrieval data,
+unknown navigation ownership and a fresh command session. The
+[validation record](validation/day-16.json) separates these results from earlier
+development failures. Power-loss durability, damaged-table repair, runtime disk
+exhaustion and movement under downgraded controller software remain unqualified;
+this gate is still partial.
 
 ## Gate 4: Endurance and bounded resources
 
@@ -218,6 +255,12 @@ Day 13's [validation record](validation/day-13.json) measures configured row/con
 limits under repeated visits and corrections. Scene sightings, persistent conversation
 content, corrections, refinement requests and cleanup work now have explicit caps. These
 logical bounds do not enforce the 20 GiB filesystem ceiling or establish 24-hour endurance.
+
+Day 17 adds [bounded overload handling](overload.md), durable ingestion cooldowns and
+queue accounting. The [validation record](validation/day-17.json) includes production
+RGB ingestion and question/maintenance saturation alongside 100 controlled DDS cancellation
+trials. Authored poses, scripted providers and a controlled action server limit this evidence;
+it does not qualify the complete RGB-D/model workload, physical stopping or 24-hour endurance.
 
 Pass only if:
 

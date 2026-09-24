@@ -114,13 +114,16 @@ Treat a missing heartbeat/service as an unavailable connection. A retained messa
 does not prove that the publisher or robot is still responsive. Compare elapsed receipt
 time locally rather than assuming synchronized clocks between machines.
 
-After restart, the new controller starts at `idle` (or `disabled`), sequence zero and a new
+After restart, the new controller has sequence zero and a new
 instance ID. It never restores a previous executable mission or replays commands from
 history. Historical outcomes remain in mission context/traces. Startup `idle` does not
-establish that a Nav2 goal left by a crashed process has stopped; active-goal reconciliation
-after crashes remains a separate qualification item.
-The [Day 8 ownership contract](cancellation-ownership.md#startup-contract-for-day-15)
-defines the required startup admission rule; cross-process reconciliation is Day 15 work.
+establish that an unrelated controller's goal has stopped.
+
+The ROS node now starts `uncertain` and busy if its durable navigation journal is missing
+or contains a pending goal. It refuses new work before planning and reconciles only the
+recorded goal. A confirmed terminal result changes the snapshot to idle without replay.
+A journal already known clean permits an idle startup; disabled navigation remains disabled.
+See the [startup ownership contract](crash-recovery.md), including first-use attestation.
 
 ## Versioned live status
 

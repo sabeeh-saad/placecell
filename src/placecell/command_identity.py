@@ -97,6 +97,12 @@ class CommandJournal:
             self._db.execute("PRAGMA synchronous=FULL")
             if self._db.execute("PRAGMA quick_check").fetchone() != ("ok",):
                 raise ValidationError("Command journal integrity check failed.")
+            if self._db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='command_restore'").fetchone():
+                epoch = self._db.execute("SELECT epoch FROM command_restore WHERE id=1").fetchone()
+                if epoch != (scope.conversation_id,):
+                    raise ValidationError(
+                        "Restored commands require the new mission_conversation_id from restore-report.json."
+                    )
             with self._db:
                 self._db.execute(
                     "CREATE TABLE IF NOT EXISTS command_policy "

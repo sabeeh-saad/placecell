@@ -13,6 +13,8 @@ from typing import Any
 from placecell.errors import ValidationError
 from placecell.memory import Pose
 from placecell.navigation import Destination, NavigationCommands, NavigationEvent
+from placecell.navigation_ownership import NavigationOwnership
+from placecell.ros2.recovery import GoalRecovery, create_recovery
 from placecell.tracing import TraceContext, current_trace
 
 
@@ -22,6 +24,7 @@ class _Trip:
     callback: Callable[[NavigationEvent], None]
     started: float
     handle: Any = None
+    goal_id: str = ""
     cancel_requested: bool = False
     cancel_pending: bool = False
     cancel_started: float | None = None
@@ -49,6 +52,9 @@ class Nav2Navigator:
         trip_timeout_s: float = 600.0,
         clock: Callable[[], float] = time.monotonic,
         feedback_interval_s: float = 0.2,
+        ownership: NavigationOwnership | None = None,
+        recovery: GoalRecovery | None = None,
+        wire_uuid: Callable[[str], Any] = lambda value: value,
     ) -> None:
         if any(not math.isfinite(v) or v <= 0 for v in (response_timeout_s, trip_timeout_s, feedback_interval_s)):
             raise ValidationError("navigation timeouts must be finite and positive")
@@ -57,9 +63,30 @@ class Nav2Navigator:
         self._feedback_interval = feedback_interval_s
         self._lock = threading.RLock()
         self._trip: _Trip | None = None
+        self._ownership, self._recovery, self._wire_uuid = ownership, recovery, wire_uuid
+        self._closed = False
+        if ownership is not None and recovery is None:
+            raise ValidationError("Durable navigation ownership requires startup reconciliation.")
+
+    @property
+    def startup_block_reason(self) -> str:
+        with self._lock:
+            if self._closed:
+                return "Navigation transport is closed."
+            return self._recovery.block_reason if self._recovery else ""
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            if self._recovery:
+                self._recovery.close()
+            if self._ownership:
+                self._ownership.close()
 
     def send(self, request_id: str, destination: Destination, callback: Callable[[NavigationEvent], None]) -> None:
         with self._lock:
+            if self.startup_block_reason:
+                raise ValidationError(self.startup_block_reason)
             if self._trip is not None:
                 raise ValidationError("a Nav2 goal is already pending")
             trip = _Trip(request_id, callback, self._clock(), trace=current_trace())
@@ -84,7 +111,15 @@ class Nav2Navigator:
             return
         try:
             trip.record("nav2.dispatch", pose=asdict(destination.pose))
-            future = self._client.send_goal_async(goal, feedback_callback=lambda m: self._feedback(trip, m))
+            with self._lock:
+                if self._closed:
+                    raise ValidationError("Navigation transport is closed.")
+                if self._ownership:
+                    trip.goal_id = self._ownership.reserve(request_id)
+                options = {"goal_uuid": self._wire_uuid(trip.goal_id)} if trip.goal_id else {}
+                future = self._client.send_goal_async(
+                    goal, feedback_callback=lambda m: self._feedback(trip, m), **options
+                )
             future.add_done_callback(lambda f: self._accepted(trip, f))
         except Exception as e:
             self._uncertain(trip, f"Nav2 goal submission could not be confirmed: {e}")
@@ -101,7 +136,7 @@ class Nav2Navigator:
                 self._finish(trip, "rejected", "Nav2 rejected the destination.")
                 return
             with self._lock:
-                current = self._trip is trip
+                current = self._trip is trip and not self._closed
                 if current:
                     trip.handle = handle
                     if self._clock() - trip.started >= self._response_timeout:
@@ -208,6 +243,10 @@ class Nav2Navigator:
         """Call from a short ROS timer; timeouts request cancellation and retain uncertain ownership."""
         event = None
         with self._lock:
+            if self._closed:
+                return
+            if self._recovery:
+                self._recovery.poll()
             trip = self._trip
             if trip is None:
                 return
@@ -242,7 +281,7 @@ class Nav2Navigator:
 
     def _emit(self, trip: _Trip, event: NavigationEvent) -> None:
         with self._lock:
-            if self._trip is not trip:
+            if self._trip is not trip or self._closed:
                 return
             event = replace(event, cancel_requested=trip.cancel_requested)
             if trip.cancel_requested and event.state == "navigating":
@@ -257,15 +296,25 @@ class Nav2Navigator:
         trip.callback(event)  # callbacks never run while holding the transport lock
 
     def _finish(self, trip: _Trip, state: str, message: str) -> None:
+        persistence_failed = False
         with self._lock:
-            if self._trip is not trip:
+            if self._trip is not trip or self._closed:
                 return
+            if self._ownership and trip.goal_id:
+                try:
+                    self._ownership.terminal(trip.goal_id, state)
+                except Exception:
+                    persistence_failed = True
             if self._clock() - trip.started >= self._trip_timeout:
                 trip.cancel_requested = True
             # Carry intent with the terminal result even if its earlier event is still
             # waiting for the controller lock. Clearing ownership linearizes here.
             event = NavigationEvent(state, message, cancel_requested=trip.cancel_requested)
-            self._trip = None
+            if not persistence_failed:
+                self._trip = None
+        if persistence_failed:
+            self._uncertain(trip, "Terminal result could not be persisted; navigation ownership is retained.")
+            return
         trip.record(
             "navigation",
             kind="end",
@@ -278,7 +327,14 @@ class Nav2Navigator:
         trip.callback(event)
 
 
-def create_navigator(node: Any, action_name: str, response_timeout_s: float, trip_timeout_s: float) -> Nav2Navigator:
+def create_navigator(
+    node: Any,
+    action_name: str,
+    response_timeout_s: float,
+    trip_timeout_s: float,
+    *,
+    ownership: NavigationOwnership | None = None,
+) -> Nav2Navigator:
     from nav2_msgs.action import NavigateToPose
     from rclpy.action import ActionClient
     from rclpy.callback_groups import ReentrantCallbackGroup
@@ -291,11 +347,24 @@ def create_navigator(node: Any, action_name: str, response_timeout_s: float, tri
         goal.pose.pose.orientation.z, goal.pose.pose.orientation.w = math.sin(pose.yaw / 2), math.cos(pose.yaw / 2)
         return goal
 
+    def wire_uuid(value: str) -> Any:
+        if ownership is not None:
+            from unique_identifier_msgs.msg import UUID
+
+            return UUID(uuid=list(bytes.fromhex(value)))
+        return value
+
+    recovery = None
+    if ownership is not None:
+        recovery = create_recovery(node, action_name, ownership, response_timeout_s)
     return Nav2Navigator(
         ActionClient(node, NavigateToPose, action_name, callback_group=ReentrantCallbackGroup()),
         make_goal,
         response_timeout_s=response_timeout_s,
         trip_timeout_s=trip_timeout_s,
+        ownership=ownership,
+        recovery=recovery,
+        wire_uuid=wire_uuid,
     )
 
 

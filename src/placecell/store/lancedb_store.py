@@ -23,6 +23,7 @@ from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row as _from_row
 from placecell.store.codec import to_row as _to_row
 from placecell.store.limits import StoreLimits
+from placecell.store.schema import check_file
 from placecell.store.state import StateStore
 
 _MAX_IN_LIST = 500
@@ -39,6 +40,7 @@ class LanceDBStore(StateStore):
             raise PlacecellError("LanceDBStore needs lancedb: pip install placecell[lancedb]") from e
         self._path = Path(path).expanduser().resolve()
         self._path.mkdir(parents=True, exist_ok=True)
+        check_file(self._path / f"{info.name}.state.sqlite3")
         self._db = lancedb.connect(str(self._path))
         self._meta_path = self._path / f"{info.name}.collection.json"
         if self._meta_path.exists():

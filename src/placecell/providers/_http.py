@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 
 from placecell.errors import ProviderError, RateLimitedError, ValidationError
@@ -161,14 +162,32 @@ class Endpoint:
             if status == 200:
                 return body
             if status == 429 or status >= 500:
-                if attempt + 1 < self.retry.attempts:
-                    self.sleep(self.retry.delay(attempt, header(headers, "retry-after")))
+                required_wait = retry_after_seconds(header(headers, "retry-after"))
+                if attempt + 1 < self.retry.attempts and required_wait <= self.retry.max_delay_s:
+                    self.sleep(max(required_wait, self.retry.delay(attempt, header(headers, "retry-after"))))
                     continue
                 if status == 429:
-                    raise RateLimitedError(f"{self.url}: rate limited after {self.retry.attempts} attempts")
-                raise ProviderError(f"{self.url}: server error {status} after {self.retry.attempts} attempts")
+                    raise RateLimitedError(
+                        f"{self.url}: rate limited after {attempt + 1} attempts", retry_after_s=required_wait
+                    )
+                raise ProviderError(
+                    f"{self.url}: server error {status} after {attempt + 1} attempts", retry_after_s=required_wait
+                )
             raise ProviderError(f"{self.url}: HTTP {status}: {message(body)}")
         raise ProviderError("unreachable")  # pragma: no cover
+
+
+def retry_after_seconds(value: str | None) -> float:
+    """Preserve numeric/HTTP-date cooldowns instead of shortening them to the sleep budget."""
+    try:
+        delay = float(value or "0")
+        return delay if math.isfinite(delay) and delay >= 0 else 0
+    except ValueError:
+        try:
+            date = parsedate_to_datetime(value or "")
+            return max(0, date.timestamp() - time.time()) if date.tzinfo is not None else 0
+        except (ValueError, TypeError, OverflowError):
+            return 0
 
 
 def header(headers: Mapping[str, str], name: str) -> str | None:

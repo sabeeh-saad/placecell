@@ -144,6 +144,9 @@ class JsonlCorrectionLog(InMemoryCorrectionLog):
                         self._bytes += len(self._encode(row).encode())
             if self._bytes > self._max_bytes:
                 raise ValidationError("normalized correction records exceed configured byte capacity")
+        else:
+            # Make an initialized empty log explicit for offline backup inventory.
+            self._write([])
 
     def _write(self, rows: list[Correction]) -> None:
         # Same-directory replacement preserves the old log if serialization or writing fails.

@@ -17,6 +17,11 @@ and PyArrow to 21.0.0. Apt dependencies are not individually pinned. Record the 
 ID and installed versions for each evaluation; rebuilding the same source may install
 different system packages. A historical image does not qualify newly mounted source.
 
+For a software/storage upgrade, follow the [verified backup and restore procedure](backup-restore.md).
+Keep the deployment parameters, map and image identity with the backup record. Restore
+generates a storage/session overlay to load after these parameters; it keeps navigation
+blocked until the documented independent Nav2 reset and operator attestation.
+
 The reference is one controller process and one simulated robot, `office_robot`, with
 camera ID `front` and map ID `office-v1`. RGB, aligned depth and CameraInfo use
 `camera_optical_frame`; the base is `base_footprint`, and navigation uses `map`.
@@ -64,6 +69,8 @@ The current configuration specifies:
 - At most four queued ingestion jobs, batch size one, and 8–20-second scene sampling
   intervals. Object scanning has an eight-second minimum interval. Arrival captures may
   bypass ordinary sampling. Sensor/observation ages use simulation time; cloud work uses wall time.
+- At most 8 MiB per retained RGB/depth payload (`camera_max_message_bytes`). Ingestion
+  retries share a durable cooldown; see [saturation and backpressure](overload.md).
 - Localization age at most five seconds, position standard deviation at most 0.3 m,
   yaw standard deviation at most 0.35 rad, and RGB-D stamp skew at most 80 ms. RGB-D delivery
   may wait up to one wall-clock second under software rendering.
@@ -106,6 +113,12 @@ not exercise natural-language planning or recognition. After it finishes, use
 `./simulation/sim start-nav` again to start the interactive trial from the office's origin.
 
 ### 2. Start the mission process when a model budget is agreed
+
+Before the first mission process, follow the [navigation ownership setup](crash-recovery.md#first-use-or-unresolved-ownership)
+inside the simulation container. A missing ownership journal now starts uncertain and
+refuses movement; it does not assume that a running Nav2 server is clean. Keep the journal
+at `/home/simulator/placecell-missions/navigation.sqlite3` for this profile, scoped to
+`office_robot`, `office-v1` and `/navigate_to_pose`.
 
 In terminal A:
 

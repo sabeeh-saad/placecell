@@ -582,6 +582,7 @@ class NavigationCommands:
         mission_planner: MissionPlanner | None = None,
         mission_context: MissionContext | None = None,
         trace_store: TraceStore | None = None,
+        startup_block_reason: Callable[[], str] = lambda: "",
     ) -> None:
         if not math.isfinite(request_timeout_s) or request_timeout_s <= 0:
             raise ValidationError("command timeout must be finite and positive")
@@ -635,6 +636,27 @@ class NavigationCommands:
         self._snapshot_status = NavigationUpdate(
             "", "idle", "No navigation request is active.", instance_id=self._instance_id
         )
+        self._startup_block_reason = startup_block_reason
+        self._startup_reason = startup_block_reason()
+        if self._startup_reason:
+            self._snapshot_status = replace(
+                self._snapshot_status, state="uncertain", message=self._startup_reason, failure_stage="execution"
+            )
+
+    def _refresh_startup(self) -> str:
+        reason = self._startup_block_reason()
+        if reason != self._startup_reason and self._active is None and not self._closed:
+            self._startup_reason = reason
+            self._publish(
+                NavigationUpdate(
+                    "",
+                    "uncertain" if reason else "idle",
+                    reason or "Previous Nav2 ownership reconciled. Submit a new command to move.",
+                    failure_stage="execution" if reason else "",
+                ),
+                state_update=True,
+            )
+        return reason
 
     @property
     def admission_epoch(self) -> int:
@@ -645,7 +667,7 @@ class NavigationCommands:
     @property
     def busy(self) -> bool:
         with self._lock:
-            return self._active is not None or self._mission is not None
+            return self._active is not None or self._mission is not None or bool(self._startup_block_reason())
 
     def snapshot(self) -> NavigationSnapshot:
         """Copy current state atomically without polling, dispatching or replaying commands."""
@@ -880,6 +902,10 @@ class NavigationCommands:
             self._publish(NavigationUpdate(request_id, "invalid", "Instructions must contain 1..2000 characters."))
             return
         with self._lock:
+            reason = self._refresh_startup()
+            if reason:
+                self._publish(NavigationUpdate(request_id, "uncertain", reason, failure_stage="execution"))
+                return
             if self._closed or self._active:
                 self._publish(
                     NavigationUpdate(
@@ -1517,6 +1543,8 @@ class NavigationCommands:
     def poll(self) -> None:
         """Bound arrival waits and request cancellation if localization is lost during a trip."""
         with self._lock:
+            if self._refresh_startup():
+                return
             if self._active is None:
                 if self._choices and not self._provenance_ready():
                     self._choices = ()
@@ -1595,6 +1623,9 @@ class NavigationCommands:
             if reason:
                 self._interruption_reason = reason
             self._admission_epoch += 1
+            if self._refresh_startup():
+                self._publish(self._snapshot_status)
+                return
             if self._trace_context and (self._active or self._mission):
                 self._trace_context.emit("cancellation.requested", phase=self._state, transport_id=self._transport_id)
             had_choices = bool(self._choices)

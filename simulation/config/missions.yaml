@@ -25,6 +25,7 @@ placecell:
     # Local retention only; this timer makes no model calls.
     curator_interval_s: 60.0
     command_journal_path: /home/simulator/placecell-missions/commands.sqlite3
+    navigation_ownership_path: /home/simulator/placecell-missions/navigation.sqlite3
     command_retry_window_s: 86400.0
     command_max_records: 10000
     mission_trace_path: /home/simulator/placecell-missions/traces.sqlite3

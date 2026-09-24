@@ -32,6 +32,7 @@ from placecell import (
 )
 from placecell.mission_context import MissionContext
 from placecell.navigation import NavigationCommands
+from placecell.navigation_ownership import NavigationOwnership, NavigationScope
 from placecell.providers import HashingEmbedder
 from placecell.ros2.navigation import create_navigation_timers, create_navigator
 from placecell.ros2.node import BoundedTasks
@@ -61,7 +62,8 @@ class BlockingModel(ScriptedModel):
 
 
 class Check:
-    def __init__(self, output):
+    def __init__(self, output, *, loaded_response_timeout_s=None):
+        self.loaded_response_timeout_s = loaded_response_timeout_s
         self.rows, self.checks, self.events = [], [], []
         self.current = None
         self.handles = {}
@@ -89,7 +91,11 @@ class Check:
         self.traces = TraceStore(output / "traces.sqlite3", queue_size=4096)
         self.tasks = BoundedTasks(1, 1, self.node.get_logger())
         self.model, self.reviewer = BlockingModel(), BlockingModel(True)
-        self.navigator = create_navigator(self.node, "/day8/navigate_to_pose", 0.3, 30)
+        ownership = NavigationOwnership(
+            output / "ownership.sqlite3", NavigationScope("test", "day8", "/day8/navigate_to_pose")
+        )
+        ownership.attest_clean("Fresh isolated cancellation test server before any client goals")
+        self.navigator = create_navigator(self.node, "/day8/navigate_to_pose", 0.3, 30, ownership=ownership)
         self.commands = NavigationCommands(
             DestinationResolver(
                 self.store,
@@ -105,6 +111,7 @@ class Check:
             mission_context=self.context,
             trace_store=self.traces,
             request_timeout_s=5,
+            startup_block_reason=lambda: self.navigator.startup_block_reason,
         )
         self.bridge = OperatorInterface(self.node, self.commands)
         create_navigation_timers(self.node, self.navigator, self.commands)
@@ -284,6 +291,10 @@ class Check:
         for mode in ("late_accept", "reject", "missing_ack"):
             self.trip(mode)
             self.checks.append(mode + ": ownership retained, next goal refused, terminal cancels mission")
+        if self.loaded_response_timeout_s is not None:
+            # Fault phases above deliberately use 0.3 s. Loaded qualification uses
+            # the declared deployment response deadline, independently of stop latency.
+            self.navigator._response_timeout = self.loaded_response_timeout_s
         self.load_on = True
         wait(self.load_entered.is_set, "background callback not exercised")
         for index in range(samples):
@@ -326,6 +337,7 @@ class Check:
         self.trace_health = self.traces.health()
         self.context.close()
         self.store.close()
+        self.navigator.close()
         self.server.destroy()
         for node in (self.node, self.server_node, self.probe):
             node.destroy_node()
@@ -390,6 +402,7 @@ def main():
                 "command_qos_depth": 1,
                 "sim_time": "paused at zero",
                 "persistent_context_and_traces": True,
+                "persistent_navigation_ownership": True,
             },
             limitations=[
                 "Controlled NavigateToPose action server; no Gazebo, physical motion or live models",

@@ -105,7 +105,10 @@ authorize multiple active controllers: mission/transport ownership remains singl
 Keep the journal on reliable local persistent storage. Corruption prevents startup; write
 or lock failure refuses identified input. Copies restored from an older backup, deleted
 journals, new paths and memory-only journals do not preserve unseen reservations. Recovery
-must prevent old-window input from being reused; backup/recovery qualification is later work.
+must prevent old-window input from being reused. The [verified restore workflow](backup-restore.md)
+records a new command-session epoch and requires its generated `mission_conversation_id`.
+The restored journal refuses the old session before command admission. Update identified
+publishers to the new session and drain legacy text publishers before reconnecting them.
 
 ## Stop and restart boundaries
 
@@ -126,8 +129,9 @@ does not change the durable deduplication scope.
 
 Deduplication does not reconcile a surviving Nav2 goal. Follow the
 [startup ownership contract](cancellation-ownership.md#startup-contract-for-day-15): establish
-that the old goal has terminated before issuing new movement after a crash. Machine-enforced
-cross-process ownership reconciliation remains Day 15 work.
+that the old goal has terminated before issuing new movement after a crash. Day 15 adds
+[machine-enforced reconciliation](crash-recovery.md) through a separate durable ownership
+journal; command reservations remain history and are never replayed.
 
 ## Validation
 

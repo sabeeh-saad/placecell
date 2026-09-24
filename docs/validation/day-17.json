@@ -1,0 +1,509 @@
+{
+  "day": 17,
+  "date": "2026-09-24",
+  "status": "implementation complete; final local checks pass",
+  "branch": "restart-recovery",
+  "commit_state": "uncommitted Day 15, Day 16 and Day 17 work",
+  "base_commit": "76900778084da4f18606b4f51bfc1d404fcb3f92",
+  "scope": "Bounded task and camera admission, atomic task shutdown, maintenance coalescing, observable overload and durable ingestion retry cooldowns",
+  "runtime": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1032-oem-x86_64-with-glibc2.39",
+    "packages": {
+      "numpy": "2.5.3",
+      "lancedb": "0.38.0",
+      "pyarrow": "25.0.1",
+      "pytest": "9.1.1",
+      "ruff": "0.16.8",
+      "mypy": "2.3.1"
+    }
+  },
+  "source_sha256": {
+    ".github/workflows/simulation.yml": "a665a4b2cf0e597dcb858acfba7523978f8840ea72152914b0ed5038c7554d25",
+    "simulation/config/placecell.yaml": "2e6e08705a8d43dcfa637ddc7e09f721a695ef3201d7992e5e69008eaa0839d8",
+    "simulation/scripts/cancellation_test.py": "28e1414c0c633b9ff467a6815b8f825db2132f8bb2ac7a2d0d99686bb968c992",
+    "simulation/scripts/operator_test.py": "020485903b2bfdf85ebb7a45e474d5c89eb86a18e430660c66578611e362488a",
+    "simulation/scripts/overload_test.py": "88fb5f67f45cd0af9532bb175eb2f8210deaea6cc5bae162d153330432dca6e0",
+    "simulation/sim": "e5724af5765df6ba7649dfd63cc93516754c94a07e07f5bc9831be6085aa26b4",
+    "src/placecell/__init__.py": "75473bbd41206242d12f4e922612709ab0fc7a510da42f518fd62fa48c633d6d",
+    "src/placecell/agent.py": "eb9af5659ac3a4d878807d5bb0220af51c6602b565d80c9e068a3a1c9af85799",
+    "src/placecell/approach.py": "3d728447c63443f91ab1609f321fba0e277cf419cf1f739de2b925f56a9ec8f1",
+    "src/placecell/backup.py": "c75deab340fc796c2139c8543a351ee73dc2f92c8d7776b83ef85f26a18d165b",
+    "src/placecell/chat.py": "e85e28f43263a6fcbdac8d669b830d246529aacec5d79f83545923653df6db97",
+    "src/placecell/command_identity.py": "9c74ea010fd1fd7ab3cbc5461fcbb38c565b64c1f2bd9c7ba41b3916ca8f5fb3",
+    "src/placecell/consolidation.py": "23033a699a82933fbc38ca57b6681d74498dbe9300a1d013facdc78940bffcb6",
+    "src/placecell/corrections.py": "e3db1f093e0f377b7c47bb11f29aab385749c69dd46c1af8b2c47dc187c42522",
+    "src/placecell/depth.py": "a768281c33a10e96090f3a9ff5d65687fca32ade8e67758d460a9c638c126165",
+    "src/placecell/errors.py": "606a5894144a65378d7f895ecfd11cbd7d3427c77dd21cf2a4a62f9e97baa6bb",
+    "src/placecell/evaluation.py": "dcd8e4e80cb1dc588ad31ecf5256465827fa901e3622920f64e5417cff711ee3",
+    "src/placecell/execution_cases.py": "22e96743f3f42157301d02f11a9f89ab9597f2b07e1a7368be3b3e7ff52197ab",
+    "src/placecell/fault_injection.py": "78df1d129431d9381c7784ece5dec1b86916ed965b4318b5324efc761e1279aa",
+    "src/placecell/lifecycle.py": "8330fa4b336b4ee8f3049f61438550666248b7c1745b713749e5b10c57e1cbee",
+    "src/placecell/localization.py": "8f4efeba5e379b5bd19e44b3f91d7f5521554d33c4e742538673f794df44c3ae",
+    "src/placecell/maintenance.py": "b060425f5def787f4b9a7b39e4cbb5bb41d973f6bec36576e7a2376835447cc2",
+    "src/placecell/memory.py": "307835ebe01216073063864d76cdf3c711c43afad0cb7784b9d9586d6451cd04",
+    "src/placecell/migrate.py": "46d1e4eff55bbb9ad5dcb00e1f5d55a2019c2610a85ec5ab8aed820c30ad535d",
+    "src/placecell/mission_context.py": "1a996fc6ca5477e4190845f96f13e49c6f4bc934e898d86a2c2f88c19217e61d",
+    "src/placecell/mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+    "src/placecell/missions.py": "1e951f9c18c8cb1465d818f6cd5226a1947240fd6413963ba84a9b677a32f0d8",
+    "src/placecell/navigation.py": "972be608b355315db00ab1826fde3eaeeb2ed7ed7b22381c0cc812ac4857ccfd",
+    "src/placecell/navigation_ownership.py": "4d8210e3fe973b89c6d3c1149c8a480257330133153684536869ddb322aae724",
+    "src/placecell/object_arrival.py": "75a3e62c0a79c9a3e07c0c1be5407cdf54eae60fabb62032bbea2731c8e60ed1",
+    "src/placecell/object_evaluation.py": "374a99700563884cae9e231bb715227b43915ef4a6ac9fa06b0b4e9b26822179",
+    "src/placecell/object_search.py": "7d970c0783d36f245a9218c952194a687d1e30711661ee10aa9d11fb7fe70286",
+    "src/placecell/object_types.py": "ae574a94bb2d416dd095c8816e7b613e8eafd8a2ed8bac94d719fbfbc9971e1c",
+    "src/placecell/objects.py": "96664681540c586032e537d41bb11fcaf180d5e71b2df4deee3e62d2fb49b2da",
+    "src/placecell/observer.py": "6e3669b09583eb40d51ce0d79c7008c220809cf6dafd48e78f85da24cf0b2e2a",
+    "src/placecell/operator.py": "178fdef134e71c20508d4f799b00e5c599587264d384d6502682f5f3ae71e515",
+    "src/placecell/pipeline.py": "3e4185cafedf9000f7023a1529eee2d193e4a7d7e72c81604c2ca6f8029e020a",
+    "src/placecell/providers/__init__.py": "a8c6d4daa5119f3b92fa6b8833152143b122ef43df459bb780a54872bfc56b9d",
+    "src/placecell/providers/_contracts.py": "89abc7f69c8464dc1b9b0193a22bdc140171991fcae1426e118a79351806293b",
+    "src/placecell/providers/_http.py": "650f2d435c8e3ae98f2c1efadacca310f576095a3ba140774b35bbe0e97f0cb2",
+    "src/placecell/providers/base.py": "85e63d710fcb861876c3f1f73c5c5923afdb2dae78f72f7dc8f03e67a1688bca",
+    "src/placecell/providers/captioning.py": "2f88e77113bb716ee79ee3ced1384e8fa93afb563f117fb1d652b53a5b0e9330",
+    "src/placecell/providers/chat.py": "d7146232047b4fb88bcf89f9f16e4c0cb253ae09a004bb633a0609c3ec71f4d2",
+    "src/placecell/providers/clip.py": "4af556a1b0f808bbf15323e3c79a1a1b4c743dba5ccdf759f7df62f6f0f81e1d",
+    "src/placecell/providers/embedding.py": "1d49e3419c83ec5ec9a6e022b4fb630a2be456860cdd624af93c50ccee8cc1a8",
+    "src/placecell/providers/gemini.py": "7b612e927131d2e97721686dcc8956b53d78e566eabb15faaaac316f81cf54ea",
+    "src/placecell/providers/hashing.py": "e798dad790d74c76732169f84f27e89d27ae2881f8ca57e2d442b71e75572f71",
+    "src/placecell/providers/object_detection.py": "df1f7f85fc90023fad14b0b5198bd10cfc4adcd7e41cc93f91e80f784f77ec3f",
+    "src/placecell/providers/openai_compatible.py": "89900bd84cf77e7fcc39bbc9ad3b460faf94f34f2ec86c70f0f95fcbb7a6a437",
+    "src/placecell/providers/openrouter.py": "333319f1b4aaaef099a5f32b5b59dd5ac5102123ad02191b208902bc06742757",
+    "src/placecell/recordings.py": "52ff54579bd16151c1c373c9a58d29ac806e44346a134ceaf3c29e1957b64522",
+    "src/placecell/refinement.py": "8c814c06b9f951ac52e590b332545a3f0762bf8560eec87a55aecaf5d79d3142",
+    "src/placecell/retrieval.py": "215ebccf4cfab9f055302a3c6975f840eb58d3d98090452c6dc3e2f8c2a6bdbf",
+    "src/placecell/ros2/__init__.py": "940365c14b76882518d9a28665cbc1d8c9b8ea899aabfc14a8db3c33f15f8db1",
+    "src/placecell/ros2/approach.py": "580c3afec4e1d53411f647794b8f59c0ddfe425c274040aa4b3e083d5ae11afa",
+    "src/placecell/ros2/bridge.py": "9b95c15d197c570c37f4bdb08ad88863e840b7ac369566d4ef836d69e8ab9734",
+    "src/placecell/ros2/depth.py": "8086b014c749000cf9a6ba9f636b08e22e911450d4b43e5476aef2a841568c1c",
+    "src/placecell/ros2/navigation.py": "eb51902374f75be2d0629c1d9ea98fdc48584f3cbe4ba0d9538d495275eb1a38",
+    "src/placecell/ros2/node.py": "4adbede8fbb188a490a01e2191e5c8aca63511790f9516e66b0d21a13a26e417",
+    "src/placecell/ros2/operator.py": "97343dd2d9c5a6a2653bc9ddb1477b88c442de543b2a4b0096722786b044fdb6",
+    "src/placecell/ros2/recovery.py": "8fa67cc49ca92403bef60783962d8f9b32b70cb1495ec781c971c555fcafd739",
+    "src/placecell/ros2/speech.py": "8d36d5dd7b9c80035ae980102cc4597d7c81a7fcf93f99284c9a71119a394b3f",
+    "src/placecell/sensors.py": "16b27b4b6029a8407f5f1098476b9cd4f4c716f889737efc820adc3f91a1013a",
+    "src/placecell/sources/__init__.py": "c47d4e85dec0f6b068ead36c31e842a27b21609fb6450b2e2ea3252f921bb613",
+    "src/placecell/sources/pose_log.py": "7386c8a53f10ac52c6d37ddbc7100f1e3cea9a8972ecba8bc405c8e17e4b16b0",
+    "src/placecell/sources/video.py": "4769ad5ce3cf3668de1b3aa6e98e080ba872691a386875096da25bbe9433652f",
+    "src/placecell/speech.py": "a4e80bb56a3ed7f01341b45798f9bf558ff2ebf0c532da7a1594918b136830e1",
+    "src/placecell/store/__init__.py": "afcea33c80520ac6d028ea89a0dcf9e02791e0b62728bc1713fe81edcfdb8bf6",
+    "src/placecell/store/base.py": "0751bcb6cdd5973431ee9d0506ed9e0050b2dc28f02e80341dbfb4b357b56a2b",
+    "src/placecell/store/codec.py": "2f2c647ffcd07909c35b9a43081d594ebff367de19869d28ef7e8882b923c108",
+    "src/placecell/store/in_memory.py": "928a5f85939a0950ed9ffd671c8cd5c62dcdb8d79004b70721cf1095b14c82f9",
+    "src/placecell/store/jobs.py": "6a3a2cad659ad896b5b2cfc758b8a013830e82822295b143e9101211881ae929",
+    "src/placecell/store/lancedb_store.py": "eebd12ac9278caf70961780777c5ca0ed51aab33e59b1fe764cef3bab78d9837",
+    "src/placecell/store/limits.py": "5068b0dc87feb7e4b0224226b0d5b5163b6f591f22e638f9d7a8c8ba0d3481c0",
+    "src/placecell/store/objects.py": "f6967e18ca785cb693d011124d4a199bb1477bfd08f22d77a606ed97707f769f",
+    "src/placecell/store/refinements.py": "8ff01aa31024e625bb3691f2b5386e07697170c93e1632e86dd7830b1433625c",
+    "src/placecell/store/schema.py": "90b8b1428bfe35b30ab4665e45cef5c97c031449a7868ed3cbc8ea3d16164b6e",
+    "src/placecell/store/state.py": "18ce65fd3f8f32a48adeeb4a4a317849a734c2eac1f210bc1f49f4283314f389",
+    "src/placecell/trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+    "src/placecell/tracing.py": "6ec4d7205827ddccaecc2fad5efe65e7b0e369bb4b8035588e98e3306a480427",
+    "src/placecell/verification.py": "9b36d8537bb248144f2ed3ee98a8311fbe63260d675122e143a8cc029eadd919",
+    "tests/test_image_synchronization.py": "435d7ac7940365d7cd49d22c2eff9207ff120bc08080e70386fa23aa8b1ce6c2",
+    "tests/test_jobs.py": "75b421c85d30bee2b5cf0e921cf84b7060442a4c0401af7b2e193e779b5815e5",
+    "tests/test_overload.py": "bf094586ccf3bd71e77c7c874386fed1532f3ff2a3ae0f8244525754e7a10d26"
+  },
+  "full_tested_source_manifest": {
+    "path": "simulation/artifacts/day17-20260923/final-source-sha256.json",
+    "sha256": "7b408fbacc2e619c338231dc293171e08876548c4691f092aabae726d44d11af"
+  },
+  "regressions": {
+    "report": {
+      "path": "simulation/artifacts/day17-20260923/tests-final.xml",
+      "sha256": "41d5e35faee3984692e8d015bdd2df0b8030055198cf26eaf01f26df5d6f9c6d"
+    },
+    "tests": 1378,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "elapsed_s": 161.56,
+    "new_overload_cases": 19,
+    "coverage": {
+      "path": "simulation/artifacts/day17-20260923/coverage-final.json",
+      "sha256": "c0096d5794a9b7e070d6980bc3a30638b8644ebea2d61fa325e657761ab33acc"
+    },
+    "coverage_percent": 95.4995499549955,
+    "coverage_config": {
+      "path": "simulation/artifacts/day17-20260923/coverage-final.ini",
+      "sha256": "b7566ad79facc13c36ac7e3a4b31b7cf693b842fb9fe53339fc4a6b7a4d9cddf"
+    },
+    "tracked_coverage_file_unchanged": true
+  },
+  "static_checks": {
+    "ruff": "passed",
+    "format": "208 files already formatted",
+    "mypy_source_files": 75,
+    "bash_syntax": "passed",
+    "git_diff_check": "passed"
+  },
+  "ros_environment": {
+    "base_image": "placecell-sim:day15-remap-20260923",
+    "base_image_id": "sha256:72cf9f76fc8047356ce4de117a8d0ae133317284eb9dc282597bae4dca4091ff",
+    "source_overrides": [
+      "src/placecell mounted read-only at /opt/placecell-src/placecell",
+      "simulation/scripts mounted read-only at /opt/placecell-sim/scripts"
+    ],
+    "network": "none",
+    "cpu_quota": 8,
+    "memory_limit_gib": 16,
+    "python": "3.12.3",
+    "numpy": "1.26.4",
+    "lancedb": "0.38.0",
+    "pyarrow": "21.0.0",
+    "ros-jazzy-rclpy": "7.1.12-1noble.20260902.053513",
+    "ros-jazzy-nav2-msgs": "1.3.13-1noble.20260902.082014",
+    "ros-jazzy-rmw-fastrtps-cpp": "8.4.4-1noble.20260902.041916",
+    "client_executor_threads": 4,
+    "controlled_server_executor_threads": 4
+  },
+  "ros_final": {
+    "report": {
+      "path": "simulation/artifacts/day17-20260923/overload-final/report.json",
+      "sha256": "d4d7324d9839c42eed993f9bc8ee7ca93a0b5f6f8f1c4aa3167db98f1d39cc19"
+    },
+    "passed": true,
+    "checks": [
+      "stop while planner blocked; late reply discarded",
+      "stop while reviewer blocked; late reply discarded",
+      "late_accept: ownership retained, next goal refused, terminal cancels mission",
+      "reject: ownership retained, next goal refused, terminal cancels mission",
+      "missing_ack: ownership retained, next goal refused, terminal cancels mission",
+      "loaded cancellation with persistent context/traces and paused simulation clock",
+      "positive control: two real action goals complete in order without cancellation",
+      "four accepted camera jobs pin exactly four images under continuous overload",
+      "question overflow emits busy responses; oversized inputs bypass no capacity check",
+      "1000 maintenance timer repeats coalesce behind one active task",
+      "release drains accepted work once with no duplicate sightings"
+    ],
+    "elapsed_wall_s": 111.30695718399875,
+    "frames_published": 1670,
+    "camera_callbacks": 1670,
+    "saturated": {
+      "ingestion": {
+        "queued": 4,
+        "failed": 0,
+        "oldest_age_s": 108.34682750701904,
+        "retry_wait_s": 0.0,
+        "capacity": 4,
+        "dropped": 1665,
+        "stopped": false
+      },
+      "questions": {
+        "accepted": 3,
+        "completed": 0,
+        "failed": 0,
+        "discarded": 0,
+        "rejected_full": 83,
+        "rejected_stopped": 0,
+        "coalesced": 0,
+        "high_water": 2,
+        "active": 1,
+        "queued": 2,
+        "capacity": 2,
+        "workers": 1,
+        "stopped": false
+      },
+      "maintenance": {
+        "accepted": 1,
+        "completed": 0,
+        "failed": 0,
+        "discarded": 0,
+        "rejected_full": 0,
+        "rejected_stopped": 0,
+        "coalesced": 1000,
+        "high_water": 1,
+        "active": 1,
+        "queued": 0,
+        "capacity": 1,
+        "workers": 1,
+        "stopped": false
+      },
+      "answers": {
+        "busy": 83,
+        "oversized": 1
+      }
+    },
+    "recovered": {
+      "ingestion": {
+        "queued": 0,
+        "failed": 0,
+        "oldest_age_s": 0.0,
+        "retry_wait_s": 0.0,
+        "capacity": 4,
+        "dropped": 1666,
+        "stopped": false
+      },
+      "questions": {
+        "accepted": 3,
+        "completed": 3,
+        "failed": 0,
+        "discarded": 0,
+        "rejected_full": 83,
+        "rejected_stopped": 0,
+        "coalesced": 0,
+        "high_water": 2,
+        "active": 0,
+        "queued": 0,
+        "capacity": 2,
+        "workers": 1,
+        "stopped": false
+      },
+      "maintenance": {
+        "accepted": 1,
+        "completed": 1,
+        "failed": 0,
+        "discarded": 0,
+        "rejected_full": 0,
+        "rejected_stopped": 0,
+        "coalesced": 1000,
+        "high_water": 1,
+        "active": 0,
+        "queued": 0,
+        "capacity": 1,
+        "workers": 1,
+        "stopped": false
+      },
+      "memories": 4
+    },
+    "rss_peak_kib": 350008,
+    "latency_ms": {
+      "command_to_cancel_ms": {
+        "count": 100,
+        "p50": 0.7138190012483392,
+        "p95": 3.3670499979052693,
+        "p99": 50.28179399960209,
+        "max": 263.13370700154337
+      },
+      "publish_to_cancel_ms": {
+        "count": 100,
+        "p50": 6.341136002447456,
+        "p95": 186.5719489978801,
+        "p99": 660.9963749979215,
+        "max": 1058.4171390000847
+      },
+      "cancel_to_ack_ms": {
+        "count": 100,
+        "p50": 21.29261599839083,
+        "p95": 238.12090099818306,
+        "p99": 455.081006999535,
+        "max": 1145.650447000662
+      }
+    },
+    "trace_health": {
+      "dropped_events": 0,
+      "write_errors": 0,
+      "trimmed_events": 0,
+      "truncated_events": 0,
+      "unclean_shutdowns": 0,
+      "coalesced_events": 0,
+      "dropped_critical_events": 0,
+      "last_error_type": "",
+      "pending": 0,
+      "writer_alive": false
+    }
+  },
+  "ros_previous_reference_run": {
+    "report": {
+      "path": "simulation/artifacts/day17-20260923/overload-reference/report.json",
+      "sha256": "910c9d5f133df600820734f360570b3be190008128147e7080171395dcc95ded"
+    },
+    "passed": true,
+    "checks": [
+      "stop while planner blocked; late reply discarded",
+      "stop while reviewer blocked; late reply discarded",
+      "late_accept: ownership retained, next goal refused, terminal cancels mission",
+      "reject: ownership retained, next goal refused, terminal cancels mission",
+      "missing_ack: ownership retained, next goal refused, terminal cancels mission",
+      "loaded cancellation with persistent context/traces and paused simulation clock",
+      "positive control: two real action goals complete in order without cancellation",
+      "four accepted camera jobs pin exactly four images under continuous overload",
+      "question overflow emits busy responses; oversized inputs bypass no capacity check",
+      "1000 maintenance timer repeats coalesce behind one active task",
+      "release drains accepted work once with no duplicate sightings"
+    ],
+    "elapsed_wall_s": 123.87191262399938,
+    "frames_published": 1578,
+    "camera_callbacks": 1578,
+    "saturated": {
+      "ingestion": {
+        "queued": 4,
+        "failed": 0,
+        "oldest_age_s": 121.10801076889038,
+        "retry_wait_s": 0.0,
+        "capacity": 4,
+        "dropped": 1574,
+        "stopped": false
+      },
+      "questions": {
+        "accepted": 3,
+        "completed": 0,
+        "failed": 0,
+        "discarded": 0,
+        "rejected_full": 77,
+        "rejected_stopped": 0,
+        "coalesced": 0,
+        "high_water": 2,
+        "active": 1,
+        "queued": 2,
+        "capacity": 2,
+        "workers": 1,
+        "stopped": false
+      },
+      "maintenance": {
+        "accepted": 1,
+        "completed": 0,
+        "failed": 0,
+        "discarded": 0,
+        "rejected_full": 0,
+        "rejected_stopped": 0,
+        "coalesced": 1000,
+        "high_water": 1,
+        "active": 1,
+        "queued": 0,
+        "capacity": 1,
+        "workers": 1,
+        "stopped": false
+      },
+      "answers": {
+        "busy": 77,
+        "oversized": 1
+      }
+    },
+    "recovered": {
+      "ingestion": {
+        "queued": 0,
+        "failed": 0,
+        "oldest_age_s": 0.0,
+        "retry_wait_s": 0.0,
+        "capacity": 4,
+        "dropped": 1574,
+        "stopped": false
+      },
+      "questions": {
+        "accepted": 3,
+        "completed": 3,
+        "failed": 0,
+        "discarded": 0,
+        "rejected_full": 77,
+        "rejected_stopped": 0,
+        "coalesced": 0,
+        "high_water": 2,
+        "active": 0,
+        "queued": 0,
+        "capacity": 2,
+        "workers": 1,
+        "stopped": false
+      },
+      "maintenance": {
+        "accepted": 1,
+        "completed": 1,
+        "failed": 0,
+        "discarded": 0,
+        "rejected_full": 0,
+        "rejected_stopped": 0,
+        "coalesced": 1000,
+        "high_water": 1,
+        "active": 0,
+        "queued": 0,
+        "capacity": 1,
+        "workers": 1,
+        "stopped": false
+      },
+      "memories": 4
+    },
+    "rss_peak_kib": 348848,
+    "latency_ms": {
+      "command_to_cancel_ms": {
+        "count": 100,
+        "p50": 0.6906779999553692,
+        "p95": 2.0021019990963396,
+        "p99": 4.101492999325274,
+        "max": 44.67928199665039
+      },
+      "publish_to_cancel_ms": {
+        "count": 100,
+        "p50": 11.34776300023077,
+        "p95": 233.13118599980953,
+        "p99": 499.4650389999151,
+        "max": 577.9669340008695
+      },
+      "cancel_to_ack_ms": {
+        "count": 100,
+        "p50": 22.36323299803189,
+        "p95": 479.94394499983173,
+        "p99": 1027.9326210002182,
+        "max": 1487.838033997832
+      }
+    },
+    "trace_health": {
+      "dropped_events": 0,
+      "write_errors": 0,
+      "trimmed_events": 0,
+      "truncated_events": 0,
+      "unclean_shutdowns": 0,
+      "coalesced_events": 0,
+      "dropped_critical_events": 0,
+      "last_error_type": "",
+      "pending": 0,
+      "writer_alive": false
+    }
+  },
+  "earlier_reference_source_note": "The earlier reference run preceded the final jobs.fail empty-ID cooldown fix/test and explicit reference camera_max_message_bytes setting. The final run uses the complete source manifest. Both successful runs and the initial failed attempt are preserved.",
+  "workload": {
+    "rgb": "640x480 RGB8 at up to 20 Hz",
+    "ingestion_capacity": 4,
+    "question_workers": 1,
+    "question_waiting_capacity": 2,
+    "cancellation_samples": 100,
+    "provider": "scripted blocked captioner plus hashing embedder",
+    "network": "disabled",
+    "loaded_action_response_timeout_s": 10.0,
+    "cancel_request_target_ms": 500
+  },
+  "latency_contract": {
+    "pass_target": "p99 <= 500 ms from command callback receipt to asynchronous cancel-request API return",
+    "goal_acknowledgement_deadline_s": 10,
+    "deliberate_fault_phase_deadline_s": 0.3,
+    "publication_and_acknowledgement": "Separate metrics retained; not part of the 500 ms callback-acceptance target. Final publish-to-request p99 was about 661 ms and maximum about 1058 ms. No physical stop-time claim."
+  },
+  "input_denominators": {
+    "regular_questions_published": 101,
+    "oversized_questions_published": 1,
+    "regular_questions_delivered_final": 86,
+    "regular_questions_accepted_final": 3,
+    "busy_replies_received_final": 83,
+    "note": "DDS can supersede inputs; published requests are not assumed to equal callback invocations. Camera and question counters are reported independently."
+  },
+  "preserved_development_failure": {
+    "report": {
+      "path": "simulation/artifacts/day17-20260923/overload/report.json",
+      "sha256": "64c887305a688d64bfa85b88c43e957df883cb8a78f674ac4b4df2d410fa7098"
+    },
+    "failed_mission_trace": {
+      "path": "simulation/artifacts/day17-20260923/short-deadline-failure-trace.json",
+      "sha256": "32320f104915911d72c0f4efc854edcceadea61073b5b7e568c195fd720c0250"
+    },
+    "passed": false,
+    "error": "goal not accepted",
+    "description": "Initial overload attempt inherited the old harness 0.3-second acknowledgement deadline. A late goal acknowledgement left ownership uncertain; cancellation was requested, acknowledged, and confirmed terminal during cleanup. No second mission leg was dispatched. Loaded trials now use the documented 10-second deployment deadline; the 500 ms cancellation target is unchanged. This is an availability observation, not a claim that intermittent DDS delay is eliminated."
+  },
+  "ci": {
+    "unit_regressions": "Included in the existing Python 3.10-3.12 pytest matrix",
+    "ros_overload": "simulation/sim check-overload --samples 100 added to simulation workflow",
+    "hosted_result": "not run for these uncommitted changes"
+  },
+  "limitations": [
+    "Authored poses bypass TF/localization; no depth, object detection, Gazebo or physical stopping checks.",
+    "Shared executor uses the real controller/Nav2 adapter against a controlled DDS action server.",
+    "DDS may drop superseded samples; published frames and accepted callbacks are separate denominators.",
+    "Bounded short stress trial, not the 24-hour endurance or full RGB-D/model resource gate.",
+    "Short stress only; no accepted-work age budget is qualified for live providers.",
+    "Camera byte limits bound retained application buffers after DDS delivery, not middleware deserialization allocations.",
+    "Ingestion cooldown is per collection and is not a provider-account-wide limiter across questions, navigation and maintenance.",
+    "Active external calls cannot be forcibly stopped; shutdown clears waiting tasks and retains the storage lease if workers remain active.",
+    "No physical filesystem quota, full-disk runtime, full live-model RGB-D workload or 24-hour resource qualification.",
+    "Five deferred live-model product missions remain paused; all Day 17 checks made zero paid API calls."
+  ],
+  "paid_api_calls": 0
+}

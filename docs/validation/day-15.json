@@ -1,0 +1,695 @@
+{
+  "schema_version": 1,
+  "day": 15,
+  "checkpoint": "process crash and restart recovery",
+  "status": "implementation complete; final campaigns pass; safe blocked stress observation retained",
+  "recorded_at_utc": "2026-09-23T14:39:14.293112+00:00",
+  "source": {
+    "base_commit": "76900778084da4f18606b4f51bfc1d404fcb3f92",
+    "branch": "restart-recovery",
+    "state": "uncommitted implementation on the listed base; exact tested source hashes below",
+    "sha256": {
+      "src/placecell/__init__.py": "75473bbd41206242d12f4e922612709ab0fc7a510da42f518fd62fa48c633d6d",
+      "src/placecell/agent.py": "eb9af5659ac3a4d878807d5bb0220af51c6602b565d80c9e068a3a1c9af85799",
+      "src/placecell/approach.py": "3d728447c63443f91ab1609f321fba0e277cf419cf1f739de2b925f56a9ec8f1",
+      "src/placecell/chat.py": "e85e28f43263a6fcbdac8d669b830d246529aacec5d79f83545923653df6db97",
+      "src/placecell/command_identity.py": "8995ac9e64a99d810e6b3e1c3d91420b6c211a5e5b27f40f5ea66db9e4cc5633",
+      "src/placecell/consolidation.py": "23033a699a82933fbc38ca57b6681d74498dbe9300a1d013facdc78940bffcb6",
+      "src/placecell/corrections.py": "1595c613daa9c31acdc9468ac2d0e8b3a9da5b4341baa99cd1357cfb04c2c12d",
+      "src/placecell/depth.py": "a768281c33a10e96090f3a9ff5d65687fca32ade8e67758d460a9c638c126165",
+      "src/placecell/errors.py": "2c70ef137fc35959f229b3c8d8b562eb570e77203ec17c90f51c55c4c02387f2",
+      "src/placecell/evaluation.py": "dcd8e4e80cb1dc588ad31ecf5256465827fa901e3622920f64e5417cff711ee3",
+      "src/placecell/execution_cases.py": "22e96743f3f42157301d02f11a9f89ab9597f2b07e1a7368be3b3e7ff52197ab",
+      "src/placecell/fault_injection.py": "78df1d129431d9381c7784ece5dec1b86916ed965b4318b5324efc761e1279aa",
+      "src/placecell/lifecycle.py": "8330fa4b336b4ee8f3049f61438550666248b7c1745b713749e5b10c57e1cbee",
+      "src/placecell/localization.py": "8f4efeba5e379b5bd19e44b3f91d7f5521554d33c4e742538673f794df44c3ae",
+      "src/placecell/memory.py": "307835ebe01216073063864d76cdf3c711c43afad0cb7784b9d9586d6451cd04",
+      "src/placecell/migrate.py": "46d1e4eff55bbb9ad5dcb00e1f5d55a2019c2610a85ec5ab8aed820c30ad535d",
+      "src/placecell/mission_context.py": "1a996fc6ca5477e4190845f96f13e49c6f4bc934e898d86a2c2f88c19217e61d",
+      "src/placecell/mission_evaluation.py": "f2eb2354624786e07d223610bec04404326f0b36b47ff780f033a2cd881536ae",
+      "src/placecell/missions.py": "1e951f9c18c8cb1465d818f6cd5226a1947240fd6413963ba84a9b677a32f0d8",
+      "src/placecell/navigation.py": "972be608b355315db00ab1826fde3eaeeb2ed7ed7b22381c0cc812ac4857ccfd",
+      "src/placecell/navigation_ownership.py": "4d8210e3fe973b89c6d3c1149c8a480257330133153684536869ddb322aae724",
+      "src/placecell/object_arrival.py": "75a3e62c0a79c9a3e07c0c1be5407cdf54eae60fabb62032bbea2731c8e60ed1",
+      "src/placecell/object_evaluation.py": "374a99700563884cae9e231bb715227b43915ef4a6ac9fa06b0b4e9b26822179",
+      "src/placecell/object_search.py": "7d970c0783d36f245a9218c952194a687d1e30711661ee10aa9d11fb7fe70286",
+      "src/placecell/object_types.py": "ae574a94bb2d416dd095c8816e7b613e8eafd8a2ed8bac94d719fbfbc9971e1c",
+      "src/placecell/objects.py": "96664681540c586032e537d41bb11fcaf180d5e71b2df4deee3e62d2fb49b2da",
+      "src/placecell/observer.py": "6e3669b09583eb40d51ce0d79c7008c220809cf6dafd48e78f85da24cf0b2e2a",
+      "src/placecell/operator.py": "178fdef134e71c20508d4f799b00e5c599587264d384d6502682f5f3ae71e515",
+      "src/placecell/pipeline.py": "3e4185cafedf9000f7023a1529eee2d193e4a7d7e72c81604c2ca6f8029e020a",
+      "src/placecell/providers/__init__.py": "a8c6d4daa5119f3b92fa6b8833152143b122ef43df459bb780a54872bfc56b9d",
+      "src/placecell/providers/_contracts.py": "89abc7f69c8464dc1b9b0193a22bdc140171991fcae1426e118a79351806293b",
+      "src/placecell/providers/_http.py": "9985cbca3ae09afd0247b9aafe028102ce5be02061c0503d85aa663067fa5557",
+      "src/placecell/providers/base.py": "85e63d710fcb861876c3f1f73c5c5923afdb2dae78f72f7dc8f03e67a1688bca",
+      "src/placecell/providers/captioning.py": "2f88e77113bb716ee79ee3ced1384e8fa93afb563f117fb1d652b53a5b0e9330",
+      "src/placecell/providers/chat.py": "d7146232047b4fb88bcf89f9f16e4c0cb253ae09a004bb633a0609c3ec71f4d2",
+      "src/placecell/providers/clip.py": "4af556a1b0f808bbf15323e3c79a1a1b4c743dba5ccdf759f7df62f6f0f81e1d",
+      "src/placecell/providers/embedding.py": "1d49e3419c83ec5ec9a6e022b4fb630a2be456860cdd624af93c50ccee8cc1a8",
+      "src/placecell/providers/gemini.py": "7b612e927131d2e97721686dcc8956b53d78e566eabb15faaaac316f81cf54ea",
+      "src/placecell/providers/hashing.py": "e798dad790d74c76732169f84f27e89d27ae2881f8ca57e2d442b71e75572f71",
+      "src/placecell/providers/object_detection.py": "df1f7f85fc90023fad14b0b5198bd10cfc4adcd7e41cc93f91e80f784f77ec3f",
+      "src/placecell/providers/openai_compatible.py": "89900bd84cf77e7fcc39bbc9ad3b460faf94f34f2ec86c70f0f95fcbb7a6a437",
+      "src/placecell/providers/openrouter.py": "333319f1b4aaaef099a5f32b5b59dd5ac5102123ad02191b208902bc06742757",
+      "src/placecell/recordings.py": "52ff54579bd16151c1c373c9a58d29ac806e44346a134ceaf3c29e1957b64522",
+      "src/placecell/refinement.py": "8c814c06b9f951ac52e590b332545a3f0762bf8560eec87a55aecaf5d79d3142",
+      "src/placecell/retrieval.py": "215ebccf4cfab9f055302a3c6975f840eb58d3d98090452c6dc3e2f8c2a6bdbf",
+      "src/placecell/ros2/__init__.py": "940365c14b76882518d9a28665cbc1d8c9b8ea899aabfc14a8db3c33f15f8db1",
+      "src/placecell/ros2/approach.py": "580c3afec4e1d53411f647794b8f59c0ddfe425c274040aa4b3e083d5ae11afa",
+      "src/placecell/ros2/bridge.py": "9b95c15d197c570c37f4bdb08ad88863e840b7ac369566d4ef836d69e8ab9734",
+      "src/placecell/ros2/depth.py": "a09eb1a1de3545dc97c0466f7a29e058e1dedc946dbc2fd4ebe0acb55d49bea7",
+      "src/placecell/ros2/navigation.py": "eb51902374f75be2d0629c1d9ea98fdc48584f3cbe4ba0d9538d495275eb1a38",
+      "src/placecell/ros2/node.py": "e7b46ce6108a37ed80bfcc48f9002783e21a00bf5a1298c43e9ff360beeac743",
+      "src/placecell/ros2/operator.py": "97343dd2d9c5a6a2653bc9ddb1477b88c442de543b2a4b0096722786b044fdb6",
+      "src/placecell/ros2/recovery.py": "8fa67cc49ca92403bef60783962d8f9b32b70cb1495ec781c971c555fcafd739",
+      "src/placecell/ros2/speech.py": "8d36d5dd7b9c80035ae980102cc4597d7c81a7fcf93f99284c9a71119a394b3f",
+      "src/placecell/sensors.py": "16b27b4b6029a8407f5f1098476b9cd4f4c716f889737efc820adc3f91a1013a",
+      "src/placecell/sources/__init__.py": "c47d4e85dec0f6b068ead36c31e842a27b21609fb6450b2e2ea3252f921bb613",
+      "src/placecell/sources/pose_log.py": "7386c8a53f10ac52c6d37ddbc7100f1e3cea9a8972ecba8bc405c8e17e4b16b0",
+      "src/placecell/sources/video.py": "4769ad5ce3cf3668de1b3aa6e98e080ba872691a386875096da25bbe9433652f",
+      "src/placecell/speech.py": "a4e80bb56a3ed7f01341b45798f9bf558ff2ebf0c532da7a1594918b136830e1",
+      "src/placecell/store/__init__.py": "afcea33c80520ac6d028ea89a0dcf9e02791e0b62728bc1713fe81edcfdb8bf6",
+      "src/placecell/store/base.py": "0751bcb6cdd5973431ee9d0506ed9e0050b2dc28f02e80341dbfb4b357b56a2b",
+      "src/placecell/store/codec.py": "2f2c647ffcd07909c35b9a43081d594ebff367de19869d28ef7e8882b923c108",
+      "src/placecell/store/in_memory.py": "928a5f85939a0950ed9ffd671c8cd5c62dcdb8d79004b70721cf1095b14c82f9",
+      "src/placecell/store/jobs.py": "d7172e46ab00f342b4801d29e0128b6fe1c8ced8d14f30c31f7ba25f6bd4b1ee",
+      "src/placecell/store/lancedb_store.py": "2ede19716a950acc66de81c442a4cd1f72a26d05451706bbc2645896ad049906",
+      "src/placecell/store/limits.py": "5068b0dc87feb7e4b0224226b0d5b5163b6f591f22e638f9d7a8c8ba0d3481c0",
+      "src/placecell/store/objects.py": "f6967e18ca785cb693d011124d4a199bb1477bfd08f22d77a606ed97707f769f",
+      "src/placecell/store/refinements.py": "8ff01aa31024e625bb3691f2b5386e07697170c93e1632e86dd7830b1433625c",
+      "src/placecell/store/state.py": "5dbc1dec7aecf67af07835a61b80296e0b9ba68cadddf0e580d145a446d69565",
+      "src/placecell/trace_export.py": "7e8a87e45e4f13b5d01d8acccc9e79351aa5a637086f198e62493cd8544fc7cd",
+      "src/placecell/tracing.py": "6ec4d7205827ddccaecc2fad5efe65e7b0e369bb4b8035588e98e3306a480427",
+      "src/placecell/verification.py": "9b36d8537bb248144f2ed3ee98a8311fbe63260d675122e143a8cc029eadd919",
+      "simulation/scripts/activate_navigation.py": "40299db74522780e1970cb1eb66b6ac2460ce259e52c8649c4c3a7f0beae5a89",
+      "simulation/scripts/cancellation_test.py": "302907e02022d45160361c8ddafb4d9226dab4197fc28cc2f3041f195ae243b1",
+      "simulation/scripts/checkpoint_control.py": "df12cb3e376a5dbf6da12c2898cce62c55f86391a931ce448e85f8d7212f6419",
+      "simulation/scripts/checkpoint_fixtures.py": "b4e5cfeeeac90892634a3773cea7b7463a6157c071eaae91346129e2691234f5",
+      "simulation/scripts/checkpoint_live.py": "68ab2bbddf77da0362d7fb54e2de4bdecdd584288960f25439e7aa7a021e646b",
+      "simulation/scripts/checkpoint_sync.py": "fc2f5e910d31373b4f5468a785b2b31e1cbd466c6ff2841cbc1d40d7ac3f7050",
+      "simulation/scripts/command_demo.py": "af6d3b51af0d25cc142e12fa3e8acb4e9a8c457e52968a5993151ef267283fc5",
+      "simulation/scripts/command_guard.py": "cc18334d56d2170b50745559609ed4544a432c418ed039480d5d75321611de8a",
+      "simulation/scripts/control.py": "5beaccece54964dcf999280422e05d04bb6435f23462a9d82506312ee06dd55a",
+      "simulation/scripts/localization_updates.py": "7555947afe4eb10be0a05dc901c603044223c6b2ca55cabba14791f102bf25a6",
+      "simulation/scripts/make_map.py": "a0fd2858b26d5b7cc684bebaeac912ab21bc7344126ecdf574bcaddbb13b9a72",
+      "simulation/scripts/make_robot_mesh.py": "1d9cbf4f274c794f953b516660e02ad61e5fd3c2ffe1f7fc57581f351ebf7ef9",
+      "simulation/scripts/operator_test.py": "020485903b2bfdf85ebb7a45e474d5c89eb86a18e430660c66578611e362488a",
+      "simulation/scripts/pipeline_test.py": "e35ac9d9831b132a1ba6b776e85f6f1089cf3814f8f69b9561b452b9ed3d7aa5",
+      "simulation/scripts/product_missions.py": "ab3643a331778dcc23d54482677feb14c86b05e4fc065a8b10bdec25fbd971ce",
+      "simulation/scripts/product_scene.py": "d09515eed873bd7d1e08b497f479162f444525b24c8153a1a53b841ee82bf167",
+      "simulation/scripts/recovery_test.py": "a4aa7b110278fd8e186c443163eb0cf8b8c46e47dbdfb6f9c2d1f57d6df5e1de",
+      "simulation/scripts/retention_test.py": "83bef6fc271a68481a6d263d41bcc350598f258ad040aa54a7e313d086b92efc",
+      "simulation/scripts/run_product_missions.py": "ce3bb21fc10118d0a38fbf32773e24beb7c59addb77cd820b509e595a3df6510",
+      "simulation/scripts/run_recovery.py": "04dcfd38b39c2611fb42be857357705ef56729bd85356fb415a801e36495e88d",
+      "simulation/scripts/sensor_test.py": "f850a148bdd510d0e1988b31f6d229e26a2881da5a3df721a4d32e2d29de3a2e",
+      "simulation/scripts/smoke_test.py": "41ec7742eaae425883ce27b9425a592f96b07de0a315d63a4ca4395a9d7fc331",
+      "simulation/scripts/video_recorder.py": "ff259c2fad14a7298afe429529a95308dd86ac817f0499e4896c53c688831c44",
+      "scripts/check_recovery.py": "dce8517dbd3cb668ce7396244eaa7ab3986f09f5c8bf3aa26b98ed353b7849d5",
+      "tests/test_navigation_recovery.py": "9616e9842c3d7811376510230a6ec5abfddb94d05ef11f5630ce7c4ec06b2add",
+      "pyproject.toml": "6b365922d3665ac6b39bd33d5ac463e160464ce48f731f24a0088860206d9f2c",
+      "simulation/sim": "6bbcef7b69522ce0fc86edcafe39d009f09b612354815385b0439794011dd96e",
+      ".github/workflows/ci.yml": "e14d8a32d550b68845a1078ef3cd9451b5b0abe70d8b70abecf736fa110eb0c5"
+    }
+  },
+  "environment": {
+    "python": "3.12.3",
+    "packages": {
+      "numpy": "1.26.4",
+      "lancedb": "0.38.0",
+      "pyarrow": "21.0.0",
+      "Pillow": "10.2.0"
+    },
+    "host_python": "3.12.3",
+    "host_kernel": "6.17.0-1032-oem",
+    "architecture": "x86_64",
+    "host_logical_cpus": 16,
+    "ros_distribution": "jazzy",
+    "rclpy": "7.1.12-1noble.20260902.053513",
+    "nav2_bt_navigator": "1.3.13-1noble.20260903.032108",
+    "nav2_controller": "1.3.13-1noble.20260903.032018",
+    "nav2_msgs": "1.3.13-1noble.20260902.082014",
+    "image_tag": "placecell-sim:day15-remap-20260923",
+    "image_manifest_list": "sha256:72cf9f76fc8047356ce4de117a8d0ae133317284eb9dc282597bae4dca4091ff",
+    "image_manifest": "sha256:8d725108659b08f894b90f1837673954aadac13791a0e49781b7b42fce044e0d",
+    "image_config": "sha256:27f16537f7f2a22627f224d18d750e3ffaf93442f660a2410bc2db616eba5ff1",
+    "base_image_manifest_list": "sha256:2125f6e583747168535fcbfe375023ea73490c0cd83805a6ab0da2bdac8c8ead",
+    "isolation": {
+      "network": "none",
+      "user": "1709007072:1709000513",
+      "capabilities": "ALL dropped",
+      "no_new_privileges": true,
+      "gazebo_execution_cancellation": {
+        "cpus": 8,
+        "memory_gib": 16
+      },
+      "persistence_dds_operator_sensors_retention": {
+        "cpus": 4,
+        "memory_gib": 8
+      }
+    },
+    "cancellation_fixture_override": {
+      "path": "simulation/scripts/cancellation_test.py",
+      "sha256": "302907e02022d45160361c8ddafb4d9226dab4197fc28cc2f3041f195ae243b1",
+      "mount": "read-only over the image fixture; adds persistent ownership to the existing latency campaign; all runtime sources match the image"
+    },
+    "earlier_campaign_image": {
+      "image_tag": "placecell-sim:day15-20260923",
+      "image_manifest_list": "sha256:010eec6d8bf7772db43aac94d5b39c6acf448ea0aac9db8bd50576b124135174",
+      "image_manifest": "sha256:24399e7ce2800e496bd3e1650f31ce05df235b0f7a47613025abdbbfb3295cb4",
+      "image_config": "sha256:eebb1795cdd51f87cb7391a1ab08085ed330f7eb0673ecb2b18057bd2aa7d1ed"
+    },
+    "campaign_images": {
+      "earlier_campaign_image": [
+        "persistence",
+        "dds",
+        "gazebo",
+        "execution",
+        "operator",
+        "sensors",
+        "retention",
+        "cancellation"
+      ],
+      "image_manifest_list": [
+        "dds_remapped",
+        "gazebo_remapped",
+        "gazebo_reply_loss"
+      ]
+    },
+    "read_only_overrides": {
+      "src/placecell/navigation_ownership.py": "4d8210e3fe973b89c6d3c1149c8a480257330133153684536869ddb322aae724",
+      "simulation/scripts/recovery_test.py": "a4aa7b110278fd8e186c443163eb0cf8b8c46e47dbdfb6f9c2d1f57d6df5e1de",
+      "simulation/scripts/run_recovery.py": "04dcfd38b39c2611fb42be857357705ef56729bd85356fb415a801e36495e88d"
+    },
+    "override_details": {
+      "navigation_ownership.py": "Later Gazebo campaigns mount the final nil-UUID rejection; the final full unit suite covers both valid and corrupt journals.",
+      "recovery_test.py": "Final Gazebo fixture alternates distant goals, requires exactly one first-leg submission, logs service replies, and optionally drops the first result future.",
+      "run_recovery.py": "Reply-loss run forwards the new explicit fault flag. These final fixture files are retained beside the reports."
+    },
+    "source_audit": {
+      "final_image_mismatches_are_exactly_declared_overrides": true,
+      "earlier_runtime_changes": [
+        "create_recovery resolves the action base before child service names",
+        "NavigationOwnership rejects an all-zero pending UUID before creating ROS clients"
+      ],
+      "unchanged_path_evidence": "Persistence/store/worker, mission controller, command identity and Nav2 in-process transport sources match the earlier tested image. The two startup hardenings are covered by final unit tests and remapped real DDS/Gazebo campaigns."
+    }
+  },
+  "validation": {
+    "unit": {
+      "tests": 1323,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "coverage_percent": 95.61365413011379
+    },
+    "static": {
+      "ruff_check": "passed",
+      "ruff_format": "198 files passed",
+      "mypy": "72 source files passed",
+      "bash_syntax": "passed",
+      "git_diff_check": "passed"
+    },
+    "persistence": {
+      "runs": 42,
+      "passed": 42,
+      "repeat": 3,
+      "backend_checkpoint_pairs": 14,
+      "duration_s": 39.85843657900023,
+      "points": {
+        "sqlite:image_marker": 3,
+        "sqlite:image_renamed": 3,
+        "sqlite:job_accepted": 3,
+        "sqlite:caption_in_flight": 3,
+        "sqlite:embedding_in_flight": 3,
+        "sqlite:memory_uncommitted": 3,
+        "sqlite:memory_committed": 3,
+        "sqlite:job_completed": 3,
+        "sqlite:cleanup_before_unlink": 3,
+        "sqlite:cleanup_after_unlink": 3,
+        "sqlite:failed_job": 3,
+        "lancedb:memory_committed": 3,
+        "lancedb:vector_written": 3,
+        "lancedb:cleanup_after_unlink": 3
+      },
+      "signal": "SIGKILL",
+      "assertions": [
+        "acknowledged baseline preserved",
+        "accepted jobs and images retained",
+        "uncommitted memory rollback",
+        "committed observation never recaptioned or counted twice",
+        "failed job remains failed until explicit retry",
+        "orphan image and interrupted unlink cleanup",
+        "LanceDB projection replay yields one correct result"
+      ]
+    },
+    "dds": {
+      "runs": 21,
+      "passed": 21,
+      "repeat": 3,
+      "points": {
+        "command_reserved": 3,
+        "planning": 3,
+        "reviewing": 3,
+        "reserved": 3,
+        "submitted": 3,
+        "accepted": 3,
+        "terminal": 3
+      },
+      "unrelated_goal_preserved": true,
+      "assertions": [
+        "consumed command identity survives before routing",
+        "planning and review do not replay",
+        "persisted UUID before dispatch remains uncertain if unknown",
+        "surviving accepted goal canceled by exact UUID",
+        "cancel acknowledgement cannot release ownership",
+        "terminal result recovered after controller death before persistence",
+        "zero new goal submissions and zero model calls after restart"
+      ]
+    },
+    "gazebo": {
+      "runs": 6,
+      "passed": 6,
+      "repeat": 3,
+      "points": {
+        "submitted": 3,
+        "accepted": 3
+      },
+      "trials": [
+        {
+          "checkpoint": "submitted",
+          "repeat": 0,
+          "goal_uuid": "f0b80cd8f3474d859e9800103e250863",
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 20
+        },
+        {
+          "checkpoint": "accepted",
+          "repeat": 0,
+          "goal_uuid": "3cc8ce2f4c0b4229a918ff0667af835d",
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "submitted",
+          "repeat": 1,
+          "goal_uuid": "42df21f79b2c4c12bd435d41f8a18024",
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "accepted",
+          "repeat": 1,
+          "goal_uuid": "72ecebd1beba487a9fd74fb0fcc2808c",
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "submitted",
+          "repeat": 2,
+          "goal_uuid": "700a42cc08f747dba2d954b6a8d8ee1f",
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "accepted",
+          "repeat": 2,
+          "goal_uuid": "c80b788415584253ba32d317a8e05f74",
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        }
+      ],
+      "velocity_assertion": "all received simulator velocity samples <0.01 m/s and rad/s over at least 1 second after recovery; drift <0.02 m"
+    },
+    "execution": {
+      "summary": {
+        "runs": 1050,
+        "passed": 1050,
+        "failed": 0,
+        "final_failure_stages": {
+          "": 230,
+          "retrieval": 40,
+          "identity": 80,
+          "geometry": 100,
+          "execution": 600
+        },
+        "wall_duration_ms": 431432.4992839997
+      },
+      "gate": {
+        "required_cases": 100,
+        "required_runs": 1000,
+        "cases": 102,
+        "runs": 1020,
+        "passed_runs": 1020,
+        "excluded_component_runs": 30,
+        "coverage_met": true,
+        "passed": true,
+        "qualification": "Deterministic checkpoint only; held-out, crash-recovery and workload gates remain separate."
+      }
+    },
+    "ros_regressions": {
+      "operator": {
+        "passed": true,
+        "checks": 23
+      },
+      "sensors": {
+        "passed": true,
+        "checks": 14
+      },
+      "retention": {
+        "passed": true,
+        "checks": 10
+      }
+    },
+    "cancellation": {
+      "passed": true,
+      "latency_ms": {
+        "count": 100,
+        "p50": 0.775991999944381,
+        "p95": 1.17709999994986,
+        "p99": 2.563652000389993,
+        "max": 2.6597600003697153,
+        "method": "nearest-rank; monotonic command callback receipt to async cancel API return"
+      },
+      "workload": {
+        "command_executor_threads": 4,
+        "controlled_server_threads": 4,
+        "observation_input_hz": 5,
+        "default_group_callback_delay_s": 0.75,
+        "command_qos_depth": 1,
+        "sim_time": "paused at zero",
+        "persistent_context_and_traces": true,
+        "persistent_navigation_ownership": true
+      },
+      "trace_statuses_match": true
+    },
+    "paid_api_calls": 0,
+    "dds_remapped": {
+      "runs": 21,
+      "passed": 21,
+      "repeat": 3,
+      "action_remapped": true,
+      "unrelated_goal_preserved": true
+    },
+    "gazebo_remapped": {
+      "runs": 6,
+      "passed": 6,
+      "repeat": 3,
+      "action_remapped": true,
+      "first_result_reply_dropped": false,
+      "trials": [
+        {
+          "checkpoint": "submitted",
+          "repeat": 0,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "accepted",
+          "repeat": 0,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "submitted",
+          "repeat": 1,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "accepted",
+          "repeat": 1,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "submitted",
+          "repeat": 2,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "accepted",
+          "repeat": 2,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        }
+      ]
+    },
+    "gazebo_reply_loss": {
+      "runs": 6,
+      "passed": 6,
+      "repeat": 3,
+      "action_remapped": true,
+      "first_result_reply_dropped": true,
+      "trials": [
+        {
+          "checkpoint": "submitted",
+          "repeat": 0,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "accepted",
+          "repeat": 0,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "submitted",
+          "repeat": 1,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "accepted",
+          "repeat": 1,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "submitted",
+          "repeat": 2,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        },
+        {
+          "checkpoint": "accepted",
+          "repeat": 2,
+          "surviving_status": 2,
+          "terminal_status": 5,
+          "new_goal_sends": 0,
+          "new_model_calls": 0,
+          "post_recovery_drift_m": 0.0,
+          "post_recovery_velocity_samples": 21
+        }
+      ]
+    },
+    "completed_passing_crash_trials": 102
+  },
+  "reports": {
+    "persistence": {
+      "path": "simulation/artifacts/day15-20260923/persistence-final/report.json",
+      "sha256": "eb7361cd838d80380afe676d9a6a856ab7e77913ad6a093a33698d262ef11568",
+      "exit_code": 0
+    },
+    "dds": {
+      "path": "simulation/artifacts/day15-20260923/dds-final/report.json",
+      "sha256": "56bf5d3f71a7abb39ebe0afec27d7eade1631f97ffe70514553fc2af07755faa",
+      "exit_code": 0
+    },
+    "gazebo": {
+      "path": "simulation/artifacts/day15-20260923/gazebo-final/results/report.json",
+      "sha256": "437d388463574865ef0af02eb03ae1cd650bf4477ed208b1009064d422cf24ab",
+      "exit_code": 0
+    },
+    "operator": {
+      "path": "simulation/artifacts/day15-20260923/operator/report.json",
+      "sha256": "a4cc1643305ed272fe0c7ed83de8cd33e07fca54bf7564de8c7557c683e7e738",
+      "exit_code": 0
+    },
+    "sensors": {
+      "path": "simulation/artifacts/day15-20260923/sensors/report.json",
+      "sha256": "128e1f53e15f4a2105e777fab5573f55bd25238dc2a8a11221d6c498977825e2",
+      "exit_code": 0
+    },
+    "retention": {
+      "path": "simulation/artifacts/day15-20260923/retention/report.json",
+      "sha256": "b3fd4f82e18325fdf6c2b47d3832e1cd6838de60978bc63ddcc519a52c438baa",
+      "exit_code": 0
+    },
+    "cancellation": {
+      "path": "simulation/artifacts/day15-20260923/cancellation-durable/report.json",
+      "sha256": "40c6b0d91f7cfeb92448a33d3d84a89544a99a6fce84571cda6a43e7d3eb649f",
+      "exit_code": 0
+    },
+    "execution": {
+      "path": "simulation/artifacts/day15-20260923/execution-gate.json",
+      "sha256": "ccbdae306e9c365f75ea7088c90349255c469335f547fda3c6cfb00c3ea980e3",
+      "exit_code": 0
+    },
+    "tests.xml": {
+      "path": "simulation/artifacts/day15-20260923/tests.xml",
+      "sha256": "af61f0c60d7fd070db0baf5cafc4210b62e11fdc39aeeb6b5d03979f9ffc8395"
+    },
+    "unit.log": {
+      "path": "simulation/artifacts/day15-20260923/unit.log",
+      "sha256": "09b7affaf864ad0d96e64e49c8ea6cb86a0ab98811a5a7646448aabaf02e19f3"
+    },
+    "coverage.json": {
+      "path": "simulation/artifacts/day15-20260923/coverage.json",
+      "sha256": "8fb5ce179fd95ece693d21e1964b527670f6d08a3ea226f71fea2c1515cd492f"
+    },
+    "image-sources.json": {
+      "path": "simulation/artifacts/day15-20260923/image-sources.json",
+      "sha256": "6a2672aba1c88646b56b31be3fd0cb29b2dc54901dc980f6a3975c656757ef77"
+    },
+    "tests-final.xml": {
+      "path": "simulation/artifacts/day15-20260923/tests-final.xml",
+      "sha256": "7e9faf527c705c59ba2c5f309e799f02fb8e94be4075e03f5ccd3c2e1d3ea7d1",
+      "exit_code": 0
+    },
+    "unit-final.log": {
+      "path": "simulation/artifacts/day15-20260923/unit-final.log",
+      "sha256": "f73303332d959b62b047a526646f40d86fe4ce4c27d53cabcc1f66ed7a527f4c",
+      "exit_code": 0
+    },
+    "coverage-final.json": {
+      "path": "simulation/artifacts/day15-20260923/coverage-final.json",
+      "sha256": "e505ea1cfe8408760a0573e461d0b7acbcdde396c71fb813c1f540c52f260fcf",
+      "exit_code": 0
+    },
+    "remapped-image-sources.json": {
+      "path": "simulation/artifacts/day15-20260923/remapped-image-sources.json",
+      "sha256": "0fbf3c7d83350bb28e09918d5bcd0f2990fbdefdc323a4523dc7bc9b40026d78",
+      "exit_code": 0
+    },
+    "dds_remapped": {
+      "path": "simulation/artifacts/day15-20260923/dds-remapped/report.json",
+      "sha256": "c4d92a8353abae837632a78c5b2339f40874c70c56a7d65a87a6e3972cf58134",
+      "exit_code": 0
+    },
+    "gazebo_remapped": {
+      "path": "simulation/artifacts/day15-20260923/gazebo-remapped-diagnostic/results/report.json",
+      "sha256": "d5516d21a43e0f757a95c9d1feb6bee9bafaf5d619c8d40d7dcc8bbd73329e0c",
+      "exit_code": 0
+    },
+    "gazebo_reply_loss": {
+      "path": "simulation/artifacts/day15-20260923/gazebo-reply-loss/results/report.json",
+      "sha256": "0ac7c1ad2e6d9041cc85c733eca80860a17cf2fdc0cd9e1991c6a643c2779e01",
+      "exit_code": 0
+    }
+  },
+  "excluded_development_attempts": [
+    {
+      "path": "simulation/artifacts/day15-20260923/dds/report.json",
+      "sha256": "4093a7f0d61f94c5f532ae358a83206898f9851596f62bc642e5bd50b3521dd0",
+      "passed": false,
+      "reason": "An unrelated sentinel goal had a 120-second fixture deadline; it expired at the end of the expanded 21-trial campaign. Increased only the fixture deadline to 600 seconds. Final full DDS campaign passes."
+    },
+    {
+      "paths": [
+        "dds-dev",
+        "gazebo",
+        "persistence",
+        "cancellation"
+      ],
+      "reason": "Earlier passing development runs are not added to final totals; persistence was repeated on the final image to record exact provenance."
+    },
+    {
+      "path": "simulation/artifacts/day15-20260923/gazebo-remapped/results/report.json",
+      "sha256": "599bf6a9115130a83ad5c033ea4ea40aff0e69ae1bea29c0ee644cbecb94303f",
+      "passed": false,
+      "reason": "Reusing one destination brought the robot inside goal tolerance before the crash boundary. Fixed the fixture to alternate distant targets and assert exactly one first-leg submission."
+    }
+  ],
+  "limitations": [
+    "Process SIGKILL on the tested filesystem, not host power loss or kernel crash",
+    "Independent operator attestation is required for missing/unknown or expired goal results; the CLI does not establish physical safety",
+    "One authoritative ownership journal per controller deployment; alternate paths or stale restores cannot coordinate ownership",
+    "In-flight provider work may be retried/charged again; committed observations are idempotent",
+    "No backup/restore, corruption repair, interrupted upgrade or disk-exhaustion qualification",
+    "Cancellation uses a controlled synthetic callback load, not the full RGB-D/provider workload",
+    "No physical robot stopping guarantee or live-model quality claim; five deferred product missions remain paused"
+  ],
+  "observed_limits": [
+    {
+      "report": {
+        "path": "simulation/artifacts/day15-20260923/gazebo-remapped-final/results/report.json",
+        "sha256": "665023edc0fb3e1147fba7727efbe366aa572e7626f94550804c0b75c78cd241",
+        "exit_code": 1
+      },
+      "automatic_recovery": "Three completed trials, then one 30-second recovery timeout with a one-second response deadline. Nav2 logged cancellation; the replacement controller retained its pending UUID and uncertain/busy state, without replay.",
+      "assessment": "The safe ownership contract held. The individual missing-confirmation episode was not reproduced in the subsequent instrumented six-trial campaign or the six deliberately dropped-result trials. Do not interpret the passing final campaigns as proof that intermittent transport recovery delays are eliminated.",
+      "configured_reference_response_timeout_s": 10,
+      "stress_response_timeout_s": 1
+    }
+  ]
+}
