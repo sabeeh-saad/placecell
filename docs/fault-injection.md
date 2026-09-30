@@ -116,7 +116,7 @@ The JSON report includes:
 - Goal submission attempts, cancellation calls, final ownership, queued tasks, scripted
   Python model/verifier fixture calls, virtual elapsed time and measured wall duration.
   For the adapter-boundary scenarios, injected HTTP calls are recorded by the scenario's
-  `one bounded provider call` check; they are separate from the Python fixture counters.
+  `bounded provider calls` check; they are separate from the Python fixture counters.
 - Explicit limitations and zero paid API calls/cost.
 
 Day 4 adds a `trace` report to each result. It captures production-stage events and checks

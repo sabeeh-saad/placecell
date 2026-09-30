@@ -125,7 +125,7 @@ class PlanFixture:
         self.release.set()
         self.malformed = False
 
-    def complete(self, messages, tools):
+    def complete(self, messages, tools, *, tool_choice=None):
         self.calls += 1
         self.blocked.set()
         if not self.release.wait(30):

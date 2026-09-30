@@ -63,7 +63,9 @@ class _Model:
         self.calls = 0
         self.inputs: list[Sequence[ChatMessage]] = []
 
-    def complete(self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> ChatReply:
+    def complete(
+        self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]], *, tool_choice: str | None = None
+    ) -> ChatReply:
         self.calls += 1
         self.inputs.append(messages)
         self.before()
@@ -338,7 +340,9 @@ def _provider_contract_fault(rig: _Rig, fault: str) -> None:
         )
     rig.start()
     rig.checkpoint("invalid provider output refused", "not_found" if visual else "rejected", 0, False)
-    rig.check("one bounded provider call", transport.calls, 1)
+    # A reply without one decodable, well-formed decision call is asked again exactly once.
+    reasked = fault.endswith(("_duplicate", "_extra_field", "_unknown_tool")) and not visual
+    rig.check("bounded provider calls", transport.calls, 2 if reasked else 1)
     rig.check("visible refusal reason", bool(rig.events[-1]["message"]), True)
     if not visual and not reviewing:
         rig.check("review not called after invalid proposal", rig.reviewer.calls, 0)
@@ -366,7 +370,7 @@ def _model_fault(rig: _Rig, fault: str) -> None:
     rig.start()
     expected = "canceled" if fault.endswith("_stop") else "not_found" if fault.endswith("late") else "rejected"
     rig.checkpoint("fault handled", expected, 0, False)
-    rig.check("faulty provider called", model.calls, 1)
+    rig.check("faulty provider called", model.calls, 2 if fault.endswith("malformed") else 1)
     if fault.startswith("planner"):
         rig.check("review never started", rig.reviewer.calls, 0)
 

@@ -16,7 +16,11 @@ Tool calls must use `type: "function"`, a nonblank string ID of at most 128 char
 and a 1–128 character ASCII function name. IDs cannot repeat within a reply. Arguments
 must be an object, never an array, null or a coerced string. The chat adapter accepts at
 most eight tool calls; the mission planner and reviewer each require **exactly one**
-call to their own decision tool, with no accompanying prose.
+call to their own decision tool. Both force that tool (`tool_choice` names the function).
+Text beside a valid call is ignored and never executed. A reply without exactly one call of
+the forced tool, with undecodable arguments or with missing or unknown fields is asked again
+once with a short correction; a second such reply fails closed. Provider errors, truncation,
+refusals and invalid field values are not asked again.
 
 Planner and reviewer arguments retain exact field sets, permitted decision values,
 bounded explanations and bounded destination lists. A review can approve, clarify or
@@ -89,9 +93,9 @@ gate. No new regex intent classifier or claim of complete prompt-injection resis
 ## Compatibility and validation
 
 Providers must now supply explicit completion reasons, unique valid tool IDs, and strict
-decision JSON. A compatibility endpoint that omits completion evidence or returns prose
-alongside a mission tool call will produce a visible refusal; update the endpoint response
-format rather than bypassing validation. Operator command/status schema versions remain
+decision JSON. A compatibility endpoint that omits completion evidence will produce a
+visible refusal; update the endpoint response format rather than bypassing validation.
+The endpoint must accept a named `tool_choice` object. Operator command/status schema versions remain
 unchanged, and valid named, coordinate and ordered-visit flows remain supported at their
 existing input boundaries.
 

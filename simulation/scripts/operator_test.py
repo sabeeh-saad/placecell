@@ -43,7 +43,7 @@ class ScriptedModel:
         self.calls = 0
         self.reviewer = reviewer
 
-    def complete(self, messages, tools):
+    def complete(self, messages, tools, *, tool_choice=None):
         self.calls += 1
         if self.reviewer:
             return ChatReply(None, (ToolCall("r", "review_navigation_plan", {"decision": "approve", "message": "OK"}),))

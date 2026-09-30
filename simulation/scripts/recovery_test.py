@@ -105,7 +105,7 @@ def child(args):
         def __init__(self, reviewer=False):
             self.reviewer = reviewer
 
-        def complete(self, messages, tools):
+        def complete(self, messages, tools, *, tool_choice=None):
             model_calls.append("review" if self.reviewer else "plan")
             if args.child == ("reviewing" if self.reviewer else "planning"):
                 checkpoint()

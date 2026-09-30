@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Force the planner and reviewer decision tools, ignore text beside a valid call, and ask once more when a reply has no valid call before failing.
 - Keep scene-memory targets valid when the robot's own frames reinforce them during a trip; the goal pose still never follows later changes.
 - Never lose or refuse a stop while navigating: deeper command queue, stop/halt/cancel/abort with filler words on text and speech, and stale-target stops cancel the active trip with the mismatch reported.
 - Limit contradiction to the same robot, camera and vector kind, so other cameras, robots and cross-modal vectors no longer supersede memories.

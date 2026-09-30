@@ -10,7 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from placecell.chat import ChatMessage, ChatModel, ChatReply, ToolCall
+from placecell.chat import ChatMessage, ChatModel, ChatReply, MalformedReplyError, ToolCall
 from placecell.errors import ProviderError, ValidationError
 from placecell.providers._contracts import bounded_json
 from placecell.tracing import trace_event, trace_span, traced
@@ -51,18 +51,48 @@ def _tool(name: str, description: str, properties: dict[str, Any]) -> dict[str, 
     }
 
 
-def _decision(model: ChatModel, system: str, data: dict[str, Any], tool: dict[str, Any]) -> dict[str, Any]:
+CORRECTION = (
+    "Your previous reply was not a valid {name} call. Reply only by calling {name} once, "
+    "with exactly its declared fields. Do not answer in prose."
+)
+
+
+def _decision(
+    model: ChatModel,
+    system: str,
+    data: dict[str, Any],
+    tool: dict[str, Any],
+    canceled: Callable[[], bool] = lambda: False,
+) -> dict[str, Any]:
+    """Force the decision tool. A reply without one valid call is asked again once, then fails."""
     try:
         encoded = bounded_json(data, max_chars=32768)
     except ValueError as e:
         raise ValidationError(f"invalid mission task data: {e}") from e
-    with trace_span(
-        "model_call", model=getattr(model, "model_name", type(model).__name__), decision_tool=tool["function"]["name"]
-    ):
-        reply = model.complete([ChatMessage("system", system), ChatMessage("user", encoded)], [tool])
+    name = tool["function"]["name"]
+    messages = [ChatMessage("system", system), ChatMessage("user", encoded)]
+    for attempt in (1, 2):
+        try:
+            with trace_span(
+                "model_call",
+                model=getattr(model, "model_name", type(model).__name__),
+                decision_tool=name,
+                attempt=attempt,
+            ):
+                reply = model.complete(messages, [tool], tool_choice=name)
+            return _arguments(reply, tool)
+        except MalformedReplyError as e:
+            if attempt == 2 or canceled():
+                raise
+            trace_event("decision.retry", decision_tool=name, reason=str(e)[:200])
+            messages = [*messages, ChatMessage("user", CORRECTION.format(name=name))]
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _arguments(reply: ChatReply, tool: dict[str, Any]) -> dict[str, Any]:
+    """Arguments of the one forced call. Text beside it is ignored, never executed."""
     if (
         not isinstance(reply, ChatReply)
-        or reply.content not in (None, "")
         or not isinstance(reply.tool_calls, tuple)
         or len(reply.tool_calls) != 1
         or not isinstance(reply.tool_calls[0], ToolCall)
@@ -71,14 +101,14 @@ def _decision(model: ChatModel, system: str, data: dict[str, Any], tool: dict[st
         or len(reply.tool_calls[0].id) > 128
         or reply.tool_calls[0].name != tool["function"]["name"]
     ):
-        raise ProviderError("mission agent must return exactly one structured decision")
+        raise MalformedReplyError("mission agent must return exactly one structured decision")
     arguments = reply.tool_calls[0].arguments
     if not isinstance(arguments, dict) or set(arguments) != set(tool["function"]["parameters"]["properties"]):
-        raise ProviderError("mission agent returned missing or unknown decision fields")
+        raise MalformedReplyError("mission agent returned missing or unknown decision fields")
     try:
         bounded_json(arguments, max_chars=16384)
     except ValueError as e:
-        raise ProviderError(f"invalid mission decision: {e}") from e
+        raise MalformedReplyError(f"invalid mission decision: {e}") from e
     return arguments
 
 
@@ -155,6 +185,7 @@ class PlanReviewAgent:
         context: Sequence[dict[str, Any]] = (),
         *,
         configured_places: tuple[str, ...] = (),
+        canceled: Callable[[], bool] = lambda: False,
     ) -> MissionPlan:
         tool = _tool(
             "review_navigation_plan",
@@ -174,6 +205,7 @@ class PlanReviewAgent:
                 "destinations": plan.destinations,
             },
             tool,
+            canceled,
         )
         decision, message = result["decision"], result["message"]
         if decision not in ("approve", "clarify", "reject"):
@@ -187,7 +219,7 @@ class PlanReviewAgent:
 
 
 class MissionPlanner:
-    """Two bounded agent calls: propose intent, then independently review the proposal."""
+    """Two bounded agent roles: propose intent, then independently review the proposal."""
 
     def __init__(self, model: ChatModel, reviewer: PlanReviewAgent, *, max_destinations: int = 8) -> None:
         if type(max_destinations) is not int or not 1 <= max_destinations <= 20:
@@ -237,6 +269,7 @@ class MissionPlanner:
             PLANNER_PROMPT,
             {"recent_context": list(context), "configured_places": configured_places, "instruction": instruction},
             tool,
+            canceled,
         )
         destinations = result["destinations"]
         if not isinstance(destinations, list) or len(destinations) > self._limit:
@@ -253,7 +286,9 @@ class MissionPlanner:
             raise ValidationError("mission planning canceled or expired")
         if plan.decision != "ready":
             return plan
-        reviewed = self._reviewer.review(instruction, plan, context, configured_places=configured_places)
+        reviewed = self._reviewer.review(
+            instruction, plan, context, configured_places=configured_places, canceled=canceled
+        )
         if canceled():
             raise ValidationError("mission review canceled or expired")
         return reviewed

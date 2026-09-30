@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import pytest
 
-from placecell import ChatReply, Pose, ToolCall
+from placecell import ChatReply, MissionPlanner, PlanReviewAgent, Pose, ToolCall
 from placecell.errors import ProviderError, ValidationError
 from placecell.providers._contracts import strict_json
 from placecell.providers._http import MAX_RESPONSE_BYTES, RetryPolicy, UrllibTransport, decode_body, message
@@ -18,8 +18,8 @@ from placecell.providers.chat import OpenAICompatibleChat
 from placecell.providers.object_detection import ChatObjectDetector, GeminiObjectDetector
 from placecell.verification import VisionVerifier
 from tests.conftest import FakeTransport, embedded
+from tests.test_missions import Model, proposal, review
 from tests.test_missions import mission as mission
-from tests.test_missions import proposal, review
 from tests.test_object_detection import image as image
 
 
@@ -63,11 +63,48 @@ def test_wrong_reply_shapes_raise_provider_errors(body):
 
 def test_duplicate_decision_cannot_dispatch_a_mission(mission):
     raw = '{"decision":"reject","decision":"ready","destinations":["printer"],"message":"Go"}'
-    mission.commands._mission_planner._model = chat(completion(raw))
+    transport = FakeTransport([(200, {}, completion(raw))] * 2)
+    mission.commands._mission_planner._model = OpenAICompatibleChat("scripted", transport=transport)
     mission.commands.handle("Visit printer")
     mission.tasks.pop(0)()
-    assert not mission.nav.sent and not mission.critic.calls
+    assert not mission.nav.sent and not mission.critic.calls and len(transport.requests) == 2
     assert mission.events[-1].state == "rejected" and mission.events[-1].message
+
+
+def test_chat_adapter_forces_a_named_tool_and_marks_undecodable_calls():
+    from placecell.chat import MalformedReplyError
+
+    tool = {"type": "function", "function": {"name": "propose_navigation_plan", "parameters": {}}}
+    model = chat(completion("{}"))
+    model.complete([], [tool], tool_choice="propose_navigation_plan")
+    assert model._endpoint.transport.requests[0]["payload"]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "propose_navigation_plan"},
+    }
+    model = chat(completion("{}"))
+    model.complete([], [tool])
+    assert model._endpoint.transport.requests[0]["payload"]["tool_choice"] == "auto"
+    for tools in ([tool], []):
+        with pytest.raises(ValidationError, match="offered"):
+            chat(completion("{}")).complete([], tools, tool_choice="drive")
+    for raw in ('{"decision":"ready"', "[]", '{"a":1,"a":2}'):
+        with pytest.raises(MalformedReplyError):
+            chat(completion(raw)).complete([], [tool])
+    with pytest.raises(ProviderError) as error:
+        chat(completion("{}", refusal="No.")).complete([], [tool])
+    assert not isinstance(error.value, MalformedReplyError)
+
+
+def test_undecodable_tool_arguments_are_asked_again_once_through_the_adapter():
+    valid = json.dumps({"decision": "ready", "destinations": ["printer"], "message": "One visit."})
+    transport = FakeTransport([(200, {}, completion('{"decision":"ready",')), (200, {}, completion(valid))])
+    planner = MissionPlanner(OpenAICompatibleChat("scripted", transport=transport), PlanReviewAgent(Model(review())))
+    assert planner.plan("Visit the printer").destinations == ("printer",)
+    first, second = (request["payload"] for request in transport.requests)
+    assert [m["role"] for m in second["messages"]] == ["system", "user", "user"]
+    assert second["messages"][:2] == first["messages"]
+    forced = {"type": "function", "function": {"name": "propose_navigation_plan"}}
+    assert first["tool_choice"] == second["tool_choice"] == forced
 
 
 @pytest.mark.parametrize(
@@ -144,7 +181,6 @@ def test_structured_json_is_bounded_and_unambiguous(raw):
         {},
         ChatReply(None, (None,)),
         ChatReply(None, (ToolCall("p", "propose_navigation_plan", None),)),
-        ChatReply("Do not move", proposal().tool_calls),
         proposal(x=7),
         proposal(action="drive"),
         proposal(("x" * 501,)),
@@ -161,7 +197,7 @@ def test_structured_json_is_bounded_and_unambiguous(raw):
     ],
 )
 def test_injected_model_contract_violations_report_rejection_without_motion(mission, reply):
-    mission.model.replies[:] = [reply]
+    mission.model.replies[:] = [reply, reply]
     mission.commands.handle("Visit printer")
     mission.tasks.pop(0)()
     assert not mission.nav.sent and not mission.critic.calls and not mission.commands.busy

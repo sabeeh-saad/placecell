@@ -68,8 +68,10 @@ key from `mission_api_key_env` or `mission_review_api_key_env`, or runs without 
 [provider credentials](operations.md#provider-credentials)). Planning and review each
 have an eight-second provider timeout and no automatic retries; the overall existing
 `navigation_lookup_timeout_s` also bounds planning. `mission_max_destinations` defaults
-to eight, configurable from one to twenty. Plain prose, malformed output, extra fields,
-over-limit plans, interrupted completions and provider errors cannot start a mission.
+to eight, configurable from one to twenty. Both calls force their decision tool; text beside
+the call is ignored. A reply without a valid call is asked again once, so a role can take two
+provider calls. Malformed output, extra fields, over-limit plans, interrupted completions and
+provider errors cannot start a mission.
 
 Both typed requests and completed speech transcripts enter the same topic:
 

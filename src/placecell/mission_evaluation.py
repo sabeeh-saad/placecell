@@ -400,7 +400,9 @@ class _ScriptedChat:
         self.reply = reply
         self.calls = 0
 
-    def complete(self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> ChatReply:
+    def complete(
+        self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]], *, tool_choice: str | None = None
+    ) -> ChatReply:
         self.calls += 1
         if self.calls > 1 or self.reply is None:
             raise ProviderError("script has no reply for this call")

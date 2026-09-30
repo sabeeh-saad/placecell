@@ -70,9 +70,9 @@ class MeteredChat(OpenAICompatibleChat):
         )
         self.stage, self.budget = stage, budget
 
-    def complete(self, messages: Any, tools: Any) -> Any:
+    def complete(self, messages: Any, tools: Any, *, tool_choice: str | None = None) -> Any:
         self.budget.stage = self.stage
-        return super().complete(messages, tools)
+        return super().complete(messages, tools, tool_choice=tool_choice)
 
 
 def run_planning(

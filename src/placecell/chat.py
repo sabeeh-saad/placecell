@@ -6,6 +6,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from placecell.errors import ProviderError
+
 
 @dataclass(frozen=True, slots=True)
 class ToolCall:
@@ -30,8 +32,17 @@ class ChatReply:
     tool_calls: tuple[ToolCall, ...] = ()
 
 
+class MalformedReplyError(ProviderError):
+    """The model answered, but its tool call could not be decoded. Asking again may help."""
+
+
 @runtime_checkable
 class ChatModel(Protocol):
-    """Contract for the reasoning backend: messages and tool schemas in, one reply out."""
+    """Contract for the reasoning backend: messages and tool schemas in, one reply out.
 
-    def complete(self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> ChatReply: ...
+    `tool_choice` names the one offered tool the reply must call; None lets the model decide.
+    """
+
+    def complete(
+        self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]], *, tool_choice: str | None = None
+    ) -> ChatReply: ...

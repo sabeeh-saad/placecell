@@ -54,11 +54,11 @@ class BlockingModel(ScriptedModel):
         self.entered, self.release = threading.Event(), threading.Event()
         self.release.set()
 
-    def complete(self, messages, tools):
+    def complete(self, messages, tools, *, tool_choice=None):
         self.entered.set()
         if not self.release.wait(10):
             raise TimeoutError("scripted model remained blocked")
-        return super().complete(messages, tools)
+        return super().complete(messages, tools, tool_choice=tool_choice)
 
 
 class Check:

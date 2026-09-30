@@ -52,10 +52,12 @@ class Model:
     def __init__(self, *replies):
         self.replies = list(replies)
         self.calls = []
+        self.choices = []
         self.before_reply = lambda: None
 
-    def complete(self, messages, tools):
+    def complete(self, messages, tools, *, tool_choice=None):
         self.calls.append((messages, tools))
+        self.choices.append(tool_choice)
         self.before_reply()
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
@@ -113,8 +115,68 @@ def test_reviewer_can_block_an_otherwise_valid_plan(decision):
 def test_malformed_or_over_budget_plans_never_reach_the_reviewer(reply):
     critic = Model(review())
     with pytest.raises((ProviderError, ValidationError)):
-        MissionPlanner(Model(reply), PlanReviewAgent(critic)).plan("visit places")
+        MissionPlanner(Model(reply, reply), PlanReviewAgent(critic)).plan("visit places")
     assert not critic.calls
+
+
+def test_planner_and_reviewer_force_their_own_decision_tool():
+    model, critic = Model(proposal()), Model(review())
+    MissionPlanner(model, PlanReviewAgent(critic)).plan("Visit the printer, then the cupboard")
+    assert model.choices == ["propose_navigation_plan"] and critic.choices == ["review_navigation_plan"]
+    assert [t["function"]["name"] for t in model.calls[0][1] + critic.calls[0][1]] == [
+        "propose_navigation_plan",
+        "review_navigation_plan",
+    ]
+
+
+def test_text_beside_a_valid_decision_is_ignored_and_never_executed():
+    chatty = ChatReply("Sure! Driving to the loading dock first.", proposal().tool_calls)
+    model, critic = Model(chatty), Model(ChatReply("Looks right to me.", review().tool_calls))
+    plan = MissionPlanner(model, PlanReviewAgent(critic)).plan("Visit the printer, then the cupboard")
+    assert plan.destinations == ("printer", "cupboard") and len(model.calls) == len(critic.calls) == 1
+    assert "loading dock" not in json.dumps(critic.calls[0][0][1].content)
+
+
+@pytest.mark.parametrize(
+    "violation",
+    [
+        ChatReply("I would go to the printer and then the cupboard."),
+        ChatReply(None, (ToolCall("1", "drive", {"x": 1}),)),
+        ChatReply(None, proposal().tool_calls * 2),
+        proposal(x=3),
+    ],
+)
+def test_a_reply_without_a_valid_decision_call_is_asked_again_once(violation):
+    model, critic = Model(violation, proposal()), Model(review())
+    plan = MissionPlanner(model, PlanReviewAgent(critic)).plan("Visit the printer, then the cupboard")
+    assert plan.destinations == ("printer", "cupboard") and len(model.calls) == 2
+    first, second = model.calls[0][0], model.calls[1][0]
+    assert second[:2] == first and second[2].role == "user" and "propose_navigation_plan" in second[2].content
+    assert model.choices == ["propose_navigation_plan"] * 2
+
+
+def test_second_invalid_reply_fails_closed_and_errors_or_bad_values_are_not_reasked():
+    model, critic = Model(ChatReply("prose"), ChatReply("more prose"), proposal()), Model(review())
+    with pytest.raises(ProviderError, match="exactly one structured decision"):
+        MissionPlanner(model, PlanReviewAgent(critic)).plan("visit the printer")
+    assert len(model.calls) == 2 and not critic.calls
+    for failure in (ProviderError("HTTP 503"), TimeoutError("slow"), proposal(decision="drive"), proposal(("",))):
+        model = Model(failure, proposal())
+        with pytest.raises((ProviderError, ValidationError, TimeoutError)):
+            MissionPlanner(model, PlanReviewAgent(Model(review()))).plan("visit the printer")
+        assert len(model.calls) == 1
+    critic = Model(ChatReply("approved"), ChatReply("approved"))
+    with pytest.raises(ProviderError, match="exactly one structured decision"):
+        MissionPlanner(Model(proposal()), PlanReviewAgent(critic)).plan("visit the printer")
+    assert len(critic.calls) == 2
+
+
+def test_canceled_planning_is_not_asked_again():
+    model, canceled = Model(ChatReply("prose"), proposal()), [False]
+    model.before_reply = lambda: canceled.__setitem__(0, True)
+    with pytest.raises(ProviderError):
+        MissionPlanner(model, PlanReviewAgent(Model(review()))).plan("visit the printer", lambda: canceled[0])
+    assert len(model.calls) == 1
 
 
 def test_clarification_needs_no_review_and_canceled_work_needs_no_model():
@@ -521,7 +583,7 @@ def test_malformed_review_cannot_approve_a_plan(kind):
     else:
         reply = ChatReply(None, (ToolCall("1", "review_navigation_plan", {"decision": "approve", "message": ""}),))
     with pytest.raises((ProviderError, ValidationError)):
-        MissionPlanner(Model(proposal()), PlanReviewAgent(Model(reply))).plan("visit printer then cupboard")
+        MissionPlanner(Model(proposal()), PlanReviewAgent(Model(reply, reply))).plan("visit printer then cupboard")
 
 
 def test_invalid_context_or_plan_payloads_are_rejected():

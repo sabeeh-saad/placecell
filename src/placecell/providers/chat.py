@@ -9,8 +9,8 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from placecell.chat import ChatMessage, ChatModel, ChatReply, ToolCall
-from placecell.errors import ProviderError, ValidationError
+from placecell.chat import ChatMessage, ChatModel, ChatReply, MalformedReplyError, ToolCall
+from placecell.errors import ValidationError
 from placecell.providers._contracts import bounded_json, completion_message, completion_text, strict_json
 from placecell.providers._http import Endpoint, RetryPolicy, Transport
 
@@ -44,16 +44,22 @@ class OpenAICompatibleChat(ChatModel):
     def model_name(self) -> str:
         return self._model
 
-    def complete(self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> ChatReply:
+    def complete(
+        self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]], *, tool_choice: str | None = None
+    ) -> ChatReply:
         payload: dict[str, Any] = {
             "model": self._model,
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
             "messages": [_encode(m) for m in messages],
         }
+        if tool_choice is not None and tool_choice not in {t.get("function", {}).get("name") for t in tools}:
+            raise ValidationError("tool_choice must name one of the offered tools")
         if tools:
             payload["tools"] = list(tools)
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = (
+                "auto" if tool_choice is None else {"type": "function", "function": {"name": tool_choice}}
+            )
         return _decode(self._endpoint.post(payload))
 
 
@@ -101,5 +107,5 @@ def _decode(body: Any) -> ChatReply:
             bounded_json(parsed, max_chars=65536)
             calls.append(ToolCall(call_id, name, parsed))
     except (KeyError, TypeError, ValueError) as e:
-        raise ProviderError(f"malformed chat completion: {e}") from e
+        raise MalformedReplyError(f"malformed chat completion: {e}") from e
     return ChatReply(content, tuple(calls))
