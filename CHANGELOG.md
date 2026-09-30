@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Request strict JSON-schema verdicts from the verifier, accept exactly one surrounding code fence, and raise caption/verification budgets for thinking models (`caption_max_tokens` 1024, `verification_max_tokens` 2048, `verification_structured_output`).
 - Honour `Retry-After` up to 60 s and fail fast beyond it, jitter backoff, map http.client failures to provider errors, and repeat server/transport errors only for idempotent embedding calls.
 - Support reasoning-model chat requests: new `chat_`/`mission_` `max_tokens`, `token_parameter` (`max_completion_tokens`) and `temperature` (negative omits it) parameters; defaults unchanged.
 - Force the planner and reviewer decision tools, ignore text beside a valid call, and ask once more when a reply has no valid call before failing.

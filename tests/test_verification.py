@@ -361,3 +361,71 @@ def test_malformed_verification_answers_fail_closed(answer):
         verifier.verify("printer", "data:image/jpeg;base64,YQ==")
     with pytest.raises(ValidationError):
         verifier.verify("printer", "https://example.org/image.jpg")
+
+
+def _answer(content, finish_reason="stop"):
+    return {"choices": [{"finish_reason": finish_reason, "message": {"content": content}}]}
+
+
+VERDICT = '{"result":"matched","reason":"Printer visible"}'
+
+
+@pytest.mark.parametrize(
+    "content",
+    [f"```json\n{VERDICT}\n```", f"```\n{VERDICT}\n```", f"  ```JSON\n{VERDICT}```\n", f"```json\r\n{VERDICT}\r\n```"],
+)
+def test_one_surrounding_code_fence_is_accepted(content):
+    verifier = VisionVerifier("vision", "http://localhost/v1", transport=FakeTransport([(200, {}, _answer(content))]))
+    assert verifier.verify("printer", "data:image/jpeg;base64,YQ==") == SceneVerdict("matched", "Printer visible")
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        f"Here is my answer:\n```json\n{VERDICT}\n```",
+        f"```json\n{VERDICT}\n```\nI am confident.",
+        f"```json\n{VERDICT}\n```\n```json\n{VERDICT}\n```",
+        f"```json\n{VERDICT}",
+        f"```python\n{VERDICT}\n```",
+        f"```json\n```json\n{VERDICT}\n```\n```",
+        '```json\n{"result":"not_matched","result":"matched","reason":"x"}\n```',
+        '```json\n{"result":"matched","reason":"x","navigate_to":"cupboard"}\n```',
+        "```json\n" + json.dumps({"result": "matched", "reason": "x" * 1001}) + "\n```",
+    ],
+)
+def test_anything_beyond_one_fence_or_invalid_fenced_json_fails_closed(content):
+    verifier = VisionVerifier("vision", "http://localhost/v1", transport=FakeTransport([(200, {}, _answer(content))]))
+    with pytest.raises(ProviderError):
+        verifier.verify("printer", "data:image/jpeg;base64,YQ==")
+
+
+def test_fenced_but_truncated_verdict_still_fails_closed():
+    body = _answer(f"```json\n{VERDICT}\n```", finish_reason="length")
+    verifier = VisionVerifier("vision", "http://localhost/v1", transport=FakeTransport([(200, {}, body)]))
+    with pytest.raises(ProviderError):
+        verifier.verify("printer", "data:image/jpeg;base64,YQ==")
+
+
+def test_verifier_requests_strict_schema_output_with_a_reasoning_budget():
+    query = json.dumps({"query": "printer", "reason": "Printing purpose."})
+    transport = FakeTransport([(200, {}, _answer(VERDICT)), (200, {}, _answer(f"```json\n{query}\n```"))])
+    verifier = VisionVerifier("vision", "http://localhost/v1", transport=transport)
+    verifier.verify("printer", "data:image/jpeg;base64,YQ==")
+    assert verifier.search_query("something to print on", ("printer", "chair")) == "printer"
+    verdict, search = (request["payload"] for request in transport.requests)
+    assert verdict["max_tokens"] == search["max_tokens"] == 2048
+    schema = verdict["response_format"]["json_schema"]
+    assert verdict["response_format"]["type"] == "json_schema" and schema["strict"] is True
+    assert schema["schema"]["required"] == ["result", "reason"] and not schema["schema"]["additionalProperties"]
+    assert search["response_format"]["json_schema"]["strict"] is True
+    assert search["response_format"]["json_schema"]["schema"]["properties"]["query"]["enum"] == ["", "printer", "chair"]
+    transport = FakeTransport([(200, {}, _answer(VERDICT)), (200, {}, _answer(query))])
+    plain = VisionVerifier(
+        "vision", "http://localhost/v1", transport=transport, max_tokens=300, structured_output=False
+    )
+    plain.verify("printer", "data:image/jpeg;base64,YQ==")
+    plain.search_query("something to print on", ("printer",))
+    assert all("response_format" not in r["payload"] and r["payload"]["max_tokens"] == 300 for r in transport.requests)
+    for budget in (0, 1.5, True):
+        with pytest.raises(ValidationError):
+            VisionVerifier("vision", "http://localhost/v1", max_tokens=budget)

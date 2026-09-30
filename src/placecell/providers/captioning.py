@@ -28,7 +28,11 @@ DEFAULT_PROMPT = (
 
 
 class OpenAICompatibleCaptioner:
-    """Describes frames with a vision-language model through `/chat/completions`."""
+    """Describes frames with a vision-language model through `/chat/completions`.
+
+    `max_tokens` also covers the hidden reasoning of thinking models. A caption needs about
+    80 tokens; the default leaves room for reasoning, and a truncated reply still fails.
+    """
 
     def __init__(
         self,
@@ -36,7 +40,7 @@ class OpenAICompatibleCaptioner:
         base_url: str = "https://api.openai.com/v1",
         api_key: str | None = None,
         prompt: str = DEFAULT_PROMPT,
-        max_tokens: int = 120,
+        max_tokens: int = 1024,
         detail: str = "low",
         timeout_s: float = 60.0,
         transport: Transport | None = None,

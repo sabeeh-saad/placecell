@@ -171,7 +171,10 @@ Set `verification_model` and optionally `verification_base_url` to a vision endp
 They default to `caption_model` and `caption_base_url`, sharing the captioning key. A
 separate URL gets `PLACECELL_API_KEY` only on `chat_base_url`'s scheme, host and port;
 otherwise name its key variable with `verification_api_key_env`. Each verification request has an
-eight-second timeout and no automatic retries. Without a verifier, memory destinations
+eight-second timeout and no automatic retries. It asks for strict JSON-schema output; set
+`verification_structured_output:=false` for a server that rejects `response_format`.
+`verification_max_tokens` (2048) bounds the reply including hidden reasoning, see
+[model request options](operations.md#model-request-options). Without a verifier, memory destinations
 are unavailable; configured named places and numeric coordinates still work. Using the
 same model for captioning and verification can repeat the same mistake; query-specific
 pixel checks reduce reliance on caption retrieval but do not establish ground truth.

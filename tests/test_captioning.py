@@ -39,6 +39,16 @@ def test_captioner_sends_the_image_as_a_data_url_and_returns_clean_text(image: P
     assert parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,/9j/")
     assert parts[1]["image_url"]["detail"] == "high"
     assert request["payload"]["temperature"] == 0
+    assert request["payload"]["max_tokens"] == 1024  # room for thinking models' hidden reasoning
+
+
+def test_captioner_budget_is_configurable_and_truncation_still_fails(image: Path) -> None:
+    truncated = (200, {}, {"choices": [{"finish_reason": "length", "message": {"content": "A grey"}}]})
+    transport = FakeTransport([truncated])
+    captioner = OpenAICompatibleCaptioner("vlm", max_tokens=4096, transport=transport)
+    with pytest.raises(ProviderError):
+        captioner.caption([Evidence(EvidenceKind.FRAME, str(image))])
+    assert transport.requests[0]["payload"]["max_tokens"] == 4096
 
 
 def test_captioner_skips_clips_and_keeps_order(image: Path) -> None:

@@ -159,6 +159,9 @@ guessed from its name. Reasoning tokens count against the budget, so raise it to
 | `chat_max_tokens`, `mission_max_tokens` | 400, 2048 | chat and consolidation; planning and review |
 | `chat_token_parameter`, `mission_token_parameter` | `max_tokens` | or `max_completion_tokens` |
 | `chat_temperature`, `mission_temperature` | 0.0 | a negative value omits `temperature` |
+| `caption_max_tokens` | 1024 | captioning and refinement |
+| `verification_max_tokens` | 2048 | visual verification and search-query grounding |
+| `verification_structured_output` | true | request strict JSON-schema verdicts |
 
 ```bash
 placecell-ros2 --ros-args \
@@ -167,6 +170,12 @@ placecell-ros2 --ros-args \
   -p mission_temperature:=-1.0 \
   -p mission_max_tokens:=8192
 ```
+
+Caption and verification budgets are caps, not targets: a caption needs about 80 tokens and
+a verdict about 100, so ordinary models stop far below them. Thinking models spend hidden
+reasoning tokens from the same budget first, so the earlier 120 and 512 could end a reply at
+`length` before any answer. A reply cut off at the limit still fails, and a failed caption is
+retried by the ingestion queue, so a too-small budget costs more than a generous one.
 
 ## Collection compatibility and evidence
 

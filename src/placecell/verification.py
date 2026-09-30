@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from placecell.errors import ProviderError, ValidationError
-from placecell.providers._contracts import completion_message, completion_text, strict_json
+from placecell.providers._contracts import completion_message, completion_text, strict_json, unfenced
 from placecell.providers._http import Endpoint, RetryPolicy, Transport
 
 
@@ -32,11 +32,24 @@ class SemanticQueryResolver(SceneVerifier, Protocol):
     def search_query(self, target: str, observed_labels: tuple[str, ...]) -> str: ...
 
 
+VERDICT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "result": {"type": "string", "enum": ["matched", "not_matched", "uncertain"]},
+        "reason": {"type": "string"},
+    },
+    "required": ["result", "reason"],
+    "additionalProperties": False,
+}
+
+
 class VisionVerifier:
     """Check pixels against the user's destination through a vision chat endpoint.
 
     No stored caption is supplied. Malformed answers and transport failures never
     authorize navigation. A positive answer is model evidence, not ground truth.
+    `structured_output` requests strict JSON-schema output; turn it off for servers that
+    reject `response_format`. `max_tokens` includes any hidden reasoning of thinking models.
     """
 
     def __init__(
@@ -47,16 +60,28 @@ class VisionVerifier:
         *,
         timeout_s: float = 8.0,
         transport: Transport | None = None,
+        max_tokens: int = 2048,
+        structured_output: bool = True,
     ) -> None:
         if not model.strip():
             raise ValidationError("a vision verification model is required")
-        self._model = model
+        if type(max_tokens) is not int or max_tokens < 1:
+            raise ValidationError("max_tokens must be a positive integer")
+        self._model, self._max_tokens, self._structured_output = model, max_tokens, structured_output
         self._endpoint = Endpoint.build(
             base_url, "/chat/completions", api_key, timeout_s, transport, RetryPolicy(attempts=1), time.sleep, None
         )
 
     def verify(self, target: str, image_url: str) -> SceneVerdict:
         return self._verify(target, image_url)
+
+    def _response_format(self, name: str, schema: dict[str, Any]) -> dict[str, Any]:
+        """Strict mode rejects length keywords, so lengths are checked after parsing."""
+        if not self._structured_output:
+            return {}
+        return {
+            "response_format": {"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}}
+        }
 
     def search_query(self, target: str, observed_labels: tuple[str, ...]) -> str:
         """Expand a purpose description using only observed categories; never choose a pose or identity."""
@@ -67,26 +92,18 @@ class VisionVerifier:
             or any(not name.strip() or len(name) > 100 for name in observed_labels)
         ):
             raise ValidationError("semantic search needs a bounded target and observed categories")
+        schema = {
+            "type": "object",
+            "properties": {"query": {"type": "string", "enum": ["", *observed_labels]}, "reason": {"type": "string"}},
+            "required": ["query", "reason"],
+            "additionalProperties": False,
+        }
         response = self._endpoint.post(
             {
                 "model": self._model,
                 "temperature": 0,
-                "max_tokens": 256,
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "grounded_search_query",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "query": {"type": "string", "enum": ["", *observed_labels]},
-                                "reason": {"type": "string", "minLength": 1, "maxLength": 500},
-                            },
-                            "required": ["query", "reason"],
-                            "additionalProperties": False,
-                        },
-                    },
-                },
+                "max_tokens": self._max_tokens,
+                **self._response_format("grounded_search_query", schema),
                 "messages": [
                     {
                         "role": "system",
@@ -109,7 +126,7 @@ class VisionVerifier:
         try:
             text = completion_text(completion_message(response))
             assert text is not None
-            value = strict_json(text, max_chars=4096)
+            value = strict_json(unfenced(text), max_chars=4096)
             if (
                 not isinstance(value, dict)
                 or set(value) != {"query", "reason"}
@@ -147,7 +164,8 @@ class VisionVerifier:
             {
                 "model": self._model,
                 "temperature": 0,
-                "max_tokens": 512,
+                "max_tokens": self._max_tokens,
+                **self._response_format("visual_verdict", VERDICT_SCHEMA),
                 "messages": [
                     {
                         "role": "system",
@@ -179,7 +197,7 @@ class VisionVerifier:
         try:
             text = completion_text(completion_message(response), max_chars=16384)
             assert text is not None
-            value = strict_json(text, max_chars=16384)
+            value = strict_json(unfenced(text), max_chars=16384)
             if (
                 not isinstance(value, dict)
                 or set(value) != {"result", "reason"}

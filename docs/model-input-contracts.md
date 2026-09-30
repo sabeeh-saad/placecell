@@ -29,6 +29,10 @@ cannot reach the navigator. Model-generated destination text still goes through 
 place or memory resolution; it does not gain the direct coordinate-command capability.
 
 Visual verification and object comparison require exactly `result` and `reason`.
+The verifier requests strict JSON-schema output where the endpoint supports it. Its reply
+may be wrapped in exactly one surrounding markdown code fence (```` ```json ```` or bare);
+prose around the fence, a second fence, or an unterminated fence still fails, and the
+fenced JSON gets the same duplicate-field, extra-field and size checks.
 Object absence requires exactly `result`; detections require exactly `label`,
 `description` and `box_2d` for each item. Extra fields invalidate the entire result.
 Native detector replies require one completed candidate and bounded text-only parts;

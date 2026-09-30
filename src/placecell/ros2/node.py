@@ -553,7 +553,11 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 from placecell.providers import OpenAICompatibleCaptioner
 
                 captioner = OpenAICompatibleCaptioner(
-                    p["caption_model"], caption_url, caption_key, retry=RetryPolicy(attempts=1)
+                    p["caption_model"],
+                    caption_url,
+                    caption_key,
+                    max_tokens=p["caption_max_tokens"],
+                    retry=RetryPolicy(attempts=1),
                 )
             if captioner is None and not embedder.capabilities.image:
                 self.get_logger().warning(
@@ -606,7 +610,12 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 from placecell.providers import OpenAICompatibleCaptioner
 
                 reviewer = OpenAICompatibleCaptioner(
-                    refinement_model, caption_url, caption_key, prompt=REFINEMENT_PROMPT, detail="high"
+                    refinement_model,
+                    caption_url,
+                    caption_key,
+                    prompt=REFINEMENT_PROMPT,
+                    max_tokens=p["caption_max_tokens"],
+                    detail="high",
                 )
                 self._refiner = MemoryRefiner(
                     store,
@@ -751,6 +760,8 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                         verification_model,
                         *endpoint(p, "verification"),
                         timeout_s=p["verification_request_timeout_s"],
+                        max_tokens=p["verification_max_tokens"],
+                        structured_output=p["verification_structured_output"],
                     )
                     if verification_model
                     else None
@@ -972,6 +983,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "caption_base_url": "https://api.openai.com/v1",
                 "caption_api_key_env": "",
                 "caption_model": "",
+                "caption_max_tokens": 1024,
                 "chat_base_url": "https://api.openai.com/v1",
                 "chat_api_key_env": "",
                 "chat_model": "",
@@ -1036,6 +1048,8 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "verification_base_url": "",
                 "verification_api_key_env": "",
                 "verification_request_timeout_s": 8.0,
+                "verification_max_tokens": 2048,
+                "verification_structured_output": True,
                 "navigation_arrival_timeout_s": 30.0,
                 "navigation_max_observation_age_s": 5.0,
                 "navigation_arrival_max_attempts": 3,

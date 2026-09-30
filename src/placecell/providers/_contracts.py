@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from typing import Any
 
 from placecell.errors import ProviderError
@@ -45,6 +46,18 @@ def strict_json(text: str, *, max_chars: int = 65536) -> Any:
         return value
     except RecursionError as e:
         raise ValueError("JSON nesting exceeds its limit") from e
+
+
+_FENCE = re.compile(r"\s*```(?:json)?[ \t]*\r?\n(.*?)\s*```\s*", re.DOTALL | re.IGNORECASE)
+
+
+def unfenced(text: str) -> str:
+    """The body of exactly one markdown code fence wrapping the whole text, else the text.
+
+    Only the fence is removed: prose around it, or a second fence, stays and fails JSON parsing.
+    """
+    match = _FENCE.fullmatch(text)
+    return match.group(1) if match else text
 
 
 def bounded_json(value: Any, *, max_chars: int) -> str:
