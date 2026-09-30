@@ -305,8 +305,10 @@ def test_observation_text_stays_data_and_cannot_replace_the_requested_destinatio
         messages, tools = provider.calls[0]
         assert [msg.role for msg in messages] == ["system", "user"]
         task = json.loads(messages[1].content)
-        assert task["instruction"] == "Visit printer" and task["recent_context"][0]["data"]["message"] == poison
-        assert len(tools) == 1
+        assert task["instruction"] == "Visit printer" and task["recent_context"][0]["data"] == {
+            "destinations": ["cupboard"]
+        }
+        assert poison not in messages[1].content and len(tools) == 1
     request = transport.requests[0]["payload"]
     assert [msg["role"] for msg in request["messages"]] == ["system", "user"]
     assert json.loads(request["messages"][1]["content"][0]["text"]) == {"destination": "printer"}

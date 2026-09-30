@@ -14,6 +14,31 @@ from typing import Any
 from placecell.errors import ValidationError
 
 _WINDOW_NOTICE = "Earlier context is unavailable. Do not infer missing destinations or treat older events as recent."
+# Prompts see the user's words and structured outcomes only, never model prose or provider errors.
+_FIELDS = {
+    "instruction": frozenset({"text"}),
+    "status": frozenset(
+        {
+            "state",
+            "mission_id",
+            "step",
+            "destinations",
+            "target",
+            "memory_id",
+            "object_id",
+            "failure_stage",
+            "object_result",
+            "destination_source",
+            "place",
+            "error_type",
+        }
+    ),
+}
+
+
+def _structured(kind: str, payload: Any) -> dict[str, Any]:
+    fields = _FIELDS.get(kind, frozenset())
+    return {key: value for key, value in payload.items() if key in fields} if isinstance(payload, dict) else {}
 
 
 class MissionContext:
@@ -106,9 +131,11 @@ class MissionContext:
     def record(self, request_id: str, kind: str, payload: dict[str, Any]) -> None:
         if not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 256:
             raise ValidationError("mission request id must contain 1..256 characters")
-        if kind not in {"instruction", "status"}:
+        if kind not in _FIELDS:
             raise ValidationError("mission context kind must be instruction or status")
-        encoded = json.dumps(payload, allow_nan=False)
+        if not isinstance(payload, dict):
+            raise ValidationError("mission context payload must be an object")
+        encoded = json.dumps(_structured(kind, payload), allow_nan=False)
         if len(encoded) > 32000:
             raise ValidationError("mission context event is too large")
         now = self._now()
@@ -139,7 +166,7 @@ class MissionContext:
         used = len(json.dumps({"history_boundary": _WINDOW_NOTICE})) + 4
         truncated |= len(rows) > limit
         for request_id, kind, payload, timestamp in rows[:limit]:
-            data = json.loads(payload)
+            data = _structured(kind, json.loads(payload))  # Rows written before field filtering.
             if self._references_available is not None and not self._references_available(data):
                 # Remove the affected request and all older context. Never fall back
                 # from a deleted latest destination to a still-retained older visit.

@@ -140,6 +140,7 @@ class Resolution:
     message: str
     choices: tuple[Destination, ...] = ()
     failure_stage: FailureStage = ""
+    error_type: str = ""
 
 
 def _trace_destination(destination: Destination | None) -> dict[str, object] | None:
@@ -582,6 +583,8 @@ class NavigationUpdate:
     instance_id: str = ""
     sequence: int = 0
     failure_stage: FailureStage = ""
+    error_type: str = ""
+    """Exception class behind a failure; the message may carry its text, context never does."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -787,9 +790,9 @@ class NavigationCommands:
                 self._context.record(
                     update.request_id,
                     "status",
+                    # Structured outcome only: messages can quote model or provider text.
                     {
                         "state": update.state,
-                        "message": update.message,
                         "mission_id": update.mission_id,
                         "step": update.mission_step,
                         "destinations": update.mission_destinations,
@@ -797,6 +800,10 @@ class NavigationCommands:
                         "memory_id": destination.memory.id if destination and destination.memory else "",
                         "object_id": destination.object_id if destination else "",
                         "failure_stage": update.failure_stage,
+                        "object_result": update.object_result,
+                        "destination_source": destination.source if destination else "",
+                        "place": destination.label if destination and destination.source == "named_place" else "",
+                        "error_type": update.error_type,
                     },
                 )
                 self._last_context_state = key
@@ -1040,7 +1047,14 @@ class NavigationCommands:
             trace_event("plan.failed", error_type=type(e).__name__)
             with self._lock:
                 if request_id == self._active:
-                    self._complete(NavigationUpdate(request_id, "rejected", f"Mission planning failed: {str(e)[:500]}"))
+                    self._complete(
+                        NavigationUpdate(
+                            request_id,
+                            "rejected",
+                            f"Mission planning failed: {str(e)[:500]}",
+                            error_type=type(e).__name__,
+                        )
+                    )
             return
         with self._lock:
             if request_id != self._active:
@@ -1117,6 +1131,7 @@ class NavigationCommands:
                 "not_found",
                 f"Destination lookup failed: {str(e)[:500]}",
                 failure_stage=e.failure_stage if isinstance(e, TargetValidationError) else "execution",
+                error_type=type(e).__name__,
             )
         with self._lock:
             if request_id != self._active:
@@ -1155,6 +1170,7 @@ class NavigationCommands:
                         choices=result.choices,
                         failure_stage=result.failure_stage
                         or ("identity" if result.state == "ambiguous" else "retrieval"),
+                        error_type=result.error_type,
                     )
                 )
                 if result.state != "ambiguous":
@@ -1337,7 +1353,11 @@ class NavigationCommands:
                 raise ValidationError("the verification worker is busy")
         except Exception as e:
             self._finish_arrival(
-                request_id, False, f"Could not inspect the arrival image: {e}", failure_stage="execution"
+                request_id,
+                False,
+                f"Could not inspect the arrival image: {e}",
+                failure_stage="execution",
+                error_type=type(e).__name__,
             )
 
     @traced("arrival_verification")
@@ -1383,11 +1403,18 @@ class NavigationCommands:
             verdict = self._resolver.verify(destination.target, image)
             matched, reason = verdict.result == "matched", verdict.reason
             failure_stage: FailureStage = "" if matched else "identity"
+            error_type = ""
         except Exception as e:
             matched, reason = False, f"Visual verification failed: {e}"
             failure_stage = e.failure_stage if isinstance(e, TargetValidationError) else "execution"
+            error_type = type(e).__name__
         self._finish_arrival(
-            request_id, matched, reason, "unavailable" if destination.object_id else "", failure_stage=failure_stage
+            request_id,
+            matched,
+            reason,
+            "unavailable" if destination.object_id else "",
+            failure_stage=failure_stage,
+            error_type=error_type,
         )
 
     def _arrival_fresh(self) -> bool:
@@ -1474,6 +1501,7 @@ class NavigationCommands:
                 f"Local search stopped: {e}",
                 verdict.result,
                 failure_stage=e.failure_stage if isinstance(e, TargetValidationError) else "geometry",
+                error_type=type(e).__name__,
             )
             return
         with self._lock:
@@ -1528,6 +1556,7 @@ class NavigationCommands:
         *,
         failure_stage: FailureStage = "",
         checked_generation: int | None = None,
+        error_type: str = "",
     ) -> None:
         with self._lock:
             if request_id != self._active:
@@ -1550,6 +1579,7 @@ class NavigationCommands:
                     )
                     return
                 matched, reason, failure_stage = False, "The arrival image expired during verification.", "geometry"
+                error_type = ""
                 if object_result:
                     object_result = "unavailable"
             if matched and (not self._provenance_ready() or self._clock() >= self._arrival_deadline):
@@ -1592,6 +1622,7 @@ class NavigationCommands:
                     object_result=object_result,
                     search_attempt=self._search_count,
                     failure_stage=failure_stage,
+                    error_type="" if matched else error_type,
                 )
             )
 

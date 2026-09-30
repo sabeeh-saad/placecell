@@ -152,6 +152,16 @@ every distance update. ROS defaults to `~/.placecell/missions.sqlite3`; set an e
 `mission_context_path` for memory-only history. Set `mission_conversation_id` to isolate
 operators/sessions. The node also scopes history by `robot_id` and `map_id`.
 
+History holds the user's own words and structured outcomes only. An instruction event
+keeps its `text`. A status event keeps `state`, `mission_id`, `step`, the reviewed
+`destinations`, `target`, `memory_id`, `object_id`, `failure_stage`, `object_result`,
+`destination_source` (`memory`, `named_place` or `coordinates`), `place` (the configured
+place name, for named places only) and `error_type` (an exception class name). Status
+messages are not stored: they can quote a vision model's arrival reason (which may repeat
+text visible in the image), a stored caption or a provider error body. Operators still
+receive the full message on the status topic. Other fields passed to `MissionContext.record`
+are dropped, and rows written by earlier versions are reduced to the same fields when read.
+
 Planning and review receive up to twenty recent history events within a 16,000-character
 serialized context budget, with timestamps and
 actual outcomes. They can use them to interpret follow-ups such as "take me there again";
