@@ -32,6 +32,7 @@ from placecell.tracing import (
     bind_trace,
     current_trace,
     trace_event,
+    trace_instruction,
     trace_scope,
     trace_span,
     traced,
@@ -774,7 +775,9 @@ class NavigationCommands:
             context.emit(
                 "status",
                 state=update.state,
-                message=update.message,
+                # An exception's text can hold a provider response body; traces keep its type only.
+                message="" if update.error_type else update.message,
+                error_type=update.error_type,
                 destination=_trace_destination(update.destination),
                 choices=[_trace_destination(choice) for choice in update.choices],
                 distance_remaining=update.distance_remaining,
@@ -945,7 +948,7 @@ class NavigationCommands:
                 else:
                     context = self._trace_store.context(request_id, request_id)
         with trace_scope(context):
-            trace_event("instruction", text=text)
+            trace_instruction(text)
             if target_request_id or admission_epoch is not None:
                 with self._lock:
                     if (target_request_id and self._snapshot_status.request_id != target_request_id) or (
@@ -1651,7 +1654,8 @@ class NavigationCommands:
                 self._trace_context.emit(
                     "arrival.verdict",
                     matched=matched,
-                    reason=reason,
+                    reason="" if error_type else reason,
+                    error_type=error_type,
                     object_result=object_result,
                     failure_stage=failure_stage,
                 )

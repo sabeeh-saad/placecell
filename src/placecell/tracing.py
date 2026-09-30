@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import hashlib
 import json
 import math
 import os
@@ -137,6 +138,17 @@ def trace_event(stage: str, **data: Any) -> None:
         context.emit(stage, **data)
 
 
+def trace_instruction(text: str) -> None:
+    """Record the operator's instruction, or only its SHA-256 and length when the store hashes them."""
+    context = current_trace()
+    if context is None:
+        return
+    if context.store.instruction_text == "hash":
+        context.emit("instruction", text_sha256=hashlib.sha256(text.encode()).hexdigest(), text_length=len(text))
+    else:
+        context.emit("instruction", text=text)
+
+
 @contextmanager
 def trace_span(stage: str, **data: Any) -> Iterator[dict[str, Any]]:
     context = current_trace()
@@ -257,11 +269,15 @@ class TraceStore:
         max_bytes: int = 16 * 1024 * 1024,
         queue_size: int = 256,
         secrets: Sequence[str] = (),
+        instruction_text: str = "raw",
     ) -> None:
         import fcntl  # File-backed tracing currently targets the Linux/Unix ROS deployment.
 
         if any(type(v) is not int or v <= 0 for v in (max_events, max_bytes, queue_size)) or max_bytes < 65536:
             raise ValidationError("trace limits must be positive integers; database budget must be at least 64 KiB")
+        if instruction_text not in ("raw", "hash"):
+            raise ValidationError("trace instruction_text must be raw or hash")
+        self.instruction_text = instruction_text
         if str(path) == ":memory:":
             raise ValidationError("traces require a file path")
         self.path = Path(path).expanduser().resolve()

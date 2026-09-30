@@ -250,6 +250,7 @@ def build_trace_store(parameters: dict[str, Any]) -> TraceStore | None:
         max_events=parameters["mission_trace_max_events"],
         max_bytes=parameters["mission_trace_max_bytes"],
         queue_size=parameters["mission_trace_queue_size"],
+        instruction_text=parameters.get("mission_trace_instruction_text", "raw"),
         # The Gemini embedding backend also reads GEMINI_API_KEY without a parameter naming it.
         secrets=[os.environ.get(value, "") for key, value in parameters.items() if key.endswith("api_key_env")]
         + [os.environ.get("GEMINI_API_KEY", "")],
@@ -1088,6 +1089,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "mission_trace_max_events": 10000,
                 "mission_trace_max_bytes": 16777216,
                 "mission_trace_queue_size": 256,
+                "mission_trace_instruction_text": "raw",
                 "mission_conversation_id": "default",
                 "command_journal_path": "~/.placecell/commands.sqlite3",
                 "command_retry_window_s": 86400.0,

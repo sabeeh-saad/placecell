@@ -18,8 +18,17 @@ that node's launch command:
 -p mission_trace_path:=/path/to/traces.sqlite3 \
 -p mission_trace_max_events:=10000 \
 -p mission_trace_max_bytes:=16777216 \
--p mission_trace_queue_size:=256
+-p mission_trace_queue_size:=256 \
+-p mission_trace_instruction_text:=raw
 ```
+
+`mission_trace_instruction_text` is `raw` (the default, unchanged behaviour) or `hash`.
+With `hash`, the `instruction` event keeps only `text_sha256` (SHA-256 of the UTF-8 text)
+and `text_length` (characters) instead of the text. The hash is unsalted: it confirms
+whether a known instruction was received, but short or predictable instructions can be
+recovered by trying candidates. Destination descriptions from the reviewed plan, lookup
+targets and published status messages derive from the instruction and are still recorded.
+The core API takes `TraceStore(path, instruction_text="hash")`.
 
 An empty `mission_trace_path` disables tracing. Use a dedicated file, separate from the
 mission-context or memory database. Invalid limits, an incompatible database, or another
@@ -62,7 +71,7 @@ process's wall-clock monotonic timer, independently of ROS simulation/capture ti
 
 The timeline includes:
 
-- The bounded, redacted instruction and whether admission succeeded.
+- The bounded, redacted instruction (or its hash and length) and whether admission succeeded.
 - The proposed destination sequence, reviewer verdict and short returned explanation.
   These are structured decisions, not hidden model reasoning or complete model prompts.
   A leg refused because the user never named its configured place records `plan.place_ungrounded`.
@@ -107,8 +116,10 @@ their internal calls need their own instrumentation to supply usage.
 Instruction and returned explanation text can contain sensitive operational information.
 Configured API-key values are registered for redaction, common credential patterns and
 credential fields are removed, and endpoint URLs are suppressed. Raw exception strings
-are excluded from span errors; published status explanations pass through the same
-redactor. Arbitrary unlabelled sensitive text cannot be classified reliably: review an
+are excluded from span errors. A status or arrival verdict caused by an exception records
+its `error_type` with an empty `message`/`reason`, because the exception text can contain a
+provider response body; the live status topic still shows the full message. Other published
+status explanations pass through the same redactor. Arbitrary unlabelled sensitive text cannot be classified reliably: review an
 export before sharing it. New trace databases are created with owner-only permissions;
 exports use the environment's normal file permissions.
 

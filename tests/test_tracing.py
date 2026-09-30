@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import subprocess
@@ -9,6 +10,7 @@ from dataclasses import replace
 
 import pytest
 
+from placecell import MissionPlanner, NavigationCommands, NavigationEvent, Observation, PlanReviewAgent
 from placecell.errors import ProviderError, ValidationError
 from placecell.fault_injection import _control, _Rig, run_faults
 from placecell.memory import Memory, Pose
@@ -22,10 +24,12 @@ from placecell.tracing import (
     provider_usage,
     read_trace,
     trace_event,
+    trace_instruction,
     trace_scope,
     trace_span,
 )
-from tests.conftest import FakeTransport
+from tests.conftest import FakeTransport, embedded
+from tests.test_missions import mission as mission
 
 
 @pytest.fixture
@@ -505,6 +509,87 @@ def test_schema_isolation_and_single_writer(store, tmp_path):
         TraceStore(store.path)
 
 
+def test_traces_record_error_types_but_never_provider_error_text(tmp_path):
+    rig = _Rig(tmp_path)
+
+    def fail():
+        raise ProviderError("https://models.test/v1: HTTP 500: planner-body-secret")
+
+    rig.model.before = fail
+    try:
+        rig.start()
+        assert rig.state == "rejected" and "planner-body-secret" in rig.events[-1]["message"]
+        report = exported(rig.traces)
+        assert "planner-body-secret" not in json.dumps(report)
+        status = report["summary"]["last_status"]
+        assert status["state"] == "rejected" and status["error_type"] == "ProviderError" and status["message"] == ""
+    finally:
+        rig.close()
+
+
+def test_arrival_check_errors_reach_traces_as_types_only(tmp_path, mission, hashing):
+    m = mission
+    traces = TraceStore(tmp_path / "arrival.sqlite3")
+    commands = NavigationCommands(
+        m.resolver,
+        m.nav,
+        lambda f: m.tasks.append(f) is None,
+        m.events.append,
+        mission_planner=MissionPlanner(m.model, PlanReviewAgent(m.critic)),
+        mission_context=m.context,
+        trace_store=traces,
+        clock=lambda: m.now[0],
+        observation_clock=lambda: m.now[0],
+    )
+    del m.resolver._places["printer"]
+    memory = embedded(hashing, "printer", pose=Pose(1, 2, map_id="office"))
+    m.store.upsert([memory])
+    commands.handle("First visit the printer; afterwards take me to the cupboard")
+    m.tasks.pop(0)()
+    m.nav.sent[0][2](NavigationEvent("succeeded"))
+    m.now[0] += 1
+
+    def fail(*_):
+        raise ProviderError("HTTP 502: arrival-body-secret")
+
+    m.verifier.verify = fail
+    commands.observe(Observation("r1", "front", m.now[0], memory.pose, memory.evidence, True))
+    m.tasks.pop(0)()
+    try:
+        assert m.events[-1].state == "destination_unverified" and "arrival-body-secret" in m.events[-1].message
+        report = exported(traces)
+        assert "arrival-body-secret" not in json.dumps(report)
+        verdict = next(e["data"] for e in report["events"] if e["stage"] == "arrival.verdict")
+        assert verdict["error_type"] == "ProviderError" and verdict["reason"] == ""
+    finally:
+        traces.close()
+
+
+def test_instruction_text_can_be_traced_as_a_hash_and_length(tmp_path):
+    rig = _Rig(tmp_path)
+    try:
+        rig.traces.close()
+        rig.traces = TraceStore(tmp_path / "hashed.sqlite3", instruction_text="hash")
+        rig.commands = rig.new_controller()
+        rig.start()
+        text = "First visit the printer, then the cupboard"
+        instruction = next(e["data"] for e in exported(rig.traces)["events"] if e["stage"] == "instruction")
+        assert instruction == {"text_sha256": hashlib.sha256(text.encode()).hexdigest(), "text_length": len(text)}
+        assert rig.state == "submitting" and len(rig.client.goals) == 1
+    finally:
+        rig.close()
+    raw = TraceStore(tmp_path / "raw.sqlite3")
+    try:
+        with trace_scope(raw.context("mission", "request")):
+            trace_instruction("go to the printer")
+        assert exported(raw)["events"][0]["data"] == {"text": "go to the printer"}
+    finally:
+        raw.close()
+    trace_instruction("no active trace")  # Nothing to record.
+    with pytest.raises(ValidationError):
+        TraceStore(tmp_path / "invalid.sqlite3", instruction_text="plain")
+
+
 def test_ros_trace_configuration_and_configured_secret_redaction(tmp_path, monkeypatch):
     assert build_trace_store({"mission_trace_path": ""}) is None
     monkeypatch.setenv("TRACE_TEST_KEY", "example-configured-value")
@@ -516,6 +601,7 @@ def test_ros_trace_configuration_and_configured_secret_redaction(tmp_path, monke
             "mission_trace_max_events": 5,
             "mission_trace_max_bytes": 1048576,
             "mission_trace_queue_size": 5,
+            "mission_trace_instruction_text": "hash",
             "api_key_env": "TRACE_TEST_KEY",
             "mission_review_api_key_env": "TRACE_REVIEW_KEY",
         }
@@ -523,6 +609,6 @@ def test_ros_trace_configuration_and_configured_secret_redaction(tmp_path, monke
     try:
         text = "example-configured-value example-review-value example-gemini-value"
         traces.context("mission", "request").emit("instruction", text=text)
-        assert "example-" not in json.dumps(exported(traces))
+        assert "example-" not in json.dumps(exported(traces)) and traces.instruction_text == "hash"
     finally:
         traces.close()
