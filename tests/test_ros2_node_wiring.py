@@ -90,7 +90,7 @@ def test_default_node_topics_timers_and_services(make_node):
 
 def test_full_node_topics_timers_services_and_actions(make_node, monkeypatch, tmp_path):
     monkeypatch.setenv("PLACECELL_TEST_KEY", "offline")
-    monkeypatch.setattr("placecell.ros2.node.build_embedder", lambda *a, **k: FakeMediaEmbedder())
+    monkeypatch.setattr("placecell.ros2.components.build_embedder", lambda *a, **k: FakeMediaEmbedder())
     node = make_node(
         db_path=str(tmp_path / "db"),
         compressed=True,

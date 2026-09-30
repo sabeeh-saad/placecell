@@ -38,7 +38,7 @@ def main():
     embed._capabilities = Capabilities(text=True, image=True)
     rclpy.init(args=["--ros-args", "--params-file", str(path)])
     with (
-        patch("placecell.ros2.node.build_embedder", return_value=embed),
+        patch("placecell.ros2.components.build_embedder", return_value=embed),
         patch("placecell.providers.object_detection.ChatObjectDetector", return_value=object()),
     ):
         node = create_node()

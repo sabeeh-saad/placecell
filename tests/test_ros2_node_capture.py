@@ -45,7 +45,7 @@ def idle_worker(monkeypatch):
 def objects(monkeypatch):
     """Parameters for object positions from aligned depth, with an image-capable embedder."""
     monkeypatch.setenv("PLACECELL_TEST_KEY", "offline")
-    monkeypatch.setattr("placecell.ros2.node.build_embedder", lambda *a, **k: FakeMediaEmbedder())
+    monkeypatch.setattr("placecell.ros2.components.build_embedder", lambda *a, **k: FakeMediaEmbedder())
     return {
         "objects_enabled": True,
         "object_backend": "chat",

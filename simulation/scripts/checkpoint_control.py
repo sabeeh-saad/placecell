@@ -256,12 +256,12 @@ def run_case(probe, world, case, output, *, isolate_arrival=False):
     try:
         with ExitStack() as stack:
             for target, value in (
-                ("placecell.ros2.node.build_embedder", lambda *a, **k: PixelFixture()),
+                ("placecell.ros2.components.build_embedder", lambda *a, **k: PixelFixture()),
                 ("placecell.providers.OpenAICompatibleCaptioner", CaptionFixture),
                 ("placecell.providers.object_detection.ChatObjectDetector", DetectorFixture),
-                ("placecell.ros2.node.VisionVerifier", VisionFixture),
+                ("placecell.ros2.components.VisionVerifier", VisionFixture),
                 (
-                    "placecell.ros2.node.build_mission_planner",
+                    "placecell.ros2.components.build_mission_planner",
                     lambda *a: MissionPlanner(model, PlanReviewAgent(reviewer)),
                 ),
                 ("rclpy.node.Node.__init__", initialize),

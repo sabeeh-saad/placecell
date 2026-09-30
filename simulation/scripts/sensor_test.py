@@ -43,7 +43,7 @@ class Check:
     def __init__(self, output):
         embedder = HashingEmbedder()
         embedder._capabilities = Capabilities(text=True, image=True)
-        with patch("placecell.ros2.node.build_embedder", return_value=embedder):
+        with patch("placecell.ros2.components.build_embedder", return_value=embedder):
             self.node = create_node()
         self.probe = rclpy.create_node("sensor_fault_probe")
         self.executor = SingleThreadedExecutor()

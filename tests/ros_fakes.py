@@ -559,20 +559,12 @@ def install(monkeypatch: pytest.MonkeyPatch) -> FakeRos:
 
 # Building the production node.
 
-RESOURCES = ("_questions", "_maintenance", "_indexing", "_command_tasks", "_worker")
-CLOSABLE = ("_store", "_mission_context", "_mission_traces", "_command_journal", "_navigator", "_storage_lease")
-
 
 def release(node: Any) -> None:
-    """Stop whatever a node that failed during construction had already started."""
-    for name in RESOURCES:
-        resource = node.__dict__.get(name)
-        if resource is not None:
-            resource.stop(timeout=5)
-    for name in CLOSABLE:
-        resource = node.__dict__.get(name)
-        if resource is not None:
-            resource.close()
+    """Release, in reverse order, whatever a node that failed during construction had acquired."""
+    acquired = node.__dict__.get("_acquired")
+    if acquired is not None:
+        acquired.close()
 
 
 def hermetic_parameters(root: Path) -> dict[str, Any]:

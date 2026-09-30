@@ -141,7 +141,7 @@ def chat_call():
 
 def objects_node(make_node, monkeypatch, **parameters):
     monkeypatch.setenv("PLACECELL_TEST_KEY", "offline")
-    monkeypatch.setattr("placecell.ros2.node.build_embedder", lambda *a, **k: FakeMediaEmbedder())
+    monkeypatch.setattr("placecell.ros2.components.build_embedder", lambda *a, **k: FakeMediaEmbedder())
     return make_node(
         objects_enabled=True,
         object_backend="chat",
@@ -160,12 +160,12 @@ def arrival_check(make_node, monkeypatch):
 
 
 PATCHES: dict[str, tuple[Callable, bool]] = {
-    "placecell.ros2.node.build_embedder": (lambda make_node, monkeypatch: make_node(), False),
-    "placecell.ros2.node.VisionVerifier": (
+    "placecell.ros2.components.build_embedder": (lambda make_node, monkeypatch: make_node(), False),
+    "placecell.ros2.components.VisionVerifier": (
         lambda make_node, monkeypatch: make_node(navigation_enabled=True, verification_model="scripted"),
         False,
     ),
-    "placecell.ros2.node.build_mission_planner": (
+    "placecell.ros2.components.build_mission_planner": (
         lambda make_node, monkeypatch: make_node(navigation_enabled=True),
         False,
     ),
@@ -329,7 +329,7 @@ def response_timeout_is_replaceable(make_node, monkeypatch, tmp_path):
 def embedder_capabilities_are_replaceable(make_node, monkeypatch, tmp_path):
     embedder = HashingEmbedder()
     embedder._capabilities = Capabilities(text=True, image=True)
-    monkeypatch.setattr("placecell.ros2.node.build_embedder", lambda *a, **k: embedder)
+    monkeypatch.setattr("placecell.ros2.components.build_embedder", lambda *a, **k: embedder)
     node = make_node()
     assert not node.logger.messages("warning")  # an image-capable embedder needs no captioner
 
