@@ -1,10 +1,11 @@
 """Contradiction: noticing that something remembered is no longer there.
 
-After a new observation is embedded, the observer looks up memories taken from about the
-same place looking in about the same direction. If the new view does not resemble such a
-memory, that counts as a miss, but only once per visit. After enough misses on separate
-visits the memory is superseded. One pass with a person standing in front of the shelf is
-not evidence that the shelf is gone; three visits over three days are.
+After a new observation is embedded, the observer looks up memories the same camera on the
+same robot took from about the same place looking in about the same direction. If the new
+view does not resemble such a memory, that counts as a miss, but only once per visit. Only
+vectors of one modality are compared; a memory with none in common is not judged. After
+enough misses on separate visits the memory is superseded. One pass with a person standing
+in front of the shelf is not evidence that the shelf is gone; three visits over three days are.
 """
 
 from __future__ import annotations
@@ -16,8 +17,11 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from placecell.errors import ValidationError
+from placecell.lifecycle import same_view
 from placecell.memory import Memory, Vector
-from placecell.store.base import Filter, VectorStore
+from placecell.store.base import VectorStore
+
+_MEDIA = frozenset({"image", "video"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,19 +70,19 @@ class Observer:
         if fresh.embedding is None:
             raise ValidationError("the fresh memory must be embedded")
         p = self._policy
-        candidates = self._store.query(Filter(near=fresh.pose, radius=p.same_place_m))
+        # Place and heading of the retained view the vectors describe; anchors only guard merges.
         in_view = [
-            m
-            for m in candidates
+            (m, pair)
+            for m in self._store.query(same_view(fresh, p.same_place_m))
             if m.id not in (fresh.id, stored_as)
-            and m.role == "episodic"
             and m.last_seen <= fresh.timestamp
             and m.pose.heading_difference(fresh.pose) <= p.same_heading_rad
+            and (pair := _comparable(fresh, m)) is not None
         ]
         confirmed = missed = superseded = 0
         updates: list[Memory] = []
-        for m in in_view:
-            similarity = _cosine(fresh.embedding, m.embedding)
+        for m, (a, b) in in_view:
+            similarity = _cosine(a, b)
             if similarity >= p.confirm_similarity:
                 confirmed += 1
                 if m.misses:
@@ -104,8 +108,17 @@ class Observer:
         return ObserverReport(len(in_view), confirmed, missed, superseded)
 
 
-def _cosine(a: Vector, b: Vector | None) -> float:
-    if b is None:  # pragma: no cover - stores refuse unembedded memories
-        return 0.0
+def _comparable(fresh: Memory, m: Memory) -> tuple[Vector, Vector] | None:
+    """Media vectors of the same kind, else caption vectors. Legacy vectors have no known kind."""
+    pairs = [(fresh.vector_for("caption"), m.vector_for("caption"))]
+    if fresh.embedding_kind in _MEDIA and fresh.embedding_kind == m.embedding_kind:
+        pairs.insert(0, (fresh.embedding, m.embedding))
+    for a, b in pairs:
+        if a is not None and b is not None:
+            return a, b
+    return None
+
+
+def _cosine(a: Vector, b: Vector) -> float:
     na, nb = float(np.linalg.norm(a)), float(np.linalg.norm(b))
     return float(a @ b / (na * nb)) if na and nb else 0.0

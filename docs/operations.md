@@ -20,10 +20,12 @@ overload; the full provider workload and 24-hour endurance gate remain unqualifi
   and time queries, even when the newest keyframe replaces the previous one. A superseded
   memory revives with its misses cleared if the object comes back.
 - **Contradiction.** When the robot looks at a place from the same spot and heading and no
-  longer sees what scene memory expects, that is a miss. Misses on separate visits add up,
-  and after enough of them the scene memory is superseded. Scene similarity alone cannot
-  distinguish occlusion from disappearance. Optional object tracking adds depth visibility
-  checks and explicit visual absence verification before counting object misses.
+  longer sees what scene memory expects, that is a miss. Only memories from the same camera
+  on the same robot are judged, and only against a vector of the same kind (image with image,
+  caption with caption). Misses on separate visits add up, and after enough of them the
+  scene memory is superseded. Scene similarity alone cannot distinguish occlusion from
+  disappearance. Optional object tracking adds depth visibility checks and explicit visual
+  absence verification before counting object misses.
 - **Corrections.** An operator can mark an answer right or wrong, on `/placecell/correct` in
   ROS 2 or through `CorrectionLog` in the library. Wrong verdicts halve a memory's rank, and
   repeated ones get it superseded by the curator. The log is bounded and replaced

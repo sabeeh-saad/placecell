@@ -149,10 +149,12 @@ custom store implementations must support that keyword and apply filters before 
 
 Schema 6 records `embedding_kind` and an optional separate `caption_embedding`. The primary
 embedding remains the media vector when supported, so reinforcement and scene-change
-comparison continue to compare the same kind of observation. Both vectors move with the
-retained image, caption and pose. Refinement rebuilds both and records both for guarded
-rollback. Summaries carry caption vectors. SQLite owns committed vectors; LanceDB maintains
-separate primary and caption indexes and can rebuild both after interruption.
+comparison continue to compare the same kind of observation. Scene-change comparison falls
+back to caption vectors when media kinds differ and skips memories with no vector of a shared
+kind, including legacy rows. Both vectors move with the retained image, caption and pose.
+Refinement rebuilds both and records both for guarded rollback. Summaries carry caption
+vectors. SQLite owns committed vectors; LanceDB maintains separate primary and caption
+indexes and can rebuild both after interruption.
 
 Collections from schemas 2–7 upgrade when opened. Older untyped vectors have unknown modality
 and remain available through combined retrieval's primary-vector fallback. Opening an old

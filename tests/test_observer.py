@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from placecell import Ingester, InMemoryStore, Observation, Pose
+from placecell import Ingester, InMemoryStore, Memory, Observation, Pose
 from placecell.errors import ValidationError
 from placecell.observer import ContradictionPolicy, Observer
 from placecell.providers import HashingEmbedder
@@ -15,13 +15,13 @@ def test_observer_counts_misses_per_visit_and_supersedes(store: InMemoryStore, h
     observer = Observer(store, policy)
     shelf = embedded(hashing, "a shelf with a red fire extinguisher", t=0, x=0, y=0)
     store.upsert([shelf])
-    wall = embedded(hashing, "a bare white wall", t=50, x=0.2, y=0.1, camera="back")
+    wall = embedded(hashing, "a bare white wall", t=50, x=0.2, y=0.1)
     first = observer.observe(wall, wall.id)
     assert (first.in_view, first.confirmed, first.missed, first.superseded) == (1, 0, 1, 0)
     assert store.get(shelf.id).misses == 1 and store.get(shelf.id).last_miss == 50  # type: ignore[union-attr]
-    again = observer.observe(embedded(hashing, "a bare white wall", t=90, x=0.1, y=0.0, camera="left"), None)
+    again = observer.observe(embedded(hashing, "a bare white wall", t=90, x=0.1, y=0.0), None)
     assert again.missed == 0  # same visit, not counted twice
-    later = observer.observe(embedded(hashing, "a bare white wall", t=500, x=0.1, y=0.0, camera="left"), None)
+    later = observer.observe(embedded(hashing, "a bare white wall", t=500, x=0.1, y=0.0), None)
     assert later.missed == 1 and later.superseded == 1
     gone = store.get(shelf.id)
     assert gone is not None and gone.superseded and gone.misses == 2
@@ -32,7 +32,7 @@ def test_observer_confirms_and_resets_misses(store: InMemoryStore, hashing: Hash
     observer = Observer(store, ContradictionPolicy(confirm_similarity=0.6, misses_to_supersede=3, visit_gap_s=10))
     shelf = embedded(hashing, "a shelf with a red fire extinguisher", t=0, x=0, y=0, misses=2, last_miss=1.0)
     store.upsert([shelf])
-    seen = embedded(hashing, "a shelf with a red fire extinguisher", t=100, x=0.1, y=0.1, camera="back")
+    seen = embedded(hashing, "a shelf with a red fire extinguisher", t=100, x=0.1, y=0.1)
     report = observer.observe(seen, seen.id)
     assert (report.confirmed, report.missed) == (1, 0)
     refreshed = store.get(shelf.id)
@@ -72,3 +72,49 @@ def test_retry_of_an_old_job_does_not_contradict_newer_evidence(store, hashing) 
     assert observer.observe(embedded(hashing, "empty wall", t=100)).in_view == 0
     assert store.get(remembered.id) == remembered
     assert observer.observe(embedded(hashing, "empty wall", t=300)).superseded == 1
+
+
+def _visits(observer: Observer, fresh: list[Memory]) -> list[int]:
+    return [observer.observe(m, m.id).missed for m in fresh]
+
+
+def test_other_cameras_and_robots_never_contradict_a_memory(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+    observer = Observer(store, ContradictionPolicy(misses_to_supersede=3, visit_gap_s=600))
+    shelf = embedded(hashing, "a shelf with a red fire extinguisher", t=0)
+    store.upsert([shelf])
+    rear = [embedded(hashing, "a bare white wall", t=t, camera="back") for t in (1000, 2000, 3000)]
+    other_robot = [embedded(hashing, "a bare white wall", t=t, robot="r2") for t in (4000, 5000, 6000)]
+    assert _visits(observer, rear + other_robot) == [0] * 6
+    assert store.get(shelf.id) == shelf
+    # The same camera still contradicts it.
+    front = [embedded(hashing, "a bare white wall", t=t) for t in (7000, 8000, 9000)]
+    assert _visits(observer, front) == [1, 1, 1]
+    gone = store.get(shelf.id)
+    assert gone is not None and gone.superseded
+
+
+def test_only_vectors_of_the_same_kind_are_compared(store: InMemoryStore, hashing: HashingEmbedder) -> None:
+    observer = Observer(store, ContradictionPolicy(misses_to_supersede=1, visit_gap_s=0))
+    shelf_image = hashing.embed_text(["image of a shelf"])[0]
+    printer = hashing.embed_text(["printer"])[0]
+    image_only = embedded(hashing, "shelf", t=0, embedding=shelf_image, embedding_kind="image")
+    store.upsert([image_only])
+    # Caption against image, legacy against anything: no common modality, neither a match nor a miss.
+    report = observer.observe(embedded(hashing, "a bare white wall", t=100))
+    assert (report.in_view, report.missed) == (0, 0)
+    legacy = embedded(hashing, "a bare white wall", t=200, embedding_kind="legacy")
+    assert observer.observe(legacy).in_view == 0
+    assert store.get(image_only.id) == image_only
+    # Image against image compares the media vectors.
+    same_image = embedded(hashing, "unrelated caption", t=300, embedding=shelf_image, embedding_kind="image")
+    assert observer.observe(same_image).confirmed == 1
+    store.delete([image_only.id])
+    # A media memory with a caption vector is compared by caption with a caption-only view.
+    captioned = embedded(
+        hashing, "printer", t=400, embedding=shelf_image, embedding_kind="video", caption_embedding=printer
+    )
+    store.upsert([captioned])
+    assert observer.observe(embedded(hashing, "printer", t=500, embedding_kind="caption")).confirmed == 1
+    image_view = embedded(hashing, "a door", t=600, embedding=printer, embedding_kind="image")
+    assert observer.observe(image_view).in_view == 0  # image against video, and no caption vector
+    assert observer.observe(embedded(hashing, "a bare white wall", t=700)).superseded == 1

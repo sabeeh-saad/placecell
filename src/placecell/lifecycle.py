@@ -31,6 +31,21 @@ def remove_local_file(evidence: Evidence) -> None:
     Path(uri).unlink(missing_ok=True)
 
 
+def same_view(memory: Memory, radius_m: float, *, include_superseded: bool = False) -> Filter:
+    """Episodic memories of the same robot and camera within `radius_m`, in the same frame and map.
+
+    Poses are robot base poses, so only the same camera on the same robot saw the same scene.
+    """
+    return Filter(
+        near=memory.pose,
+        radius=radius_m,
+        include_superseded=include_superseded,
+        role="episodic",
+        robot_id=memory.robot_id,
+        camera_id=memory.camera_id,
+    )
+
+
 def remove_unreferenced(store: VectorStore, evidence: Iterable[Evidence], remover: EvidenceRemover) -> None:
     """Remove evidence only after the final reference, including superseded memories, is gone."""
     store.enqueue_cleanup(evidence)
@@ -96,14 +111,7 @@ class Reinforcer:
         if existing is not None:
             self._discard_evidence([memory])
             return existing, True
-        where = Filter(
-            near=memory.pose,
-            radius=self._policy.radius_m,
-            include_superseded=True,
-            role="episodic",
-            robot_id=memory.robot_id,
-            camera_id=memory.camera_id,
-        )
+        where = same_view(memory, self._policy.radius_m, include_superseded=True)
         hits = self._store.search(memory.embedding, 12, where)
         match = next(
             (
