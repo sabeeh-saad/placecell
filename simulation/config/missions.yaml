@@ -15,6 +15,7 @@ placecell:
     mission_context_max_bytes: 2097152
     mission_context_retention_s: 2592000.0
     memory_max_records: 10000
+    memory_evict_at_capacity: true
     memory_max_sightings: 1024
     memory_max_idle_s: 7776000.0
     memory_history_age_s: 7776000.0

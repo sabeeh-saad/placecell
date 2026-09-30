@@ -48,6 +48,7 @@ def main():
         "refine_interval_s": 0.0,
         "contradiction": False,
         "memory_max_records": 3,
+        "memory_evict_at_capacity": False,
         "memory_max_sightings": 8,
         "memory_max_idle_s": 60.0,
         "memory_history_age_s": 30.0,

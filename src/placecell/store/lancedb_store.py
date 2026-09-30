@@ -122,8 +122,9 @@ class LanceDBStore(StateStore):
         self._projection_lock = threading.RLock()
         super().__init__(info, self._path / f"{info.name}.state.sqlite3", limits=limits)
         if not self._conn.execute("SELECT 1 FROM settings WHERE key='imported'").fetchone():
+            # Existing memories are imported whole; capacity applies only to new observations.
             for batch in self._table.search().limit(None).to_batches(batch_size=256):
-                super().upsert(_from_row(row) for row in batch.to_pylist())
+                self._write((_from_row(row) for row in batch.to_pylist()), admit=False)
             self._conn.execute("INSERT INTO settings VALUES ('imported','1')")
         self._sync_index()
         if not any("id" in index.columns for index in self._table.list_indices()):

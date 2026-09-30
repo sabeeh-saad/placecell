@@ -1,10 +1,12 @@
 # Day 13: bounded memory and conversation history
 
 The reference deployment now enforces admission and history limits in the storage
-transactions, independently of the maintenance timer. A full collection refuses new
-identities; it still permits updates to existing identities. It does not evict a
-navigation target to admit another observation. The refusal reaches the existing
-bounded ingestion retry queue, where failed jobs retain their evidence and capacity.
+transactions, independently of the maintenance timer. A full collection admits a new
+identity by evicting its least valuable memory in the same transaction (see
+[eviction at capacity](#eviction-at-capacity)); updates to existing identities never
+evict. With eviction disabled, a full collection refuses new identities and the
+refusal reaches the bounded ingestion retry queue, where failed jobs retain their
+evidence and capacity.
 
 ## Memory and work limits
 
@@ -12,6 +14,9 @@ bounded ingestion retry queue, where failed jobs retain their evidence and capac
 settings:
 
 - `memory_max_records`: 10,000 scene/summary records, including superseded records.
+  The limit is shared by every robot writing to the collection.
+- `memory_evict_at_capacity` (`StoreLimits.evict_at_capacity`): `true`. At the record
+  limit, a new memory replaces the least valuable one. `false` restores refusal.
 - `memory_max_sightings`: 1,024 detailed sightings per memory. The object returned by
   `get()` still contains a preview of at most 64; use `sightings()` to page the rest.
 - `refine_max_pending`: 256 refinement requests, including exhausted requests. Repeat
@@ -29,10 +34,39 @@ separate from the scene-memory limit. Set cleanup capacity large enough for the
 retained views of one object and evidence held by unfinished jobs; an atomic release
 that cannot fit is refused without losing its references.
 
-A legacy collection above a newly lowered record limit remains readable and updatable;
-new record admission is refused until maintenance or explicit deletion makes space.
-Sighting counts are enforced when that memory receives sightings. The code does not
-silently delete an existing collection to satisfy a smaller startup limit.
+A legacy collection above a newly lowered record limit remains readable and updatable,
+and a LanceDB collection imported on open keeps every record. Each new memory then
+replaces exactly one existing memory, or is refused with eviction disabled, until
+maintenance or explicit deletion makes space. Sighting counts are enforced when that
+memory receives sightings. The code does not silently delete an existing collection
+to satisfy a smaller startup limit.
+
+## Eviction at capacity
+
+Admission reads per-robot record counts that SQLite triggers maintain in the writing
+transaction, so its cost does not grow with the collection, and every delete path and
+rollback keeps the counts exact. Existing state files gain the counts once on open.
+
+Every robot that holds memories is entitled to an equal share of `memory_max_records`.
+A robot at or above its share gives up one of its own memories; a robot below it takes
+one from the robot holding the most. One robot therefore never pushes another below an
+equal share, and a robot that joins later is not starved by an older one. Within that
+robot, the victim is:
+
+1. a superseded memory, which is already scheduled for deletion;
+2. an episodic memory folded into a summary; its summary stays valid and keeps
+   representing it, unlike an explicit deletion, which invalidates the summary;
+3. otherwise, among its 32 least recently seen memories, the one with the lowest
+   confidence after a seven-day half-life decay.
+
+Each tier takes the least recently seen memory first. Memories written by the same
+batch are never evicted; if nothing else is available, the write is refused. Eviction
+uses the ordinary deletion path: sightings, refinement requests and the vector
+projection are removed with the memory, a summary is invalidated when it is evicted
+itself, and managed evidence enters the cleanup journal and is deleted after commit
+only once no memory, object view or job references it. If the cleanup journal is
+full, the whole write rolls back. An evicted navigation target is revalidated like any
+other deleted target. Eviction makes no provider calls.
 
 ## Aging and evidence ownership
 
@@ -107,7 +141,8 @@ claim camera/model accuracy.
 The test makes 120 revisits and retains one identity, eight sightings and one managed
 image. It submits 100 two-event mission histories and retains three whole requests:
 six events, 738 accounted bytes and 194 pruned events. It also exercises capacity
-refusal, failed-job ownership, correction overflow, evidence release, aging and restart.
+refusal (with eviction disabled), failed-job ownership, correction overflow, evidence
+release, aging and restart. Eviction itself is covered by the store unit tests.
 Six expired objects are removed with a four-entry cleanup limit; the earlier bulk
 expiration stalled at that limit, and its failed reproduction is retained.
 The [Day 13 validation record](validation/day-13.json) records exact sources, image,

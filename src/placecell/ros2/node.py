@@ -464,6 +464,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     p["memory_max_sightings"],
                     p["refine_max_pending"],
                     p["cleanup_max_pending"],
+                    p["memory_evict_at_capacity"],
                 ),
             )
             captioner: Captioner | None = None
@@ -887,6 +888,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "max_queue": 64,
                 "memory_max_records": 10000,
                 "memory_max_sightings": 1024,
+                "memory_evict_at_capacity": True,
                 "memory_max_idle_s": 7776000.0,
                 "memory_history_age_s": 7776000.0,
                 "refine_max_pending": 256,

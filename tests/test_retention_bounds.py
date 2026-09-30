@@ -1,11 +1,14 @@
 """Day 13: retained data, ownership, correction durability and prompt continuity."""
 
+import contextlib
 import json
+import re
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from placecell import CollectionInfo, Curator, Evidence, EvidenceKind, InMemoryStore, MissionContext, Pose, Reinforcer
@@ -13,8 +16,9 @@ from placecell.corrections import Correction, InMemoryCorrectionLog, JsonlCorrec
 from placecell.errors import ValidationError
 from placecell.lifecycle import remove_local_file
 from placecell.pipeline import Observation
-from placecell.store.base import EVERYTHING
+from placecell.store.base import EVERYTHING, Filter
 from placecell.store.limits import StoreLimits
+from placecell.store.state import StateStore
 from tests.conftest import embedded
 
 
@@ -39,8 +43,14 @@ def bounded_store(request, tmp_path, hashing):
         store.close()
 
 
+def assert_counts_exact(store):
+    kept = dict(store._conn.execute("SELECT robot_id,memories FROM memory_counts WHERE memories<>0").fetchall())
+    actual = dict(store._conn.execute("SELECT robot_id,COUNT(*) FROM memories GROUP BY robot_id").fetchall())
+    assert kept == actual
+
+
 def test_memory_capacity_is_atomic_and_existing_records_still_update(bounded_store, hashing):
-    store = bounded_store(max_memories=2)
+    store = bounded_store(max_memories=2, evict_at_capacity=False)
     first = embedded(hashing, "printer", t=1)
     store.upsert([first])
     with pytest.raises(ValidationError, match="capacity"):
@@ -55,8 +65,9 @@ def test_memory_capacity_is_atomic_and_existing_records_still_update(bounded_sto
     assert store.count(EVERYTHING) == 2
 
 
-def test_concurrent_memory_admission_cannot_overshoot(bounded_store, hashing):
-    store = bounded_store(max_memories=3)
+@pytest.mark.parametrize("evict", [False, True])
+def test_concurrent_memory_admission_cannot_overshoot(bounded_store, hashing, evict):
+    store = bounded_store(max_memories=3, evict_at_capacity=evict)
     memories = [embedded(hashing, f"item {i}", t=i) for i in range(12)]
 
     def insert(memory):
@@ -68,7 +79,219 @@ def test_concurrent_memory_admission_cannot_overshoot(bounded_store, hashing):
 
     with ThreadPoolExecutor(max_workers=4) as workers:
         results = list(workers.map(insert, memories))
-    assert sum(results) == store.count(EVERYTHING) == 3
+    assert store.count(EVERYTHING) == 3
+    assert sum(results) == (12 if evict else 3)
+    assert_counts_exact(store)
+
+
+def test_full_collection_evicts_its_weakest_old_memory_instead_of_refusing(bounded_store, hashing, tmp_path):
+    store = bounded_store(max_memories=3)
+    path = tmp_path / "weak.jpg"
+    path.write_bytes(b"frame")
+    strong = embedded(hashing, "printer", t=1)
+    weak = embedded(
+        hashing, "chair", t=2, confidence=0.1, evidence=Evidence(EvidenceKind.FRAME, str(path), managed=True)
+    )
+    recent = embedded(hashing, "desk", t=3)
+    store.upsert([strong, weak, recent])
+    reinforcer = Reinforcer(store, remover=remove_local_file)
+    arrival = embedded(hashing, "microwave", t=4)
+    assert reinforcer.reinforce_or_insert(arrival) == (arrival, False)
+    assert {m.id for m in store.query(EVERYTHING)} == {strong.id, recent.id, arrival.id}
+    # The evicted memory's evidence is released through the ordinary cleanup journal.
+    assert not path.exists()
+    _, merged = reinforcer.reinforce_or_insert(embedded(hashing, "desk", t=900))
+    assert merged and store.count(EVERYTHING) == 3
+    assert_counts_exact(store)
+
+
+def test_eviction_takes_superseded_then_summarised_then_weakest_memories(bounded_store, hashing):
+    store = bounded_store(max_memories=5)
+    old = embedded(hashing, "old shelf", t=1, confidence=0.1)
+    superseded = embedded(hashing, "moved box", t=50, superseded=True)
+    summary = embedded(hashing, "a kitchen", t=40, camera="summary", role="summary")
+    members = [
+        embedded(hashing, "kettle", t=40, consolidated_into=summary.id),
+        embedded(hashing, "toaster", t=41, consolidated_into=summary.id),
+    ]
+    store.upsert([old, superseded, summary, *members])
+    evicted = []
+    for i in range(4):
+        before = {m.id for m in store.query(EVERYTHING)}
+        store.upsert([embedded(hashing, f"new {i}", t=100 + i)])
+        evicted.extend(before - {m.id for m in store.query(EVERYTHING)})
+    assert evicted == [superseded.id, members[0].id, members[1].id, old.id]
+    # Evicting a summarised member keeps the summary that already represents it.
+    kept = store.get(summary.id)
+    assert kept is not None and not kept.superseded
+    assert store.count(EVERYTHING) == 5
+    assert_counts_exact(store)
+
+
+def test_eviction_keeps_each_robot_within_an_equal_share(hashing):
+    store = InMemoryStore(CollectionInfo("fleet", hashing.model_name, hashing.dimension), limits=StoreLimits(4))
+    b1 = embedded(hashing, "b1", t=1, robot="b")
+    a = [embedded(hashing, f"a{i}", t=10 + i, robot="a") for i in range(3)]
+    store.upsert([b1, *a])
+
+    def insert(memory):
+        before = {m.id for m in store.query(EVERYTHING)}
+        store.upsert([memory])
+        (victim,) = before - {m.id for m in store.query(EVERYTHING)}
+        return victim
+
+    # At or above its share, a robot replaces its own memories, even when another robot's are older.
+    assert insert(embedded(hashing, "a3", t=20, robot="a")) == a[0].id
+    # Below its share, a robot takes from the largest holder.
+    assert insert(embedded(hashing, "b2", t=21, robot="b")) == a[1].id
+    assert insert(embedded(hashing, "c1", t=22, robot="c")) == b1.id
+    assert insert(embedded(hashing, "a4", t=23, robot="a")) == a[2].id
+    assert_counts_exact(store)
+    store.close()
+
+
+def test_capacity_refuses_when_only_the_incoming_batch_could_be_evicted(bounded_store, hashing):
+    store = bounded_store(max_memories=1)
+    with pytest.raises(ValidationError, match="nothing can be evicted"):
+        store.upsert([embedded(hashing, "a", t=1), embedded(hashing, "b", t=2)])
+    assert store.count(EVERYTHING) == 0
+    assert_counts_exact(store)
+
+
+def test_eviction_rolls_back_with_its_transaction(bounded_store, hashing, tmp_path):
+    store = bounded_store(max_memories=2, max_cleanup=1)
+    evidence = Evidence(EvidenceKind.FRAME, str(tmp_path / "victim.jpg"), managed=True)
+    victim = embedded(hashing, "victim", t=1, evidence=evidence)
+    store.upsert([victim, embedded(hashing, "other", t=2)])
+    arrival = embedded(hashing, "arrival", t=3)
+    with pytest.raises(RuntimeError), store.transaction():
+        store.upsert([arrival])
+        assert store.get(victim.id) is None
+        raise RuntimeError
+    assert store.get(victim.id) is not None and store.get(arrival.id) is None
+    assert store.drain_cleanup(lambda _: None) == 0
+    # An eviction whose evidence cannot be queued is refused without losing anything.
+    store.enqueue_cleanup([Evidence(EvidenceKind.FRAME, str(tmp_path / "pending.jpg"), managed=True)])
+    with pytest.raises(ValidationError, match="cleanup capacity"):
+        store.upsert([arrival])
+    assert store.get(victim.id) is not None and store.get(arrival.id) is None
+    assert_counts_exact(store)
+    assert store.drain_cleanup(lambda _: None) == 1
+
+
+def test_memory_counts_stay_exact_under_random_writes_and_rollbacks(bounded_store, hashing):
+    rng = np.random.default_rng(7)
+    store = bounded_store(max_memories=8)
+    curator = Curator(store, remover=None)
+
+    def pick(items):
+        return items[int(rng.integers(len(items)))]
+
+    def fresh(t):
+        return embedded(hashing, f"item {t}", t=t, robot=pick("abc"), confidence=float(rng.random()))
+
+    for t in range(1, 301):
+        existing = store.query(EVERYTHING)
+        op = rng.random()
+        if op < 0.5:
+            store.upsert([fresh(t)])
+        elif op < 0.58 and existing:
+            store.upsert([replace(pick(existing), robot_id=pick("abc"))])
+        elif op < 0.64:
+            store.delete([pick(existing).id if existing else "missing"])
+        elif op < 0.66:
+            store.delete_where(Filter(robot_id=pick("abc"), include_superseded=True))
+        elif op < 0.8:
+            with contextlib.suppress(RuntimeError), store.transaction():
+                store.upsert([fresh(t)])
+                store.delete([m.id for m in existing[:2]])
+                with contextlib.suppress(RuntimeError), store.transaction():
+                    store.upsert([fresh(t + 0.5)])
+                    raise RuntimeError
+                if rng.random() < 0.5:
+                    raise RuntimeError
+        elif op < 0.88 and existing:
+            curator.supersede(pick(existing).id, now=t)
+        elif op < 0.94:
+            curator.run(now=t + 2 * 86400)
+        else:
+            curator.forget(Filter(robot_id=pick("abc")))
+        assert_counts_exact(store)
+    assert store.count(EVERYTHING) <= 8
+
+
+def test_existing_state_files_gain_exact_counts(tmp_path, hashing):
+    info = CollectionInfo("counts", hashing.model_name, hashing.dimension)
+    path = tmp_path / "counts.sqlite3"
+    store = StateStore(info, path)
+    store.upsert([embedded(hashing, f"m{i}", t=i, robot="ab"[i % 2]) for i in range(5)])
+    store.close()
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+            DROP TRIGGER memory_count_insert; DROP TRIGGER memory_count_delete;
+            DROP TRIGGER memory_count_move; DROP TABLE memory_counts;
+        """)
+    reopened = StateStore(info, path, limits=StoreLimits(max_memories=5))
+    try:
+        assert_counts_exact(reopened)
+        reopened.upsert([embedded(hashing, "arrival", t=9, robot="a")])
+        assert reopened.count(EVERYTHING) == 5
+        assert_counts_exact(reopened)
+    finally:
+        reopened.close()
+
+
+def test_legacy_collection_above_capacity_opens_and_replaces_one_for_one(tmp_path, hashing):
+    import lancedb
+
+    from placecell.store.codec import to_row
+    from placecell.store.lancedb_store import LanceDBStore
+
+    info = CollectionInfo("legacy_full", hashing.model_name, hashing.dimension)
+    LanceDBStore(tmp_path, info).close()
+    (tmp_path / "legacy_full.state.sqlite3").unlink()
+    legacy = [embedded(hashing, f"legacy {i}", t=i) for i in range(3)]
+    lancedb.connect(str(tmp_path)).open_table(info.name).add([to_row(m) for m in legacy])
+    store = LanceDBStore(tmp_path, info, limits=StoreLimits(max_memories=2))
+    try:
+        assert store.count(EVERYTHING) == 3
+        store.upsert([embedded(hashing, "arrival", t=10)])
+        assert store.count(EVERYTHING) == 3 and store.get(legacy[0].id) is None
+    finally:
+        store.close()
+    closed = LanceDBStore(tmp_path, info, limits=StoreLimits(max_memories=2, evict_at_capacity=False))
+    try:
+        with pytest.raises(ValidationError, match="capacity reached"):
+            closed.upsert([embedded(hashing, "refused", t=11)])
+        assert closed.count(EVERYTHING) == 3
+    finally:
+        closed.close()
+
+
+def test_admission_cost_does_not_grow_with_the_collection(hashing):
+    def admit(size):
+        store = InMemoryStore(CollectionInfo("cost", hashing.model_name, hashing.dimension), limits=StoreLimits(size))
+        store.upsert([embedded(hashing, f"m{i}", t=i) for i in range(size)])
+        steps, statements = [0], []
+
+        def tick():
+            steps[0] += 1
+            return 0
+
+        store._conn.set_progress_handler(tick, 1)
+        store._conn.set_trace_callback(statements.append)
+        for i in range(10):
+            store.upsert([embedded(hashing, f"arrival {i}", t=size + i)])
+        store._conn.set_progress_handler(None, 1)
+        store._conn.set_trace_callback(None)
+        assert store.count(EVERYTHING) == size
+        assert not [s for s in statements if re.search(r"COUNT\(\*\)\s+FROM\s+memories", s, re.IGNORECASE)]
+        store.close()
+        return steps[0]
+
+    # SQLite virtual-machine steps per evicting insert, not wall time: identical work at 20x the size.
+    small, large = admit(100), admit(2000)
+    assert large <= small * 1.2
 
 
 def test_repeated_visits_bound_history_and_age_pruning_cannot_be_undone(bounded_store, hashing):
@@ -272,6 +495,7 @@ def test_legacy_oversized_correction_file_is_refused_intact(tmp_path):
     [
         lambda: StoreLimits(max_memories=0),
         lambda: StoreLimits(max_cleanup=True),
+        lambda: StoreLimits(evict_at_capacity=1),
         lambda: MissionContext(max_events=0),
         lambda: MissionContext(retention_s=float("nan")),
         lambda: InMemoryCorrectionLog(max_bytes=1),

@@ -80,7 +80,9 @@ busy response. Maintenance runs in one background worker with one waiting slot. 
 logs queued and failed jobs, oldest job age and dropped observations every 30 seconds.
 
 Scene admission defaults to 10,000 records, and each memory retains at most 1,024 detailed
-sightings. Capacity refusal is transactional; updates to existing records remain allowed.
+sightings. At the record limit a new memory evicts the least valuable one in the same
+transaction, keeping each robot within an equal share; `memory_evict_at_capacity: false`
+restores transactional refusal. Updates to existing records never evict.
 See [memory retention](memory-retention.md) for configuration and cleanup limits.
 
 Memory records contain at most 64 recent sightings. To read older retained events, page

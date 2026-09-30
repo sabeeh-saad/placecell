@@ -11,12 +11,13 @@ available through the paged sightings API. Temporal filters always use that hist
 from __future__ import annotations
 
 import heapq
+import itertools
 import json
 import math
 import sqlite3
 import threading
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
@@ -35,6 +36,26 @@ from placecell.store.refinements import RefinementJournal
 from placecell.store.schema import STATE_VERSION, check_connection
 
 HISTORY_PREVIEW = 64
+EVICTION_CANDIDATES = 32
+"""How many of a robot's least recently seen memories are ranked for eviction."""
+EVICTION_HALF_LIFE_S = 7 * 24 * 3600.0
+"""Confidence half-life for that ranking; the retention and retrieval default."""
+
+# Row counts per robot, kept in the writing transaction so every path and rollback stays exact.
+_MEMORY_COUNTS = (
+    "CREATE TABLE memory_counts (robot_id TEXT PRIMARY KEY, memories INTEGER NOT NULL)",
+    "INSERT INTO memory_counts SELECT IFNULL(robot_id,''),COUNT(*) FROM memories GROUP BY 1",
+    "CREATE TRIGGER memory_count_insert AFTER INSERT ON memories BEGIN "
+    "INSERT INTO memory_counts VALUES (IFNULL(new.robot_id,''),1) "
+    "ON CONFLICT(robot_id) DO UPDATE SET memories=memories+1; END",
+    "CREATE TRIGGER memory_count_delete AFTER DELETE ON memories BEGIN "
+    "UPDATE memory_counts SET memories=memories-1 WHERE robot_id=IFNULL(old.robot_id,''); END",
+    "CREATE TRIGGER memory_count_move AFTER UPDATE OF robot_id ON memories "
+    "WHEN IFNULL(old.robot_id,'')<>IFNULL(new.robot_id,'') BEGIN "
+    "UPDATE memory_counts SET memories=memories-1 WHERE robot_id=IFNULL(old.robot_id,''); "
+    "INSERT INTO memory_counts VALUES (IFNULL(new.robot_id,''),1) "
+    "ON CONFLICT(robot_id) DO UPDATE SET memories=memories+1; END",
+)
 
 
 class StateStore:
@@ -71,6 +92,10 @@ class StateStore:
             CREATE INDEX IF NOT EXISTS memory_robot ON memories(robot_id, camera_id);
             CREATE INDEX IF NOT EXISTS memory_role ON memories(role, consolidated_into, id);
             CREATE INDEX IF NOT EXISTS memory_evidence ON memories(evidence_uri);
+            CREATE INDEX IF NOT EXISTS memory_robot_age ON memories(robot_id, last_seen, id);
+            CREATE INDEX IF NOT EXISTS memory_robot_superseded ON memories(robot_id, last_seen, id) WHERE superseded=1;
+            CREATE INDEX IF NOT EXISTS memory_robot_folded ON memories(robot_id, last_seen, id)
+                WHERE consolidated_into<>'';
             CREATE TABLE IF NOT EXISTS sightings (
                 memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
                 observation_id TEXT NOT NULL, timestamp REAL NOT NULL,
@@ -90,6 +115,9 @@ class StateStore:
                 self._conn.execute("ALTER TABLE memories ADD COLUMN caption_vector BLOB")
             if "embedding_kind" not in columns:
                 self._conn.execute("ALTER TABLE memories ADD COLUMN embedding_kind TEXT NOT NULL DEFAULT 'legacy'")
+            if not self._conn.execute("SELECT 1 FROM sqlite_master WHERE name='memory_counts'").fetchone():
+                for statement in _MEMORY_COUNTS:
+                    self._conn.execute(statement)
 
         self.jobs = WorkJournal(self._conn, self.transaction, self.enqueue_cleanup)
         self.refinements = RefinementJournal(self._conn, self.transaction, self.limits.max_refinement_jobs)
@@ -129,14 +157,19 @@ class StateStore:
             raise ValidationError(f"memory {memory.id} must have dimension {self.info.dimension}")
 
     def upsert(self, memories: Iterable[Memory]) -> int:
+        return self._write(memories, admit=True)
+
+    def _write(self, memories: Iterable[Memory], *, admit: bool) -> int:
+        """Upsert a batch. Without admission, existing records are imported regardless of capacity."""
         batch = list(memories)
         for memory in batch:
             self._check(memory)
+        written = {memory.id for memory in batch}
         with self.transaction():
             for memory in batch:
                 previous = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory.id,)).fetchone()
-                if previous is None and self.count(Filter(include_superseded=True)) >= self.limits.max_memories:
-                    raise ValidationError("memory capacity reached; prune retained memories or raise max_memories")
+                if previous is None and admit:
+                    self._admit(memory.robot_id, written)
                 if previous and previous["consolidated_into"]:
                     old = json.loads(previous["payload"])
                     if any(old[k] != getattr(memory, k) for k in ("caption", "last_seen", "superseded")) or (
@@ -154,6 +187,55 @@ class StateStore:
                         memory = replace(memory, consolidated_into="")
                 self._save(memory, previous)
         return len(batch)
+
+    def _admit(self, robot_id: str, protected: set[str]) -> None:
+        """Make room for one new memory, evicting one unless eviction is disabled.
+
+        Each robot holding memories is entitled to an equal share of the capacity. A robot at
+        or above its share gives up its own memory; below it, the largest holder gives one up.
+        Memories written by the current batch are never evicted.
+        """
+        counts: dict[str, int] = dict(
+            self._conn.execute("SELECT robot_id,memories FROM memory_counts WHERE memories>0").fetchall()
+        )
+        if sum(counts.values()) < self.limits.max_memories:
+            return
+        if not self.limits.evict_at_capacity:
+            raise ValidationError("memory capacity reached; prune retained memories or raise max_memories")
+        owner = robot_id
+        if counts.get(robot_id, 0) * len(counts.keys() | {robot_id}) < self.limits.max_memories:
+            owner = max(counts, key=lambda r: (counts[r], r))
+        victim, folded = self._victim(owner, protected)
+        if victim is None:
+            raise ValidationError("memory capacity reached and nothing can be evicted; raise max_memories")
+        self._remove(victim, keep_summary=folded)
+
+    def _victim(self, robot_id: str, protected: set[str]) -> tuple[Memory | None, bool]:
+        """The robot's least valuable memory and whether it is covered by a summary.
+
+        Superseded memories go first, then memories folded into a summary, then the least
+        recently seen memories ranked by decayed confidence.
+        """
+        for condition, folded in (("superseded=1", False), ("consolidated_into<>''", True)):
+            oldest = self._oldest(robot_id, condition, protected, 1)
+            if oldest:
+                return self.get(oldest[0][0]), folded
+        candidates = self._oldest(robot_id, "1", protected, EVICTION_CANDIDATES)
+        if not candidates:
+            return None, False
+        newest = candidates[-1][1]
+        weakest = min(candidates, key=lambda r: (r[2] * 0.5 ** ((newest - r[1]) / EVICTION_HALF_LIFE_S), r[1], r[0]))
+        return self.get(weakest[0]), False
+
+    def _oldest(self, robot_id: str, condition: str, protected: set[str], limit: int) -> list[sqlite3.Row]:
+        with closing(
+            self._conn.execute(
+                "SELECT id,last_seen,json_extract(payload,'$.confidence') FROM memories "
+                "WHERE robot_id=? AND " + condition + " ORDER BY last_seen,id",
+                (robot_id,),
+            )
+        ) as cursor:
+            return list(itertools.islice((row for row in cursor if row[0] not in protected), limit))
 
     def _save(self, memory: Memory, previous: sqlite3.Row | None) -> None:
         row = to_row(memory)
@@ -454,19 +536,26 @@ class StateStore:
         with self.transaction():
             for identity in ids:
                 memory = self.get(identity)
-                if memory is None:
-                    continue
-                if memory.consolidated_into:
-                    self._invalidate_summary(memory.consolidated_into, memory.last_seen)
-                if memory.role == "summary":
-                    self._invalidate_summary(memory.id, memory.last_seen)
-                if memory.evidence is not None and memory.evidence.managed:
-                    self.enqueue_cleanup([memory.evidence])
-                removed += self._conn.execute("DELETE FROM memories WHERE id=?", (identity,)).rowcount
-                self._conn.execute(
-                    "INSERT INTO dirty_vectors VALUES (?,1) ON CONFLICT(id) DO UPDATE SET generation=generation+1",
-                    (identity,),
-                )
+                if memory is not None:
+                    removed += self._remove(memory)
+        return removed
+
+    def _remove(self, memory: Memory, *, keep_summary: bool = False) -> int:
+        """Delete one memory, queue its managed evidence and release its summary.
+
+        Eviction keeps a member's summary, which already represents it.
+        """
+        if memory.consolidated_into and not keep_summary:
+            self._invalidate_summary(memory.consolidated_into, memory.last_seen)
+        if memory.role == "summary":
+            self._invalidate_summary(memory.id, memory.last_seen)
+        if memory.evidence is not None and memory.evidence.managed:
+            self.enqueue_cleanup([memory.evidence])
+        removed = int(self._conn.execute("DELETE FROM memories WHERE id=?", (memory.id,)).rowcount)
+        self._conn.execute(
+            "INSERT INTO dirty_vectors VALUES (?,1) ON CONFLICT(id) DO UPDATE SET generation=generation+1",
+            (memory.id,),
+        )
         return removed
 
     def delete_where(self, where: Filter) -> int:
