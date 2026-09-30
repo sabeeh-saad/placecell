@@ -140,11 +140,11 @@ def test_caption_index_recovers_reopens_and_rebuilds(tmp_path, hashing, monkeypa
     query = hashing.embed_text(["printer"])[0]
     assert store.search(query, 1, channel="caption")[0].score == pytest.approx(1)
     store.upsert([replace(memory, caption="door", caption_embedding=hashing.embed_text(["door"])[0])])
-    with (
-        patch.object(store._table, "merge_insert", side_effect=RuntimeError("interrupted")),
-        pytest.raises(RuntimeError),
-    ):
-        store.search(query, 1, channel="caption")
+    with patch.object(store._table, "merge_insert", side_effect=RuntimeError("interrupted")):
+        # The changed caption vector is scored from the state store while the index write fails.
+        assert store.search(query, 1, channel="caption")[0].score < 0.5
+        with pytest.raises(RuntimeError):
+            store.sync_index()
     store.close()
 
     store = LanceDBStore.open(tmp_path, "dual")

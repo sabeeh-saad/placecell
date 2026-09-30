@@ -118,11 +118,11 @@ def test_vector_projection_recovers_and_can_be_rebuilt(tmp_path: Path, hashing: 
     store = LanceDBStore(tmp_path, CollectionInfo("projection", hashing.model_name, DIM))
     rows = [embedded(hashing, f"printer {i}", t=i) for i in range(40)]
     store.upsert(rows)
-    with (
-        patch.object(store._table, "merge_insert", side_effect=RuntimeError("index write interrupted")),
-        pytest.raises(RuntimeError),
-    ):
-        store.search(hashing.embed_text(["printer"])[0], 1)
+    with patch.object(store._table, "merge_insert", side_effect=RuntimeError("index write interrupted")):
+        # Searches score unsynced rows from the state store and never see the failed write.
+        assert store.search(hashing.embed_text(["printer 3"])[0], 1)[0].memory.id == rows[3].id
+        with pytest.raises(RuntimeError):
+            store.sync_index()
     assert store.count() == 40 and store.query(limit=1) == [rows[0]]
     store.maintain(vector_index_min_rows=32)
     assert any("vector" in index.columns for index in store._table.list_indices())
@@ -332,4 +332,151 @@ def test_vector_index_path_fulfils_the_search_contract(tmp_path, hashing, monkey
     monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 0)
     store = LanceDBStore(tmp_path, CollectionInfo("indexed", hashing.model_name, DIM))
     contract(store, hashing)
+    store.close()
+
+
+def _pending(store: LanceDBStore) -> int:
+    return int(store._conn.execute("SELECT COUNT(*) FROM dirty_vectors").fetchone()[0])
+
+
+def _found(store: LanceDBStore, query, k: int, where: Filter | None = None) -> list[tuple[str, float]]:
+    return [(hit.memory.id, hit.score) for hit in store.search(query, k, where)]
+
+
+def _matches_exact_search(store: LanceDBStore, query, k: int, where: Filter | None = None) -> bool:
+    from placecell.store.state import StateStore
+
+    found = store.search(query, k, where)
+    exact = StateStore.search(store, query, k, where)
+    return [h.memory.id for h in found] == [h.memory.id for h in exact] and [h.score for h in found] == pytest.approx(
+        [h.score for h in exact], abs=1e-5
+    )
+
+
+def test_searches_see_unsynced_writes_without_writing_the_index(tmp_path: Path, hashing, monkeypatch) -> None:
+    from unittest.mock import patch
+
+    from placecell.store import lancedb_store
+
+    monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 0)
+    store = LanceDBStore(tmp_path, CollectionInfo("fresh", hashing.model_name, DIM))
+    rows = _random(hashing, 40, robots=2)
+    store.upsert(rows)
+    assert store.sync_index(limit=16) == 16 and store.sync_index() == 24 and store.sync_index() == 0
+    rng = np.random.default_rng(7)
+    added = embedded(hashing, "new", t=100).with_embedding(rng.standard_normal(DIM), hashing.model_name, kind="caption")
+    moved = rows[5].with_embedding(rng.standard_normal(DIM), hashing.model_name, kind="caption")
+    store.upsert([added, moved])
+    store.delete([rows[9].id])
+    with (
+        patch.object(store._table, "merge_insert", side_effect=AssertionError("search wrote the index")),
+        patch.object(store._table, "delete", side_effect=AssertionError("search wrote the index")),
+    ):
+        assert store.search(added.embedding, 1)[0].memory.id == added.id
+        # An updated row scores against its current vector, not the one still in the index.
+        assert store.search(moved.embedding, 1)[0].score == pytest.approx(1, abs=1e-5)
+        stale = dict(_found(store, rows[5].embedding, 40))
+        assert stale[moved.id] == pytest.approx(
+            float(moved.embedding @ rows[5].embedding)
+            / (np.linalg.norm(moved.embedding) * np.linalg.norm(rows[5].embedding)),
+            abs=1e-5,
+        )
+        assert rows[9].id not in dict(_found(store, rows[9].embedding, 40))
+        for query in (added.embedding, rows[5].embedding, rows[0].embedding, rows[30].embedding):
+            assert _matches_exact_search(store, query, 10)
+            assert _matches_exact_search(store, query, 10, Filter(robot_id="r1"))
+    assert _pending(store) == 3
+    assert store.sync_index() == 3 and _pending(store) == 0
+    assert _matches_exact_search(store, rows[5].embedding, 10)
+    assert _matches_exact_search(store, rows[5].embedding, 10, EVERYTHING)
+    with pytest.raises(ValidationError):
+        store.sync_index(0)
+    store.close()
+
+
+def test_a_long_backlog_is_synced_in_a_bounded_batch_or_searched_exactly(tmp_path: Path, hashing, monkeypatch) -> None:
+    import threading
+    from unittest.mock import patch
+
+    from placecell.store import lancedb_store
+
+    monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 0)
+    monkeypatch.setattr(lancedb_store, "SEARCH_BACKLOG_ROWS", 2)
+    store = LanceDBStore(tmp_path, CollectionInfo("backlog", hashing.model_name, DIM))
+    rows = _random(hashing, 30)
+    store.upsert(rows[:20])
+    store.sync_index()
+    store.upsert(rows[20:24])
+    query = rows[22].embedding
+    assert _matches_exact_search(store, query, 5)
+    assert _pending(store) == 2, "one batch of the backlog limit was synced"
+
+    store.upsert(rows[24:30])
+    held, release = threading.Event(), threading.Event()
+
+    def sync_elsewhere() -> None:
+        with store._projection_lock:
+            held.set()
+            release.wait(10)
+
+    syncing = threading.Thread(target=sync_elsewhere)
+    syncing.start()
+    try:
+        assert held.wait(10)
+        with patch.object(store._table, "search", side_effect=AssertionError("vector index used")):
+            # Another sync is running, so the search neither waits for it nor uses the stale index.
+            assert _matches_exact_search(store, query, 5)
+        assert _pending(store) == 8
+    finally:
+        release.set()
+        syncing.join()
+    with patch.object(store._table, "search", side_effect=AssertionError("vector index used")):
+        # Still too long after one batch: scored exactly.
+        assert _matches_exact_search(store, query, 5)
+    assert _pending(store) == 6
+    store.close()
+
+
+def test_searches_run_beside_writes_and_syncs(tmp_path: Path, hashing, monkeypatch) -> None:
+    import threading
+
+    from placecell.store import lancedb_store
+
+    monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 0)
+    store = LanceDBStore(tmp_path, CollectionInfo("busy", hashing.model_name, DIM))
+    rows = _random(hashing, 120, robots=3)
+    store.upsert(rows[:40])
+    store.maintain(vector_index_min_rows=32)
+    written = threading.Event()
+    failures: list[BaseException] = []
+
+    def write() -> None:
+        try:
+            for row in rows[40:]:
+                store.upsert([row])
+        except BaseException as e:  # pragma: no cover - reported below
+            failures.append(e)
+        finally:
+            written.set()
+
+    def sync() -> None:
+        try:
+            while not written.is_set():
+                store.sync_index(limit=8)
+        except BaseException as e:  # pragma: no cover - reported below
+            failures.append(e)
+
+    threads = [threading.Thread(target=write), threading.Thread(target=sync)]
+    for thread in threads:
+        thread.start()
+    searches = 0
+    while not written.is_set() or not searches:
+        assert len(store.search(rows[searches % 120].embedding, 5, Filter(robot_id="r1"))) == 5
+        searches += 1
+    for thread in threads:
+        thread.join()
+    assert not failures
+    store.sync_index(limit=200)
+    query = rows[77].embedding
+    assert _found(store, query, 3)[0] == (rows[77].id, pytest.approx(1, abs=1e-5))
     store.close()

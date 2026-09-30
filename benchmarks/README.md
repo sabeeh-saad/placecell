@@ -13,8 +13,8 @@ the repository root with the source tree on the path.
 - **search**: p50/p95 latency of `search(k=10)` without a filter and with a robot, a
   place (5 m radius) and a one-day time filter, outside and inside `store.transaction()`;
 - **recall@10** of each search against exact brute force over a snapshot of the store;
-- **reads beside a writer**: search latency while another thread ingests, and that
-  writer's throughput.
+- **reads beside a writer**: search latency, overall and per filter, while another thread
+  ingests, and that writer's throughput.
 
 The data is reproducible from `--seed`: clustered unit vectors (members of a cluster have
 cosine similarity near 0.64, so nearest neighbours are not trivial), poses on a
@@ -40,6 +40,7 @@ PYTHONPATH=src python benchmarks/store_scaling.py --backend memory --sizes 10k -
 | `--workdir` | system temp | Where LanceDB collections are created and removed |
 
 The script prints a Markdown table. Latencies are in milliseconds. LanceDB runs call
-`maintain()` once after loading, like the ROS maintenance timer, and report its duration.
+`maintain()` once after loading, like the ROS maintenance timer, and report its duration,
+and sync the index after the ingest measurement, like the node's sync timer.
 Run on an otherwise idle machine and compare runs made on the same one; pin the process
 with `taskset` when other work shares the host.

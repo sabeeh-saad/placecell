@@ -298,9 +298,12 @@ def searches(
 
 
 def concurrent_reads(
-    store: VectorStore, embedder: LookupEmbedder, observations: list[Observation], queries: list[tuple[Vector, Filter]]
+    store: VectorStore,
+    embedder: LookupEmbedder,
+    observations: list[Observation],
+    queries: list[tuple[str, Vector, Filter]],
 ) -> dict[str, Any]:
-    """Search continuously while another thread ingests, and time both."""
+    """Search continuously while another thread ingests, and time both, per filter too."""
     started, finished = threading.Event(), threading.Event()
     failures: list[BaseException] = []
     write: list[float] = []
@@ -317,17 +320,23 @@ def concurrent_reads(
     thread = threading.Thread(target=writer, name="bench-writer")
     thread.start()
     started.wait()
-    latencies = []
-    for vector, where in itertools.cycle(queries):
+    latencies: dict[str, list[float]] = {name: [] for name, _, _ in queries}
+    for name, vector, where in itertools.cycle(queries):
         begin = time.perf_counter()
         store.search(vector, K, where)
-        latencies.append(time.perf_counter() - begin)
+        latencies[name].append(time.perf_counter() - begin)
         if finished.is_set():
             break
     thread.join()
     if failures:
         raise failures[0]
-    return {"reads": len(latencies), **_ms(latencies), "writes_per_s": round(write[0], 1)}
+    every = [value for samples in latencies.values() for value in samples]
+    return {
+        "reads": len(every),
+        **_ms(every),
+        "writes_per_s": round(write[0], 1),
+        "by_filter": {name: {"reads": len(samples), **_ms(samples)} for name, samples in latencies.items()},
+    }
 
 
 def run_size(options: argparse.Namespace, size: int, directory: Path) -> dict[str, Any]:
@@ -357,6 +366,10 @@ def run_size(options: argparse.Namespace, size: int, directory: Path) -> dict[st
             "contradicted": report.contradicted,
             "transaction": _ms(held),
         }
+        sync_index = getattr(store, "sync_index", None)
+        if sync_index is not None:
+            # The ROS node's sync timer would have caught up by now.
+            sync_index(4 * options.ingest)
         queries = scene.queries(options.queries)
         for vector, where in (queries[name][0] for name in FILTERS):
             store.search(vector, K, where)
@@ -379,7 +392,11 @@ def run_size(options: argparse.Namespace, size: int, directory: Path) -> dict[st
             timings[name]["recall_at_10"] = round(found / expected, 4) if expected else None
             timings[name]["short_results"] = short
         result["search"] = timings
-        mixed = [q for group in zip(*(queries[name] for name in FILTERS), strict=True) for q in group]
+        mixed = [
+            (name, vector, where)
+            for group in zip(*(queries[name] for name in FILTERS), strict=True)
+            for name, (vector, where) in zip(FILTERS, group, strict=True)
+        ]
         result["reads"] = {
             "idle": _ms(idle),
             "during_ingest": concurrent_reads(store, embedder, scene.observations(options.writes, embedder), mixed),

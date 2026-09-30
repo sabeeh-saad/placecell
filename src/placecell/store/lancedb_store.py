@@ -35,6 +35,11 @@ EXACT_SEARCH_ROWS = 2048
 """Filtered sets up to this size are scored exactly in the state store instead of the vector index."""
 REFINE_FACTOR = 5
 """Indexed searches rescore this many times k candidates with full-precision vectors."""
+SEARCH_BACKLOG_ROWS = 256
+"""Rows changed since the last index sync that a search scores exactly beside the index.
+
+With more waiting, a search first syncs this many, or scores its whole filtered set exactly
+when another sync is running."""
 
 
 class LanceDBStore(StateStore):
@@ -184,14 +189,26 @@ class LanceDBStore(StateStore):
         )
         self._table.update(values={"schema_version": SCHEMA_VERSION})
 
-    def _sync_index(self) -> None:
+    def sync_index(self, limit: int = 1024) -> int:
+        """Copy up to `limit` changed rows into the vector projection and return how many were copied.
+
+        Searches never wait for it; they score rows changed since the last sync exactly. Call it
+        every few seconds outside camera callbacks to keep that set small. `maintain()` copies all.
+        """
+        if type(limit) is not int or limit < 1:
+            raise ValidationError("sync limit must be a positive integer")
+        return self._sync_index(limit)
+
+    def _sync_index(self, limit: int | None = None) -> int:
         """Replay committed vector changes. SQLite remains authoritative after an index failure."""
+        synced = 0
         with self._projection_lock:
-            while True:
+            while limit is None or synced < limit:
+                batch = 256 if limit is None else min(256, limit - synced)
                 with self._reading() as conn:
-                    pending = conn.execute("SELECT id,generation FROM dirty_vectors LIMIT 256").fetchall()
+                    pending = conn.execute("SELECT id,generation FROM dirty_vectors LIMIT ?", (batch,)).fetchall()
                     if not pending:
-                        return
+                        break
                     rows, deleted = [], []
                     for item in pending:
                         memory = self.get(item[0])
@@ -208,6 +225,8 @@ class LanceDBStore(StateStore):
                     self._conn.executemany(
                         "DELETE FROM dirty_vectors WHERE id=? AND generation=?", ((p[0], p[1]) for p in pending)
                     )
+                synced += len(pending)
+        return synced
 
     def search(
         self, vector: ArrayLike, k: int, where: Filter | None = None, *, channel: SearchChannel = "primary"
@@ -232,26 +251,59 @@ class LanceDBStore(StateStore):
             or self._count_upto(scope, channel, EXACT_SEARCH_ROWS + 1) <= EXACT_SEARCH_ROWS
         ):
             return super().search(vector, k, scope, channel=channel)
-        with self._projection_lock:
-            self._sync_index()
-            column = "caption_vector" if channel == "caption" else "vector"
-            expr = _sql(scope)
-            if channel == "image":
-                expr = f"({expr or 'true'}) AND embedding_kind = 'image'"
-            elif channel == "caption":
-                expr = f"({expr or 'true'}) AND embedding_kind <> 'legacy' AND caption_vector IS NOT NULL"
-            partitions = self._indexes.get(column, {}).get("partitions", 0)
-            probes = _probes(partitions) if partitions else None
+        # Rows changed since the last index sync are scored from state. A search never waits for
+        # another sync; it shortens a long backlog itself or scores its whole set exactly.
+        unit = query / np.linalg.norm(query)
+        unsynced = self._unsynced(unit, k, scope, channel)
+        if unsynced is None and self._projection_lock.acquire(blocking=False):
+            try:
+                self._sync_index(SEARCH_BACKLOG_ROWS)
+            finally:
+                self._projection_lock.release()
+            unsynced = self._unsynced(unit, k, scope, channel)
+        if unsynced is None:
+            return super().search(vector, k, scope, channel=channel)
+        changed, fresh = unsynced
+        column = "caption_vector" if channel == "caption" else "vector"
+        expr = _sql(scope)
+        if channel == "image":
+            expr = f"({expr or 'true'}) AND embedding_kind = 'image'"
+        elif channel == "caption":
+            expr = f"({expr or 'true'}) AND embedding_kind <> 'legacy' AND caption_vector IS NOT NULL"
+        if changed:
+            # Their index entries may be stale or deleted.
+            expr = f"({expr or 'true'}) AND id NOT IN ({','.join(_quote(i) for i in sorted(changed))})"
+        partitions = self._indexes.get(column, {}).get("partitions", 0)
+        probes = _probes(partitions) if partitions else None
+        rows = self._nearest(query, column, expr, k, probes)
+        while probes is not None and len(rows) < k and probes < partitions:
+            # A selective filter can leave fewer than k matches in the partitions probed.
+            probes = min(partitions, 4 * probes)
             rows = self._nearest(query, column, expr, k, probes)
-            while probes is not None and len(rows) < k and probes < partitions:
-                # A selective filter can leave fewer than k matches in the partitions probed.
-                probes = min(partitions, 4 * probes)
-                rows = self._nearest(query, column, expr, k, probes)
+        ranked = sorted(
+            [*fresh, *((row["id"], 1.0 - float(row["_distance"])) for row in rows)], key=lambda v: (-v[1], v[0])
+        )
+        with self._reading():
             return [
-                Hit(memory, 1.0 - float(row["_distance"]))
-                for row in rows
-                if (memory := self.get(row["id"])) is not None and scope.matches(memory)
+                Hit(memory, score)
+                for identity, score in ranked[:k]
+                if (memory := self.get(identity)) is not None and scope.matches(memory)
             ]
+
+    def _unsynced(
+        self, query: Vector, k: int, where: Filter, channel: SearchChannel
+    ) -> tuple[set[str], list[tuple[str, float]]] | None:
+        """Rows changed since the last sync and the k best of them the filter keeps, scored from state.
+
+        None when more than `SEARCH_BACKLOG_ROWS` rows wait.
+        """
+        with self._reading() as conn:
+            changed = {
+                row[0] for row in conn.execute("SELECT id FROM dirty_vectors LIMIT ?", (SEARCH_BACKLOG_ROWS + 1,))
+            }
+            if len(changed) > SEARCH_BACKLOG_ROWS:
+                return None
+            return changed, self._best_changed(conn, query, k, where, channel)
 
     def _nearest(
         self, query: Vector, column: str, expr: str | None, k: int, probes: int | None
@@ -270,7 +322,7 @@ class LanceDBStore(StateStore):
         return builder.to_list()
 
     def maintain(self, vector_index_min_rows: int = 1000) -> None:
-        """Refresh the projection, size its indexes to the collection, and compact old versions.
+        """Copy every changed row into the projection, size its indexes to the collection, and compact old versions.
 
         A vector index is built once a column holds `vector_index_min_rows` vectors and
         retrained whenever that count has doubled since. Nothing is rebuilt or compacted when
@@ -307,12 +359,13 @@ class LanceDBStore(StateStore):
         with self._projection_lock:
             self._indexes.clear()
             self._write_indexes()
-            self._table.delete("id IS NOT NULL")
+            # Marked before the rows go, so searches meanwhile score every memory from state.
             with self.transaction():
                 self._conn.execute(
                     "INSERT INTO dirty_vectors SELECT id,1 FROM memories WHERE 1 "
                     "ON CONFLICT(id) DO UPDATE SET generation=generation+1"
                 )
+            self._table.delete("id IS NOT NULL")
             self._sync_index()
 
     def close(self) -> None:

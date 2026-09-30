@@ -129,6 +129,14 @@ least 32), rescore five times k candidates with full-precision vectors, and prob
 when a selective filter leaves fewer than k matches. `benchmarks/store_scaling.py` measures
 latency and recall@10 at a given collection size.
 
+Searches never write the vector index. Memories added, changed or deleted since the last
+index sync are scored exactly from the state store and their possibly stale index entries
+are skipped, so a write is searchable at once. The ROS node copies up to 1,024 changed rows
+into the index every 2 s on its own worker (`store.sync_index()`), and `maintain()` copies
+all of them. When more than 256 changed rows wait, a search first syncs 256 of them; if
+another sync is running, or the backlog is still longer, it scores its filtered set exactly
+from the state store instead.
+
 Ingestion searches for merge candidates before it opens the write transaction, so the
 transaction holds the store only for the write. Inside it the chosen candidate is read
 again; if it changed or was deleted meanwhile, the merge is decided again. A memory that

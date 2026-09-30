@@ -572,6 +572,17 @@ class StateStore:
             expr += " AND m.embedding_kind='image'"
         return expr, params, column
 
+    def _best_changed(
+        self, conn: sqlite3.Connection, query: Vector, k: int, where: Filter, channel: SearchChannel
+    ) -> list[tuple[str, float]]:
+        """The k best (id, cosine) pairs among rows changed since the last projection sync that the filter keeps."""
+        expr, params, column = self._vector_predicate(where, channel)
+        # CROSS JOIN starts from the few changed rows instead of the filtered memories.
+        cursor = conn.execute(
+            f"SELECT m.id,m.{column} FROM dirty_vectors d CROSS JOIN memories m ON m.id=d.id WHERE " + expr, params
+        )
+        return _best(iter(lambda: cursor.fetchmany(1024), []), query, k)
+
     def _count_upto(self, where: Filter, channel: SearchChannel, limit: int) -> int:
         """How many rows a search would score, counting no further than `limit`."""
         expr, params, _ = self._vector_predicate(where, channel)

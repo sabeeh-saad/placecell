@@ -152,6 +152,9 @@ def build_store(
     return LanceDBStore(Path(db_path).expanduser(), info, limits=limits)
 
 
+INDEX_SYNC_INTERVAL_S = 2.0
+"""How often changed memories are copied into a vector index, so searches score few of them exactly."""
+
 # Group -> (base URL parameter, key env parameter, group an empty base URL falls back to).
 ENDPOINTS = {
     "chat": ("chat_base_url", "chat_api_key_env", ""),
@@ -690,6 +693,8 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             )
             self._questions = BoundedTasks(p["question_workers"], p["question_queue"], self.get_logger())
             self._maintenance = BoundedTasks(1, 1, self.get_logger())
+            # A separate worker, so frequent index syncs never crowd out hourly maintenance.
+            self._indexing = BoundedTasks(1, 1, self.get_logger())
             self._curator = Curator(
                 store,
                 RetentionPolicy(max_idle_s=p["memory_max_idle_s"], history_age_s=p["memory_history_age_s"]),
@@ -942,6 +947,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 self.create_timer(p["consolidate_interval_s"], self._consolidate)
             if self._refiner is not None:
                 self.create_timer(p["refine_interval_s"], self._refine)
+            sync_index = getattr(self._store, "sync_index", None)
+            if sync_index is not None:
+                self.create_timer(INDEX_SYNC_INTERVAL_S, lambda: self._indexing.submit(sync_index, key="sync"))
             self.create_timer(30.0, self._diagnostics)
             self._worker.start()
             where = f"lancedb {p['db_path']}" if p["db_path"] else "memory"
@@ -1469,6 +1477,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             ingested = self._worker.stop()
             answered = self._questions.stop()
             maintained = self._maintenance.stop()
+            maintained = self._indexing.stop() and maintained
             if ingested and answered and maintained and commands_done:
                 self._store.close()
                 if self._mission_context is not None:
