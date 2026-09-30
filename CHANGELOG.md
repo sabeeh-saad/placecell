@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Keep scene-memory targets valid when the robot's own frames reinforce them during a trip; the goal pose still never follows later changes.
+- Never lose or refuse a stop while navigating: deeper command queue, stop/halt/cancel/abort with filler words on text and speech, and stale-target stops cancel the active trip with the mismatch reported.
+- Limit contradiction to the same robot, camera and vector kind, so other cameras, robots and cross-modal vectors no longer supersede memories.
+- Apply Nav2's collision rule in approach planning (centre below inscribed, footprint free of lethal/unknown) so ordinary doorways pass; bound path checks by total work instead of steps.
+- Tolerate small camera clock skew and isolated bad frames; trust is revoked only after consecutive failures or the age limit.
+- Keep idle localization valid while odometry shows no motion, so AMCL-style localizers no longer expire while the robot stands still. New parameter `odom_frame`.
+- Scope API keys to their endpoints: the shared key goes only to `chat_base_url`'s origin, other endpoints take their own `*_api_key_env`. Keys require https or loopback, and provider redirects are refused. Setups relying on the shared key for another host must set `chat_base_url` or the per-endpoint variable.
+- Evict the least valuable memory at capacity instead of refusing new ones (equal share per robot; `evict_at_capacity` turns it off); count memories per robot with triggers instead of `COUNT(*)` per insert.
+- Assign lookalike objects jointly by appearance and position; skip unresolvable detections instead of creating duplicate records, and keep scene memories when object tracking fails or reaches its limit.
+
 - Add 23 deterministic mission scenarios and a CI execution checkpoint requiring 100 distinct mission cases and 1,000 executions; report component checks separately.
 
 - Bound memory admission, detailed sightings, refinement requests and evidence cleanup; keep job-owned images and externally owned recordings safe during retention.
