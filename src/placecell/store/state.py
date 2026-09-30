@@ -3,6 +3,10 @@
 SQLite owns the state. Vector backends are derived indexes and can be rebuilt from it.
 Returned memories carry at most 64 recent sightings; the complete retained history is
 available through the paged sightings API. Temporal filters always use that history.
+
+One connection writes. A file-backed store serves reads outside a transaction from pooled
+read-only connections, which see committed state and neither wait for the writer nor block
+it; a thread inside `transaction()` reads through the writer and sees its own changes.
 """
 
 # SQL fragments below contain only fixed column names and operators; all values are bound parameters.
@@ -65,6 +69,14 @@ class StateStore:
         self.limits = limits or StoreLimits()
         self._lock = threading.RLock()
         self._depth = 0
+        self._owner: int | None = None
+        # An in-memory database exists only on its own connection, so it has no reader pool.
+        self._database = None if str(path) == ":memory:" else str(path)
+        self._readers: list[sqlite3.Connection] = []
+        self._idle: list[sqlite3.Connection] = []
+        self._pool_lock = threading.Lock()
+        self._local = threading.local()
+        self._closed = False
         self._conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False, timeout=30)
         self._conn.row_factory = sqlite3.Row
         try:
@@ -135,6 +147,7 @@ class StateStore:
             depth = self._depth
             self._conn.execute("BEGIN IMMEDIATE" if depth == 0 else f"SAVEPOINT nested_{depth}")
             self._depth += 1
+            self._owner = threading.get_ident()
             try:
                 yield
             except BaseException:
@@ -146,6 +159,49 @@ class StateStore:
                 self._conn.execute("COMMIT" if depth == 0 else f"RELEASE nested_{depth}")
             finally:
                 self._depth -= 1
+                if not self._depth:
+                    self._owner = None
+
+    def _in_transaction(self) -> bool:
+        """Whether the calling thread is inside this store's transaction."""
+        return self._owner == threading.get_ident()
+
+    @contextmanager
+    def _reading(self) -> Iterator[sqlite3.Connection]:
+        """A connection for one consistent read: the writer inside a transaction, else a pooled reader."""
+        if self._database is None or self._in_transaction():
+            with self._lock:
+                yield self._conn
+            return
+        current: sqlite3.Connection | None = getattr(self._local, "reader", None)
+        if current is not None:
+            yield current
+            return
+        conn = self._checkout()
+        self._local.reader = conn
+        try:
+            conn.execute("BEGIN")
+            try:
+                yield conn
+            finally:
+                conn.execute("COMMIT")
+        finally:
+            self._local.reader = None
+            with self._pool_lock:
+                self._idle.append(conn)
+
+    def _checkout(self) -> sqlite3.Connection:
+        with self._pool_lock:
+            if self._closed:
+                raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
+            if self._idle:
+                return self._idle.pop()
+            assert self._database is not None
+            conn = sqlite3.connect(self._database, isolation_level=None, check_same_thread=False, timeout=30)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only = ON")
+            self._readers.append(conn)
+            return conn
 
     def _check(self, memory: Memory) -> None:
         if memory.embedding is None:
@@ -172,7 +228,7 @@ class StateStore:
                 if previous and previous["consolidated_into"]:
                     old = json.loads(previous["payload"])
                     if any(old[k] != getattr(memory, k) for k in ("caption", "last_seen", "superseded")) or (
-                        not self._read(previous).same_embeddings(memory)
+                        not self._read(previous, self._conn).same_embeddings(memory)
                     ):
                         self._invalidate_summary(
                             previous["consolidated_into"], memory.superseded_at or memory.last_seen
@@ -313,7 +369,7 @@ class StateStore:
     def _invalidate_summary(self, summary_id: str, now: float) -> None:
         summary = self._conn.execute("SELECT * FROM memories WHERE id=?", (summary_id,)).fetchone()
         if summary and not summary["superseded"]:
-            memory = self._read(summary)
+            memory = self._read(summary, self._conn)
             self._save(replace(memory, superseded=True, superseded_at=now), summary)
         self._conn.execute(
             "UPDATE memories SET consolidated_into='', payload=json_set(payload, '$.consolidated_into', '') "
@@ -321,14 +377,14 @@ class StateStore:
             (summary_id,),
         )
 
-    def _read(self, row: sqlite3.Row) -> Memory:
+    def _read(self, row: sqlite3.Row, conn: sqlite3.Connection) -> Memory:
         payload = json.loads(row["payload"])
         payload["vector"] = np.frombuffer(row["vector"], dtype=np.float32)
         payload["caption_vector"] = (
             np.frombuffer(row["caption_vector"], dtype=np.float32) if row["caption_vector"] is not None else None
         )
         payload["embedding_kind"] = row["embedding_kind"]
-        sightings = self._conn.execute(
+        sightings = conn.execute(
             "SELECT observation_id,timestamp FROM sightings WHERE memory_id=? "
             "ORDER BY timestamp DESC, observation_id DESC LIMIT ?",
             (row["id"], HISTORY_PREVIEW),
@@ -338,9 +394,9 @@ class StateStore:
         return from_row(payload)
 
     def get(self, memory_id: str) -> Memory | None:
-        with self._lock:
-            row = self._conn.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
-            return self._read(row) if row else None
+        with self._reading() as conn:
+            row = conn.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
+            return self._read(row, conn) if row else None
 
     def append_sightings(self, memory_id: str, sightings: Iterable[Sighting]) -> None:
         with self.transaction():
@@ -381,8 +437,8 @@ class StateStore:
         if after is not None:
             terms.append("(timestamp, observation_id)>(?,?)")
             params.extend(after)
-        with self._lock:
-            rows = self._conn.execute(
+        with self._reading() as conn:
+            rows = conn.execute(
                 "SELECT observation_id,timestamp FROM sightings WHERE "
                 + " AND ".join(terms)
                 + " ORDER BY timestamp, observation_id LIMIT ?",
@@ -465,12 +521,12 @@ class StateStore:
         if order == "oldest" and (scope.time_from is not None or scope.time_to is not None):
             events, sort_params = self._event_predicate(scope)
             sort = "(SELECT MIN(s.timestamp) FROM sightings s WHERE s.memory_id=m.id AND " + events + ")"
-        with self._lock:
-            rows = self._conn.execute(
+        with self._reading() as conn:
+            rows = conn.execute(
                 "SELECT m.* FROM memories m WHERE " + expr + " ORDER BY " + sort + ",m.id LIMIT ?",
                 [*params, *sort_params, -1 if limit is None else limit],
             ).fetchall()
-            return [self._read(row) for row in rows]
+            return [self._read(row, conn) for row in rows]
 
     def iter_query(self, where: Filter | None = None, batch_size: int = 256) -> Iterator[list[Memory]]:
         if batch_size < 1:
@@ -478,12 +534,12 @@ class StateStore:
         expr, params = self._predicate(where or Filter())
         after = ""
         while True:
-            with self._lock:
-                rows = self._conn.execute(
+            with self._reading() as conn:
+                rows = conn.execute(
                     "SELECT m.* FROM memories m WHERE " + expr + " AND m.id>? ORDER BY m.id LIMIT ?",
                     [*params, after, batch_size],
                 ).fetchall()
-                batch = [self._read(row) for row in rows]
+                batch = [self._read(row, conn) for row in rows]
             if not batch:
                 return
             after = batch[-1].id
@@ -502,8 +558,8 @@ class StateStore:
             return []
         query = query / norm
         expr, params, column = self._vector_predicate(where or Filter(), channel)
-        with self._lock:
-            cursor = self._conn.execute(f"SELECT m.id,m.{column} FROM memories m WHERE " + expr, params)
+        with self._reading() as conn:
+            cursor = conn.execute(f"SELECT m.id,m.{column} FROM memories m WHERE " + expr, params)
             best = _best(iter(lambda: cursor.fetchmany(1024), []), query, k)
             return [Hit(memory, score) for identity, score in best if (memory := self.get(identity)) is not None]
 
@@ -519,17 +575,17 @@ class StateStore:
     def _count_upto(self, where: Filter, channel: SearchChannel, limit: int) -> int:
         """How many rows a search would score, counting no further than `limit`."""
         expr, params, _ = self._vector_predicate(where, channel)
-        with self._lock:
+        with self._reading() as conn:
             return int(
-                self._conn.execute(
+                conn.execute(
                     "SELECT COUNT(*) FROM (SELECT 1 FROM memories m WHERE " + expr + " LIMIT ?)", [*params, limit]
                 ).fetchone()[0]
             )
 
     def count(self, where: Filter | None = None) -> int:
         expr, params = self._predicate(where or Filter())
-        with self._lock:
-            return int(self._conn.execute("SELECT COUNT(*) FROM memories m WHERE " + expr, params).fetchone()[0])
+        with self._reading() as conn:
+            return int(conn.execute("SELECT COUNT(*) FROM memories m WHERE " + expr, params).fetchone()[0])
 
     def delete(self, ids: Iterable[str]) -> int:
         removed = 0
@@ -613,6 +669,11 @@ class StateStore:
         return removed
 
     def close(self) -> None:
+        with self._pool_lock:
+            self._closed = True
+            readers, self._readers, self._idle = self._readers, [], []
+        for reader in readers:
+            reader.close()
         with self._lock:
             self._conn.close()
 

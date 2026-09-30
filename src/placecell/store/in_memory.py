@@ -1,4 +1,7 @@
-"""In-process reference store with indexed metadata and bounded exact vector scans."""
+"""In-process reference store with indexed metadata and bounded exact vector scans.
+
+Its database lives on a single connection, so reads wait for a running transaction.
+"""
 
 from placecell.store.base import EVERYTHING
 from placecell.store.state import StateStore

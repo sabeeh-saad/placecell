@@ -188,8 +188,8 @@ class LanceDBStore(StateStore):
         """Replay committed vector changes. SQLite remains authoritative after an index failure."""
         with self._projection_lock:
             while True:
-                with self.transaction():
-                    pending = self._conn.execute("SELECT id,generation FROM dirty_vectors LIMIT 256").fetchall()
+                with self._reading() as conn:
+                    pending = conn.execute("SELECT id,generation FROM dirty_vectors LIMIT 256").fetchall()
                     if not pending:
                         return
                     rows, deleted = [], []
@@ -222,17 +222,16 @@ class LanceDBStore(StateStore):
             return []
         # A writer must see its uncommitted updates, and history filters and fields that change
         # without rewriting vector rows belong to the state store. Small sets are scored exactly.
-        with self._lock:
-            if (
-                self._depth
-                or scope.time_from is not None
-                or scope.time_to is not None
-                or scope.observation_id is not None
-                or scope.evidence_uri is not None
-                or scope.unconsolidated
-                or self._count_upto(scope, channel, EXACT_SEARCH_ROWS + 1) <= EXACT_SEARCH_ROWS
-            ):
-                return super().search(vector, k, scope, channel=channel)
+        if (
+            self._in_transaction()
+            or scope.time_from is not None
+            or scope.time_to is not None
+            or scope.observation_id is not None
+            or scope.evidence_uri is not None
+            or scope.unconsolidated
+            or self._count_upto(scope, channel, EXACT_SEARCH_ROWS + 1) <= EXACT_SEARCH_ROWS
+        ):
+            return super().search(vector, k, scope, channel=channel)
         with self._projection_lock:
             self._sync_index()
             column = "caption_vector" if channel == "caption" else "vector"

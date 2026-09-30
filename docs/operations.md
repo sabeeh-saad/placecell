@@ -134,6 +134,14 @@ transaction holds the store only for the write. Inside it the chosen candidate i
 again; if it changed or was deleted meanwhile, the merge is decided again. A memory that
 became similar in between is not reconsidered and the observation is stored separately.
 
+The state store is a SQLite database in WAL mode with a single writer connection. Reads
+outside a transaction (`get`, `query`, `iter_query`, `search`, `count`, `sightings`) use a
+pool of read-only connections, one per concurrently reading thread: they see committed
+state, never wait for a write transaction and never hold one up. A thread inside
+`store.transaction()` reads through the writer connection and sees its own uncommitted
+changes. `InMemoryStore` cannot share its in-memory database between connections, so its
+reads still wait for a running transaction.
+
 ## Provider credentials
 
 The ROS node reads API keys only from environment variables named by parameters. The
