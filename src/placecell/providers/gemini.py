@@ -64,6 +64,7 @@ class GeminiEmbedder:
             sleep,
             {"x-goog-api-key": api_key},
             idempotent=True,
+            model=model,
         )
 
     @property

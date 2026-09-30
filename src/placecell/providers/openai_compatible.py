@@ -56,7 +56,7 @@ class OpenAICompatibleEmbedder:
 
     @property
     def dimension(self) -> int:
-        """Vector size. Probed with one request if it was not given at construction."""
+        """Vector size. Probed with one validated request if not given at construction, then cached."""
         if self._dimension is None:
             self._dimension = int(self._request(["placecell"]).shape[1])
         return self._dimension
@@ -79,13 +79,19 @@ class OpenAICompatibleEmbedder:
         return self._parse(body, len(batch))
 
     def _parse(self, body: Any, expected: int) -> Matrix:
+        """Rows in input order; missing or repeated indices and empty or non-finite vectors fail."""
         try:
             data = sorted(body["data"], key=lambda d: d["index"])
+            indices = [d["index"] for d in data]
             matrix = np.asarray([d["embedding"] for d in data], dtype=np.float32)
         except (KeyError, TypeError, ValueError) as e:
             raise ProviderError(f"malformed embeddings response: {message(body)}") from e
         if matrix.ndim != 2 or matrix.shape[0] != expected:
             raise ProviderError(f"expected {expected} embeddings, got {matrix.shape}")
+        if any(type(i) is not int for i in indices) or indices != list(range(expected)):
+            raise ProviderError("embedding indices are missing, repeated or out of range")
         if self._dimension is not None and matrix.shape[1] != self._dimension:
             raise ProviderError(f"model returned dimension {matrix.shape[1]}, configured {self._dimension}")
+        if not np.all(np.isfinite(matrix)) or np.any(np.linalg.norm(matrix, axis=1) == 0):
+            raise ProviderError("embeddings contain non-finite values or a vector with no signal")
         return matrix

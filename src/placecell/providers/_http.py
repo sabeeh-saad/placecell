@@ -169,6 +169,7 @@ class Endpoint:
     retry: RetryPolicy
     sleep: Callable[[float], None] = time.sleep
     idempotent: bool = False
+    model: str | None = None  # for traces, when the payload does not name it
 
     def __post_init__(self) -> None:
         if any(value and key.casefold() in CREDENTIAL_HEADERS for key, value in self.headers.items()):
@@ -187,6 +188,7 @@ class Endpoint:
         extra_headers: Mapping[str, str] | None,
         *,
         idempotent: bool = False,
+        model: str | None = None,
     ) -> Endpoint:
         check_http_url(base_url)
         if not math.isfinite(timeout_s) or timeout_s <= 0:
@@ -202,6 +204,7 @@ class Endpoint:
             retry or RetryPolicy(),
             sleep,
             idempotent,
+            model,
         )
 
     def post(self, payload: Mapping[str, Any]) -> Any:
@@ -215,7 +218,9 @@ class Endpoint:
                     if key.casefold() in CREDENTIAL_HEADERS
                 ]
             )
-        with trace_span("provider_request", model=payload.get("model"), usage=provider_usage(None)) as details:
+        with trace_span(
+            "provider_request", model=payload.get("model", self.model), usage=provider_usage(None)
+        ) as details:
             return self._post(payload, details)
 
     def _post(self, payload: Mapping[str, Any], details: dict[str, Any]) -> Any:
@@ -230,7 +235,7 @@ class Endpoint:
                 self.sleep(self.retry.delay(attempt))
                 continue
             details["http_status"] = status
-            details["usage"] = provider_usage(body)
+            details["usage"] = reported_usage(self.url, body)
             if status == 200:
                 return body
             if status != 429 and status < 500:
@@ -255,6 +260,23 @@ class Endpoint:
                     f"{self.url}: server error {status} after {attempt + 1} attempts", retry_after_s=wait
                 )
         raise ProviderError("unreachable")  # pragma: no cover
+
+
+def reported_usage(url: str, body: Any) -> dict[str, int | float | None]:
+    """Token and cost usage from a response body.
+
+    OpenRouter reports `usage.cost` in its credits, which are US dollars. Other providers'
+    `cost` has no stated currency and stays unknown.
+    """
+    usage = body.get("usage") if isinstance(body, dict) else None
+    if isinstance(usage, dict) and "cost_usd" not in usage and "cost" in usage:
+        try:
+            host = urllib.parse.urlsplit(url).hostname or ""
+        except ValueError:
+            host = ""
+        if host == "openrouter.ai" or host.endswith(".openrouter.ai"):
+            body = {**body, "usage": {**usage, "cost_usd": usage["cost"]}}
+    return provider_usage(body)
 
 
 def retry_after_seconds(value: str | None) -> float:

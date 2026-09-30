@@ -75,8 +75,9 @@ The timeline includes:
   is sampled and may be coalesced. Acknowledgement is
   distinct from a terminal result. Shutdown's unrelated `idle` broadcast does not replace
   the recorded outcome of a completed mission.
-- Instrumented HTTP request durations, attempt counts, model name when supplied in the
-  request, HTTP status, reported token usage and explicitly USD-labelled cost when supplied.
+- Instrumented HTTP request durations, attempt counts, model name (from the request, or
+  from the adapter for native Gemini requests), HTTP status, reported token usage and
+  dollar cost when supplied.
 
 For the Day 3 late-success regression, a trace shows Nav2 requesting cancellation after
 the trip deadline, its eventual successful action result, and the mission ending
@@ -92,8 +93,9 @@ it is not automatically classified as a timeout.
 
 The built-in HTTP adapters retain reported token counts from compatible `usage` fields
 and Gemini `usageMetadata`. Missing or malformed fields stay `null`. Cost is accepted only
-from an explicitly named `cost_usd` field; a generic `cost` field is not assumed to be USD,
-and token prices are not guessed. Many providers therefore leave cost unknown.
+from an explicitly named `cost_usd` field, or from OpenRouter's `cost`, which is in its
+dollar-denominated credits. Another provider's generic `cost` field is not assumed to be
+USD, and token prices are not guessed. Many providers therefore leave cost unknown.
 
 The summary separates the known subtotal from a total for the recorded final responses.
 Retries, interrupted calls and custom providers can add unknown usage. The retry-attempt

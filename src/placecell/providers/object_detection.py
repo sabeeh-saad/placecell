@@ -43,6 +43,7 @@ class GeminiObjectDetector:
             retry or RetryPolicy(attempts=2),
             time.sleep,
             {"x-goog-api-key": api_key},
+            model=model,
         )
 
     @staticmethod

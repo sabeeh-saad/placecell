@@ -94,6 +94,31 @@ def test_openai_embedder_retries_rate_limits_then_gives_up() -> None:
     assert len(transport.requests) == 3
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        [{"index": 0, "embedding": [1, 0]}, {"index": 0, "embedding": [0, 1]}],
+        [{"index": 0, "embedding": [1, 0]}, {"index": 2, "embedding": [0, 1]}],
+        [{"index": False, "embedding": [1, 0]}, {"index": True, "embedding": [0, 1]}],
+        [{"index": 0, "embedding": [1, 0]}, {"index": 1, "embedding": [0, 0]}],
+        [{"index": 0, "embedding": [1, 0]}, {"index": 1, "embedding": [float("nan"), 1]}],
+    ],
+)
+def test_openai_embedder_rejects_repeated_or_missing_indices_and_empty_vectors(data) -> None:
+    e = OpenAICompatibleEmbedder("m", dimension=2, transport=FakeTransport([(200, {}, {"data": data})]))
+    with pytest.raises(ProviderError):
+        e.embed_text(["a", "b"])
+
+
+def test_openai_embedder_probes_its_dimension_once_and_validates_the_probe() -> None:
+    transport = FakeTransport([_ok([[1, 2, 3]])])
+    e = OpenAICompatibleEmbedder("m", transport=transport)
+    assert e.dimension == e.dimension == 3 and len(transport.requests) == 1
+    e = OpenAICompatibleEmbedder("m", transport=FakeTransport([_ok([[0, 0, 0]])]))
+    with pytest.raises(ProviderError, match="no signal"):
+        e.dimension  # noqa: B018 - the property makes the request
+
+
 def test_openai_embedder_reports_client_errors_and_bad_bodies() -> None:
     transport = FakeTransport([(401, {}, {"error": {"message": "no key"}})])
     e = OpenAICompatibleEmbedder("m", dimension=2, transport=transport)

@@ -10,8 +10,9 @@ import pytest
 
 from placecell.errors import ProviderError, RateLimitedError, ValidationError
 from placecell.providers import GeminiEmbedder, OpenAICompatibleChat
-from placecell.providers._http import Endpoint, RetryPolicy, TransportError
+from placecell.providers._http import Endpoint, RetryPolicy, TransportError, reported_usage
 from placecell.providers.openai_compatible import UrllibTransport
+from placecell.tracing import TraceStore, read_trace, trace_scope
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -277,3 +278,32 @@ def test_computed_backoff_is_jittered_below_its_bound() -> None:
     assert all(2.0 <= d <= 4.0 for d in delays) and len(set(delays)) > 1
     assert all(4.0 <= policy.delay(5) <= 8.0 for _ in range(20))
     assert RetryPolicy(jitter=0.5).delay(0, "3") == 3.0  # a server-requested wait is never shortened
+
+
+def test_provider_spans_name_the_model_when_the_payload_does_not(tmp_path) -> None:
+    traces = TraceStore(tmp_path / "traces.sqlite3")
+    body = {"embeddings": [{"values": [1.0] + [0.0] * 767}], "usageMetadata": {"totalTokenCount": 3}}
+    embedder = GeminiEmbedder(api_key="key", transport=_Scripted((200, {}, body)))
+    with trace_scope(traces.context("mission", "request")):
+        embedder.embed_text(["printer"])
+    assert traces.flush()
+    span = next(e for e in read_trace(traces.path)["events"] if e["kind"] == "end")
+    assert span["data"]["model"] == "gemini-embedding-2" and span["data"]["usage"]["total_tokens"] == 3
+    assert traces.close()
+
+
+@pytest.mark.parametrize(
+    "url,cost",
+    [
+        ("https://openrouter.ai/api/v1/chat/completions", 0.0004),
+        ("https://eu.openrouter.ai/api/v1/embeddings", 0.0004),
+        ("https://api.example.com/v1/chat/completions", None),
+        ("https://openrouter.ai.example.com/v1", None),
+    ],
+)
+def test_openrouter_cost_is_read_as_dollars_and_other_costs_stay_unknown(url, cost) -> None:
+    usage = reported_usage(url, {"usage": {"prompt_tokens": 3, "cost": 0.0004}})
+    assert usage["cost_usd"] == cost and usage["input_tokens"] == 3
+    assert reported_usage(url, {"usage": {"cost": 0.1, "cost_usd": 0.2}})["cost_usd"] == 0.2
+    assert reported_usage(url, {"usage": {"cost": "free"}})["cost_usd"] is None
+    assert reported_usage("http://[::1/v1", {"usage": {"cost": 0.1}})["cost_usd"] is None
