@@ -237,8 +237,14 @@ def _identity(rig: _Rig, case: str) -> None:
         send(repeated)
         rig.check("admission receipt", receipts[-1]["disposition"], disposition)
         rig.check("exactly one dispatch after retry/refusal", len(rig.client.goals), 1)
-        rig.check("no unintended cancel", rig.client.handles[0].cancel_calls, 0)
         rig.check("no duplicate planning", rig.model.calls, 1)
+        if case == "targeted_stale_stop":
+            rig.check("stop cancels the active goal", rig.client.handles[0].cancel_calls, 1)
+            rig.check("target mismatch reported", "did not match" in rig.events[-1]["message"], True)
+            rig.finish(5)
+            rig.checkpoint("mismatched stop still ends the mission", "canceled", 1, False)
+            return
+        rig.check("no unintended cancel", rig.client.handles[0].cancel_calls, 0)
         if disposition == "duplicate":
             rig.check("retry refers to original request", receipts[-1]["request_id"], first_request)
         if case in {"retry_completed", "retry_after_reopen"}:
@@ -304,7 +310,7 @@ EXECUTION_CASES = (
     ("retry_completed", "An identical JSON command retry cannot replay a completed mission", _identity),
     ("conflicting_payload", "Reusing a command ID with another destination preserves the original mission", _identity),
     ("scope_stale_stop", "A stop from an old map scope cannot cancel the current mission", _identity),
-    ("targeted_stale_stop", "A stop for a different request cannot cancel the current mission", _identity),
+    ("targeted_stale_stop", "A stop for a different request still cancels the active mission", _identity),
     ("retry_after_reopen", "Reopening the durable journal still suppresses a completed command retry", _identity),
     ("stop_during_admission", "Stop between reservation and routing prevents the reserved instruction", _identity),
     ("context_capacity_admission", "Context capacity refusal prevents a new goal", _context_boundary),

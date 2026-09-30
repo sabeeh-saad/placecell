@@ -265,14 +265,19 @@ class ContractCheck:
             send({**stop, "command_id": "stale-stop", "target_request_id": first["request_id"]})["disposition"]
             == "recorded"
         )
-        self.until(lambda: any(e["state"] == "stale_command" for e in events))
-        assert not nav.canceled
+        self.until(lambda: any("did not match" in e["message"] for e in events if e["state"] == "canceling"))
+        assert len(nav.canceled) == 1
         assert send(stop)["disposition"] == "recorded"
-        assert send(stop)["disposition"] == "duplicate" and len(nav.canceled) == 1
+        assert send(stop)["disposition"] == "duplicate" and len(nav.canceled) == 2
         nav.sent[-1][2](NavigationEvent("succeeded"))
         assert controller.snapshot().status.state == "canceled" and not tasks
-        self.checks.append("new IDs permit deliberate repeat visits; targeted stop retries cancel once")
-        self.checks.append("late first-delivery stop cannot affect a different request")
+        idle_stop = {**stop, "command_id": "idle-stale-stop", "target_request_id": first["request_id"]}
+        assert send(idle_stop)["disposition"] == "recorded"
+        self.until(lambda: any(e["state"] == "stale_command" for e in events))
+        assert len(nav.canceled) == 2
+        self.checks.append("new IDs permit deliberate repeat visits; targeted stop retries are consumed once")
+        self.checks.append("late first-delivery stop still cancels active navigation and reports the mismatch")
+        self.checks.append("a stale stop while idle is refused")
 
         assert (
             send({**base, "command_id": "expired", "issued_at_unix_s": time.time() - 86401})["disposition"] == "expired"

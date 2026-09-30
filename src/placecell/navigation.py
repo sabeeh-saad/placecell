@@ -47,15 +47,32 @@ class MovementCommand:
     choice: int = 0
 
 
+_STOP_WORDS = frozenset({"stop", "halt", "cancel", "abort"})
+_STOP_LEAD = frozenset({"robot", "hey", "please", "can", "could", "would", "you"})
+# Repeated stop words, courtesy and what is being stopped; never a place or another action.
+_STOP_FILLER = _STOP_WORDS.union(
+    {"now", "right", "immediately", "please", "it", "that", "this", "the", "here", "robot"},
+    {"everything", "moving", "driving", "navigating", "navigation", "trip", "mission"},
+)
+
+
+def is_stop_request(text: str) -> bool:
+    """A stop word, optionally after a wake word or courtesy, followed only by filler."""
+    words = re.sub(r"[,.!?]", " ", text.casefold()).split()
+    while words and words[0] in _STOP_LEAD:
+        words.pop(0)
+    return bool(words) and words[0] in _STOP_WORDS and all(w in _STOP_FILLER for w in words[1:])
+
+
 def parse_movement(text: str) -> MovementCommand:
     """Accept direct movement requests; questions, negation and compound commands do not move the robot."""
     if not isinstance(text, str) or not text.strip() or len(text) > 500:
         raise ValidationError("Say 'go to <place>', 'option one', or 'stop'.")
+    if is_stop_request(text):
+        return MovementCommand("cancel")
     text = " ".join(text.casefold().split()).rstrip(".!?")
     text = re.sub(r"^robot[ ,]+", "", text)
     text = re.sub(r"^please\s+|\s+please$", "", text)
-    if text in {"stop", "stop moving", "cancel", "cancel navigation"}:
-        return MovementCommand("cancel")
     choices = {"one": 1, "two": 2, "three": 3, "1": 1, "2": 2, "3": 3}
     choice = re.fullmatch(r"(?:option|choice) (one|two|three|[123])", text)
     if choice:
@@ -889,9 +906,10 @@ class NavigationCommands:
             return
         with self._lock:
             try:
-                continuation = parse_movement(text).kind in {"cancel", "choose"}
+                kind: str = parse_movement(text).kind
             except ValidationError:
-                continuation = False
+                kind = ""
+            continuation = kind in {"cancel", "choose"}
             context = None
             if self._trace_store:
                 if continuation and self._trace_context and (self.busy or self._choices):
@@ -905,6 +923,16 @@ class NavigationCommands:
                     if (target_request_id and self._snapshot_status.request_id != target_request_id) or (
                         admission_epoch is not None and self._admission_epoch != admission_epoch
                     ):
+                        if kind == "cancel" and (self._active is not None or self._mission is not None):
+                            # A stop is never refused while navigation is active; a foreign target is reported.
+                            foreign = target_request_id not in {"", self._active, self._mission_id}
+                            if foreign:
+                                trace_event("stop.target_mismatch", target_request_id=target_request_id)
+                            self.cancel(
+                                "Stop target did not match the active request; stopping it anyway." if foreign else ""
+                            )
+                            self._record_instruction(request_id, text)
+                            return
                         self._publish(
                             NavigationUpdate(request_id, "stale_command", "The target changed or a stop intervened.")
                         )

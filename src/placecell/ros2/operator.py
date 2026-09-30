@@ -40,7 +40,8 @@ class OperatorInterface:
         retained = QoSProfile(
             depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE
         )
-        volatile = QoSProfile(depth=1, durability=DurabilityPolicy.VOLATILE, reliability=ReliabilityPolicy.RELIABLE)
+        # Queue commands so a stop followed by another message is not overwritten before its callback.
+        volatile = QoSProfile(depth=10, durability=DurabilityPolicy.VOLATILE, reliability=ReliabilityPolicy.RELIABLE)
         self._snapshot = node.create_publisher(String, "~/mission_snapshot", retained)
         self._command_group = MutuallyExclusiveCallbackGroup()
         # Keep the legacy stop path schedulable during a slow command-journal write.

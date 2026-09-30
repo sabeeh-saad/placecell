@@ -7,6 +7,9 @@ regressions and measured scope. Cross-process reconciliation remains Day 15 work
 
 ## Ownership rules
 
+- A stop is never refused while a trip or mission is active. An identified stop with a
+  stale target or admission epoch still cancels the active navigation and reports a target
+  mismatch in the status message; see [command identity](command-identity.md).
 - Planning, lookup, clarification, search planning and arrival verification have no
   outstanding motion goal. Stop clears the active request/choices; late worker replies
   cannot submit a goal or finish a replacement request.

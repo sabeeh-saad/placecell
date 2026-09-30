@@ -80,7 +80,7 @@ def test_interface_preserves_volatile_commands_and_retains_only_snapshots(ros, m
     bridge = OperatorInterface(ros.node, m.commands)
     m.commands._publish_callback = bridge.publish
     for topic in ("~/command", "~/command_json"):
-        assert ros.subscriptions[topic].qos.depth == 1
+        assert ros.subscriptions[topic].qos.depth == 10  # A stop is not overwritten by the next message.
         assert ros.subscriptions[topic].qos.durability == "volatile"
     assert ros.publishers["~/navigation_status"].qos == 10
     snapshot_qos = ros.publishers["~/mission_snapshot"].qos
@@ -175,7 +175,7 @@ def test_busy_refusal_is_consumed_and_cannot_become_later_work(ros, mission, ide
     assert not mission.tasks and len(mission.nav.sent) == 2
 
 
-def test_stop_retry_and_stale_target_cannot_stop_later_mission(ros, mission, identified):
+def test_stop_retry_cancels_once_and_a_foreign_target_still_stops_the_active_mission(ros, mission, identified):
     m, i = mission, identified
     first = send(i)
     m.tasks.pop(0)()
@@ -186,13 +186,43 @@ def test_stop_retry_and_stale_target_cannot_stop_later_mission(ros, mission, ide
     assert m.commands.snapshot().status.state == "canceled" and not m.tasks
     m.model.replies.append(proposal())
     m.critic.replies.append(review())
-    send(i, command_id="next-mission")
+    second = send(i, command_id="next-mission")
     m.tasks.pop(0)()
-    before = m.commands.snapshot().status
-    assert send(i, **stop)["disposition"] == "duplicate"
+    assert send(i, **stop)["disposition"] == "duplicate" and len(m.nav.canceled) == 1
     assert send(i, **{**stop, "command_id": "late-first-delivery"})["disposition"] == "recorded"
+    status = ros.publishers["~/navigation_status"].messages[-1]
+    assert status["state"] == "canceling" and status["request_id"] == second["request_id"]
+    assert "did not match" in status["message"] and m.nav.canceled[-1] == second["request_id"]
+    m.nav.sent[-1][2](NavigationEvent("canceled"))
+    assert m.commands.snapshot().status.state == "canceled" and not m.commands.busy
+    before = m.commands.snapshot().status
+    assert send(i, **{**stop, "command_id": "idle-stale-stop"})["disposition"] == "recorded"
     assert ros.publishers["~/navigation_status"].messages[-1]["state"] == "stale_command"
-    assert m.commands.snapshot().status == before and len(m.nav.canceled) == 1
+    assert m.commands.snapshot().status == before and len(m.nav.canceled) == 2
+
+
+@pytest.mark.parametrize("phase", ["resolving", "navigating"])
+def test_stop_aimed_at_a_completed_leg_stops_the_next_leg(ros, mission, identified, phase):
+    m, i = mission, identified
+    first = send(i)
+    m.tasks.pop(0)()
+    m.nav.sent[0][2](NavigationEvent("succeeded"))
+    if phase == "navigating":
+        m.tasks.pop(0)()
+        assert len(m.nav.sent) == 2
+    assert m.commands.snapshot().status.request_id != first["request_id"]
+    stop = {"command_id": "stop-at-waypoint", "command": "stop", "target_request_id": first["request_id"]}
+    assert send(i, **stop)["disposition"] == "recorded"
+    status = ros.publishers["~/navigation_status"].messages[-1]
+    assert status["state"] == ("canceling" if phase == "navigating" else "canceled")
+    assert "did not match" not in status["message"]  # The target is still this mission.
+    if phase == "navigating":
+        assert m.nav.canceled == [m.nav.sent[1][0]]
+        m.nav.sent[1][2](NavigationEvent("succeeded"))
+    else:
+        m.tasks.pop(0)()
+    assert m.commands.snapshot().status.state == "canceled" and not m.commands.busy
+    assert len(m.nav.sent) == (2 if phase == "navigating" else 1) and not m.tasks
 
 
 def test_failed_journal_blocks_new_work_and_leaves_legacy_stop_available(ros, mission, identified, monkeypatch):

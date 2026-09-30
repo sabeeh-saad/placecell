@@ -49,7 +49,8 @@ the existing grammar when mission mode is off, and planning/review when it is on
 stop/choice phrases inside an instruction retain their direct path. `stop` and `choose`
 never require a model. A choice is accepted only while that option is still valid.
 
-Both command subscriptions are reliable, volatile, keep-last depth 1. They are live inputs,
+Both command subscriptions are reliable, volatile, keep-last depth 10, so a stop followed
+quickly by another message is not overwritten before its callback runs. They are live inputs,
 not durable jobs. Reconnecting version 1/text clients must **read state without resending a command**.
 There is no client command ID, idempotency key or automatic retry guarantee in version 1.
 A repeated instruction after a completed mission can deliberately start another mission;

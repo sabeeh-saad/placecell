@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from placecell.errors import ProviderError, ValidationError
-from placecell.navigation import parse_movement
+from placecell.navigation import is_stop_request, parse_movement
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +82,8 @@ class SpeechGate:
         if not text.startswith(self._prefix):
             return None
         command = text[len(self._prefix) :]
+        if is_stop_request(command):
+            return "stop"
         try:
             parse_movement(command)
         except ValidationError:

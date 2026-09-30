@@ -44,7 +44,12 @@ For `stop` and `choose`, omit `text` and add `target_request_id` using the snaps
 ```
 
 The target is checked under the controller lock. A changed target emits `stale_command`
-without modifying the mission. Version 2 rejects stop/choice phrases disguised as
+without modifying the mission, except for a stop: a stop is never refused while a trip or
+mission is active. Mission steps receive new request IDs, so a stop aimed at a step that
+just finished, or at an earlier request, still cancels the active navigation. When the
+target is neither the active request nor its mission, the resulting `canceling`/`canceled`
+status message states that the target did not match. With nothing active, a stale stop
+still emits `stale_command`. Version 2 rejects stop/choice phrases disguised as
 `instruction` commands; use their explicit command forms. A stop does not require a model.
 
 ## Receipts and client behavior
@@ -55,7 +60,7 @@ Its JSON has `schema_version: 1`, `type: "command_receipt"`, `command_id`, `scop
 
 - `recorded`: the reservation committed. The controller may accept or refuse the command.
   Match subsequent status events to `request_id`; mission steps may receive new IDs.
-  Stop outcomes describe the targeted active request. Read the snapshot for current state.
+  Stop outcomes describe the active request they cancel. Read the snapshot for current state.
 - `duplicate`: this exact parsed command was reserved previously; no controller call occurs.
   The original `request_id` is returned. It is not evidence of success or current ownership.
 - `conflict`: the retained ID was used with different content, target or timestamp. No work

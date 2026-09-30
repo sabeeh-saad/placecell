@@ -187,7 +187,9 @@ Supported commands include:
 - `go to the printer`, `navigate to kitchen`, `can you take me to station three`
 - `go to 2.4, -1.0` or `go to 2.4, -1.0, 1.57` for explicit numeric coordinates
 - `option one`, `option two`, `option three` after an ambiguous result
-- `stop` or `cancel navigation`
+- `stop`, `halt`, `cancel` or `abort`, optionally repeated and followed only by filler such as
+  `now`, `it`, `that`, `the robot`, `moving`, `navigation` or `please` (`stop now`, `cancel that`).
+  Anything else after the word, such as `stop by the kitchen`, is not a stop request.
 
 The default movement grammar uses English. Questions, negated requests and conditional
 or compound movement requests are rejected by this default interface. Optional
@@ -236,7 +238,8 @@ mono signed 16-bit PCM, defaults to 16 kHz, and is not saved. This adapter follo
 provider's [streaming microphone interface](https://github.com/alphacep/vosk-api/blob/master/python/example/test_microphone.py).
 
 Only final utterances whose complete word scores meet `--min-confidence` (default 0.8)
-and whose text begins with the wake phrase are forwarded. The publisher gives commands a
+and whose text begins with the wake phrase are forwarded. Stop phrases use the same rule as
+the command topic and are forwarded as `stop`. The publisher gives commands a
 two-second lifespan. The audio queue holds eight chunks; stale, dropped or interrupted
 audio causes the affected utterance to be discarded. Please repeat after an interruption.
 Microphone recognition quality and latency have not been measured on the robot. Other

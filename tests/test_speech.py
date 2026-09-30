@@ -32,12 +32,15 @@ def test_speech_gate_requires_complete_direct_commands_and_a_wake_phrase():
     assert gate.command(Transcript("robot go to kitchen", 0.9)) == "go to kitchen"
     assert gate.command(Transcript("robot stop", 0.9)) == "stop"
     assert gate.command(Transcript("robot option two", 0.9)) == "option two"
+    for text in ("robot stop now", "robot halt", "robot stop stop", "robot cancel that", "robot abort"):
+        assert gate.command(Transcript(text, 0.9)) == "stop"
     for text, confidence in (
         ("go to kitchen", 1),
         ("robotics go to kitchen", 1),
         ("robot where is kitchen", 1),
         ("robot don't go to kitchen", 1),
         ("robot go to kitchen if the door is open", 1),
+        ("robot stop by the kitchen", 1),
         ("robot go to kitchen", 0.5),
         ("robot stop", float("nan")),
         ("robot stop", 2),

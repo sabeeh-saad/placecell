@@ -21,6 +21,7 @@ from placecell import (
     parse_movement,
 )
 from placecell.errors import ValidationError
+from placecell.navigation import is_stop_request
 from placecell.ros2.node import navigation_payload
 from placecell.verification import SceneVerdict
 from tests.conftest import embedded
@@ -92,6 +93,48 @@ def test_stop_choices_and_explicit_coordinates():
     assert parse_movement("go to .5, -1").coordinates == (0.5, -1, 0)
     with pytest.raises(ValidationError):
         parse_movement("go to " + "9" * 320 + ", 1")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "stop now",
+        "stop stop",
+        "Stop, stop!",
+        "halt",
+        "stop the robot",
+        "cancel that",
+        "abort",
+        "robot, please stop right now",
+        "can you stop moving please",
+        "abort the mission",
+        "STOP NAVIGATING.",
+    ],
+)
+def test_stop_words_followed_only_by_filler_cancel(text):
+    assert is_stop_request(text) and parse_movement(text).kind == "cancel"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "stop by the kitchen",
+        "stop at the printer",
+        "cancel option two",
+        "stop and go to kitchen",
+        "don't stop",
+        "please do not cancel",
+        "stop 2",
+        "robot",
+        "go to the stop sign",
+    ],
+)
+def test_places_negation_and_other_actions_are_not_stop_requests(text):
+    try:
+        kind = parse_movement(text).kind
+    except ValidationError:
+        kind = "invalid"
+    assert not is_stop_request(text) and kind == ("go" if text.startswith("go to") else "invalid")
 
 
 def test_named_places_and_coordinates_are_scoped_to_the_active_map(store, hashing, tmp_path):
