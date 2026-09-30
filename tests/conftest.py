@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
+import threading
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -15,19 +17,62 @@ from placecell.providers import Capabilities, HashingEmbedder, normalise_rows
 
 DIM = 64
 UPDATE_GOLDEN = "PLACECELL_UPDATE_GOLDEN"
+TRANSITION_CENSUS = "PLACECELL_TRANSITION_CENSUS"
+DATA = Path(__file__).parent / "data"
+
+
+def dump(path: Path, data: Any) -> None:
+    """JSON with one list item or mapping entry per line, so reviews see small diffs."""
+    if isinstance(data, dict):
+        rows, brackets = [f"{json.dumps(k)}: {json.dumps(v)}" for k, v in data.items()], "{}"
+    else:
+        rows, brackets = [json.dumps(item) for item in data], "[]"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(brackets[0] + "\n" + ",\n".join(rows) + "\n" + brackets[1] + "\n")
 
 
 def golden(path: Path, actual: Any) -> Any:
     """Checked-in expected data. Only `PLACECELL_UPDATE_GOLDEN=1` rewrites it, for a deliberate change."""
     if os.environ.get(UPDATE_GOLDEN) == "1":
-        if isinstance(actual, dict):
-            rows, brackets = [f"{json.dumps(k)}: {json.dumps(v)}" for k, v in actual.items()], "{}"
-        else:
-            rows, brackets = [json.dumps(item) for item in actual], "[]"
-        path.parent.mkdir(exist_ok=True)
-        path.write_text(brackets[0] + "\n" + ",\n".join(rows) + "\n" + brackets[1] + "\n")
+        dump(path, actual)
     assert path.exists(), f"{path} is missing; generate it deliberately with {UPDATE_GOLDEN}=1"
     return json.loads(path.read_text())
+
+
+@pytest.fixture(autouse=True, scope="session")
+def navigation_transition_census() -> Iterator[None]:
+    """Opt-in record of every `NavigationCommands._state` assignment across the suite.
+
+    `PLACECELL_TRANSITION_CENSUS=1 pytest` rewrites tests/data/navigation_transitions.json with
+    each (from, to) pair and the files that assigned it. Off by default; nothing is checked.
+    """
+    if os.environ.get(TRANSITION_CENSUS) != "1":
+        yield
+        return
+    from placecell.navigation import NavigationCommands
+
+    writers: dict[tuple[str | None, str], set[str]] = {}
+    lock = threading.Lock()
+    root = Path(__file__).resolve().parents[1]
+
+    def record(self: NavigationCommands, name: str, value: Any) -> None:
+        if name == "_state":
+            caller = Path(sys._getframe(1).f_code.co_filename).resolve()
+            writer = str(caller.relative_to(root)) if caller.is_relative_to(root) else caller.name
+            with lock:
+                writers.setdefault((self.__dict__.get("_state"), value), set()).add(writer)
+        object.__setattr__(self, name, value)
+
+    NavigationCommands.__setattr__ = record  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        del NavigationCommands.__setattr__
+        rows = sorted(writers.items(), key=lambda item: (str(item[0][0]), item[0][1]))
+        dump(
+            DATA / "navigation_transitions.json",
+            [{"from": before, "to": after, "writers": sorted(files)} for (before, after), files in rows],
+        )
 
 
 class FakeMediaEmbedder:

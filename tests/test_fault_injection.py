@@ -1,3 +1,12 @@
+"""Offline fault contracts, plus each case's published status sequence pinned in a golden file.
+
+The sequence is (state, failure_stage, object_result, mission_step, search_attempt, error_type)
+per published update, without identifiers or messages. After a deliberate behaviour change,
+regenerate it and review the diff:
+
+    PLACECELL_UPDATE_GOLDEN=1 pytest tests/test_fault_injection.py -k test_fault_contract
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,10 +16,34 @@ import pytest
 
 from placecell import fault_injection as faults
 from placecell.errors import ValidationError
+from tests.conftest import DATA, golden
+
+SEQUENCES = DATA / "fault_status_sequences.json"
+FIELDS = ("state", "failure_stage", "object_result", "mission_step", "search_attempt", "error_type")
+
+
+@pytest.fixture
+def error_types(monkeypatch):
+    """The status payload has no error_type; add the published update's to each recorded event."""
+    publish = faults._Rig.publish
+
+    def recorded(rig, update):
+        publish(rig, update)
+        rig.events[-1]["error_type"] = update.error_type
+
+    monkeypatch.setattr(faults._Rig, "publish", recorded)
+
+
+def expected_sequence(case_id, actual):
+    stored = json.loads(SEQUENCES.read_text()) if SEQUENCES.exists() else {}
+    stored[case_id] = actual
+    expected = golden(SEQUENCES, {case.id: stored[case.id] for case in faults.CASES if case.id in stored})
+    assert case_id in expected, f"no golden sequence for {case_id}; regenerate deliberately"
+    return expected[case_id]
 
 
 @pytest.mark.parametrize("case", faults.CASES, ids=lambda case: case.id)
-def test_fault_contract(case):
+def test_fault_contract(case, error_types):
     report = faults.run_faults(cases=[case.id])
     result = report["results"][0]
     assert result["passed"], result
@@ -20,6 +53,12 @@ def test_fault_contract(case):
     assert result["checks"] and all(check["passed"] for check in result["checks"])
     assert report["sources_sha256"]["navigation.py"]
     json.dumps(report, allow_nan=False)
+    sequence = [[event[field] for field in FIELDS] for event in result["events"]]
+    assert sequence == expected_sequence(case.id, sequence)
+
+
+def test_golden_sequences_cover_exactly_the_cases():
+    assert list(json.loads(SEQUENCES.read_text())) == [case.id for case in faults.CASES]
 
 
 def test_timeout_late_success_never_dispatches_second_destination():
