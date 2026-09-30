@@ -46,6 +46,9 @@ class Transport(Protocol):
 class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
     """urllib would resend the credential headers to the redirect target, on any host."""
 
+    # Python 3.10 has no 308 handler, so a 308 would otherwise come back as a plain HTTP error.
+    http_error_308 = urllib.request.HTTPRedirectHandler.http_error_302
+
     def redirect_request(
         self, req: urllib.request.Request, fp: IO[bytes], code: int, msg: str, headers: HTTPMessage, newurl: str
     ) -> NoReturn:
