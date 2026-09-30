@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,20 @@ from placecell import CollectionInfo, Evidence, EvidenceKind, InMemoryStore, Mem
 from placecell.providers import Capabilities, HashingEmbedder, normalise_rows
 
 DIM = 64
+UPDATE_GOLDEN = "PLACECELL_UPDATE_GOLDEN"
+
+
+def golden(path: Path, actual: Any) -> Any:
+    """Checked-in expected data. Only `PLACECELL_UPDATE_GOLDEN=1` rewrites it, for a deliberate change."""
+    if os.environ.get(UPDATE_GOLDEN) == "1":
+        if isinstance(actual, dict):
+            rows, brackets = [f"{json.dumps(k)}: {json.dumps(v)}" for k, v in actual.items()], "{}"
+        else:
+            rows, brackets = [json.dumps(item) for item in actual], "[]"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(brackets[0] + "\n" + ",\n".join(rows) + "\n" + brackets[1] + "\n")
+    assert path.exists(), f"{path} is missing; generate it deliberately with {UPDATE_GOLDEN}=1"
+    return json.loads(path.read_text())
 
 
 class FakeMediaEmbedder:
