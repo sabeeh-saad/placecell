@@ -37,6 +37,8 @@ class ObjectPolicy:
     max_association_uncertainty_m: float = 0.35
     association_similarity: float = 0.85
     association_margin: float = 0.08
+    association_distance_weight: float = 0.25
+    """Score lost by a pair at the edge of the nearby gate, relative to one at zero distance."""
     nearby_m: float = 0.35
     moved_similarity: float = 0.95
     max_move_m: float = 3.0
@@ -66,6 +68,7 @@ class ObjectPolicy:
             math.isfinite(v) and v > 0
             for v in (
                 self.association_margin,
+                self.association_distance_weight,
                 self.max_association_uncertainty_m,
                 self.nearby_m,
                 self.max_move_m,
@@ -75,7 +78,10 @@ class ObjectPolicy:
             )
         ):
             raise ValidationError("object thresholds must be finite and positive")
-        if not 0 < self.association_similarity <= self.moved_similarity <= 1 or self.association_margin > 1:
+        if (
+            not 0 < self.association_similarity <= self.moved_similarity <= 1
+            or max(self.association_margin, self.association_distance_weight) > 1
+        ):
             raise ValidationError("invalid object similarity thresholds")
 
 
@@ -85,6 +91,8 @@ class PreparedObjects:
     updates: tuple[tuple[ObjectRecord, ObjectView | None, str], ...]
     timestamp: float
     scan_key: str = ""
+    skipped_ambiguous: int = 0
+    """Detections left unassigned because appearance and geometry fit more than one record."""
 
 
 class ObjectTracker:
@@ -92,7 +100,8 @@ class ObjectTracker:
 
     Similar labels alone never join identities. Movement additionally requires a
     unique appearance match and a visibly empty old location in the same RGB-D frame.
-    Ambiguous associations are recorded as separate, non-navigable hypotheses.
+    A detection that appearance and geometry cannot assign to one record is skipped for
+    that scan; it neither updates nor creates a record.
     """
 
     def __init__(
@@ -171,41 +180,35 @@ class ObjectTracker:
                             continue
                     similarities[i, record.id] = score
 
-        # Nearby assignments need unambiguous best matches on BOTH sides of the association.
+        # Candidate pairs inside the nearby gate. Distance, relative to the gate, lowers the
+        # appearance score, so identical neighbours are told apart by where they were seen.
         edges: dict[tuple[int, str], float] = {}
         for (i, identity), score in similarities.items():
             record = by_id[identity]
             location, previous = positions[i], record.position
             if location is not None and previous is not None:
-                nearby = location.distance(previous) <= max(p.nearby_m, location.uncertainty_m + previous.uncertainty_m)
+                gate = max(p.nearby_m, location.uncertainty_m + previous.uncertainty_m)
+                distance = location.distance(previous) / gate
             else:
                 # RGB-only observations may update the same image region from almost the same viewpoint.
-                nearby = any(
-                    observation.pose.distance_to(v.memory.pose) <= 0.1
-                    and observation.pose.heading_difference(v.memory.pose) <= 0.1
-                    and fresh[i].box.overlap(v.box) >= 0.6
-                    for v in old_views[identity]
+                overlap = max(
+                    (
+                        fresh[i].box.overlap(v.box)
+                        for v in old_views[identity]
+                        if observation.pose.distance_to(v.memory.pose) <= 0.1
+                        and observation.pose.heading_difference(v.memory.pose) <= 0.1
+                    ),
+                    default=0.0,
                 )
-            if nearby:
-                edges[i, identity] = score
-        assignments = self._unique(edges)
-        identity_checks = 0
-        for i, identity in list(assignments.items()):
-            if by_id[identity].label == fresh[i].memory.caption.split(":", 1)[0]:
-                continue
-            # A detector's changed category is not identity evidence. Require a bounded,
-            # explicit paired-image confirmation in addition to appearance and geometry.
-            if not isinstance(self.detector, ObjectComparator) or identity_checks >= p.max_identity_checks:
-                del assignments[i]
-                continue
-            references = journal.views(identity, limit=1)
-            identity_checks += 1
-            verdict = self.detector.compare((references[0].crop_png,), fresh[i].crop_png)
-            if verdict.result != "matched" or not verdict.reason.strip():
-                del assignments[i]
-                if verdict.result == "not_matched":
-                    del edges[i, identity]
+                distance = (1 - overlap) / (1 - 0.6)
+            if distance <= 1:
+                edges[i, identity] = score - p.association_distance_weight * distance
+        labels = [view.memory.caption.split(":", 1)[0] for view in fresh]
+        assignments, unresolved = self._assign(edges, similarities, labels, by_id, fresh)
+        skipped = {i for i, _ in unresolved}
         assigned_ids = set(assignments.values())
+        # A record that a skipped detection may show was plausibly seen, not missed.
+        contested = {identity for _, identity in unresolved}
         absent: set[str] = set()
         # A detector omission is never sufficient. Geometry AND a visual check must agree.
         if observation.depth and observation.localization_checked:
@@ -213,6 +216,7 @@ class ObjectTracker:
             for record in sorted(records, key=lambda r: (r.last_miss, r.id)):
                 if (
                     record.id in assigned_ids
+                    or record.id in contested
                     or record.position is None
                     or not old_views[record.id]
                     or observation.timestamp <= record.last_seen
@@ -235,6 +239,7 @@ class ObjectTracker:
             current = positions[i]
             if (
                 i not in assignments
+                and i not in skipped
                 and record.label == fresh[i].memory.caption.split(":", 1)[0]
                 and identity in absent
                 and record.position is not None
@@ -256,11 +261,12 @@ class ObjectTracker:
             label = view.memory.caption.split(":", 1)[0]
             assigned_identity = assignments.get(i)
             if assigned_identity is None:
+                if i in skipped:
+                    # Neither merge nor duplicate: a later scan can still resolve it.
+                    continue
                 if count >= p.max_objects:
                     raise ValidationError("object capacity reached; prune old objects or raise max_objects")
                 identity = view.object_id
-                # A plausible unassigned match remains uncertain instead of silently merging identities.
-                ambiguous = any(score >= p.association_similarity for (j, _), score in edges.items() if j == i)
                 record = ObjectRecord(
                     identity,
                     observation.robot_id,
@@ -271,10 +277,9 @@ class ObjectTracker:
                     observation.timestamp,
                     observation.timestamp,
                     positions[i],
-                    "ambiguous" if ambiguous else "present",
                     position_timestamp=observation.timestamp if positions[i] is not None else None,
                 )
-                event = "ambiguous" if ambiguous else "created"
+                event = "created"
                 count += 1
             else:
                 identity = assigned_identity
@@ -313,7 +318,70 @@ class ObjectTracker:
                     "missing" if status == "missing" else "absence_observed",
                 )
             )
-        return PreparedObjects(generation, tuple(updates), observation.timestamp, scan_key)
+        return PreparedObjects(
+            generation,
+            tuple(updates),
+            observation.timestamp,
+            scan_key,
+            skipped_ambiguous=len(skipped),
+        )
+
+    def _assign(
+        self,
+        edges: dict[tuple[int, str], float],
+        appearance: dict[tuple[int, str], float],
+        labels: list[str],
+        by_id: dict[str, ObjectRecord],
+        fresh: list[ObjectView],
+    ) -> tuple[dict[int, str], set[tuple[int, str]]]:
+        """One-to-one, best pair first. A pair is assigned only if it clearly beats every rival
+        claim on its detection and its record that an earlier assignment has not settled.
+
+        Returns the assignments and the plausible pairs left open, whose detections are skipped.
+        """
+        p, edges = self.policy, dict(edges)
+        assignments: dict[int, str] = {}
+        taken: set[str] = set()
+        blocked: set[int] = set()
+        checks = 0
+
+        def preferred(edge: tuple[int, str]) -> bool:
+            # On a tie, an established record of the same category outranks a changed
+            # category or an earlier unresolved hypothesis.
+            record = by_id[edge[1]]
+            return record.label == labels[edge[0]] and record.status != "ambiguous"
+
+        def plausible(edge: tuple[int, str]) -> bool:
+            return appearance[edge] >= p.association_similarity and edge[0] not in assignments and edge[1] not in taken
+
+        while candidates := [e for e in edges if plausible(e) and e[0] not in blocked]:
+            best = max(candidates, key=lambda e: (edges[e], preferred(e), -e[0], e[1]))
+            i, identity = best
+            decisive = all(
+                edges[best] - edges[e] >= p.association_margin
+                or (preferred(best) and not preferred(e) and edges[best] >= edges[e])
+                for e in edges
+                if e != best and (e[0] == i or e[1] == identity) and e[0] not in assignments and e[1] not in taken
+            )
+            if decisive and by_id[identity].label != labels[i]:
+                # A detector's changed category is not identity evidence. Require a bounded,
+                # explicit paired-image confirmation in addition to appearance and geometry.
+                if not isinstance(self.detector, ObjectComparator) or checks >= p.max_identity_checks:
+                    decisive = False
+                else:
+                    checks += 1
+                    references = self.store.objects.views(identity, limit=1)
+                    verdict = self.detector.compare((references[0].crop_png,), fresh[i].crop_png)
+                    if verdict.result == "not_matched":
+                        del edges[best]
+                        continue
+                    decisive = verdict.result == "matched" and bool(verdict.reason.strip())
+            if decisive:
+                assignments[i] = identity
+                taken.add(identity)
+            else:
+                blocked.add(i)
+        return assignments, {e for e in edges if plausible(e)}
 
     def _unique(self, edges: dict[tuple[int, str], float]) -> dict[int, str]:
         result = {}

@@ -227,3 +227,23 @@ def test_evaluation_cli_replays_export_without_live_collection_or_network(tmp_pa
     assert report["api_usage"]["vision"]["requests"] == 0
     with pytest.raises(ValidationError, match="already exists"):
         main(args)
+
+
+def test_skipped_ambiguous_detections_are_counted_and_not_detected(tmp_path):
+    from placecell.depth import Box
+    from placecell.object_types import Detection
+
+    runner = tracker()
+    first = observation(tmp_path, 1000, depth=False)
+    boxes = (Box(0.44, 0.45, 0.54, 0.55), Box(0.46, 0.45, 0.56, 0.55))
+    tie = observation(tmp_path, 2000, boxes, ("red", "red"), depth=False)
+
+    def replay():
+        yield first
+        runner.detector.detections = [Detection("printer", "red printer", box) for box in boxes]
+        yield tie
+
+    frame = labels(tie)
+    report = evaluate_objects(runner, replay(), {frame.observation_id: frame})
+    assert report["counts"]["ambiguous_detections"] == 2
+    assert report["counts"]["matched_detections"] == 0

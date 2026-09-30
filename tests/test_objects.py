@@ -150,7 +150,34 @@ def test_label_changes_cannot_merge_without_geometry_and_identity_confirmation(s
     detector.detections = [Detection("box", "red rectangular device", box)]
     ingest(tracker, observation(tmp_path, 2000, (box,), depth=reason != "no_depth"))
     assert store.objects.get(first.id).last_seen == 1000
-    assert store.objects.count() == 2
+    # An unconfirmed match on the same spot is skipped; a distinct object gets its own record.
+    assert store.objects.count() == (1 if reason in {"uncertain", "no_comparator"} else 2)
+
+
+@pytest.mark.parametrize("verdict", ["uncertain", "not_matched", None])
+def test_repeated_label_flips_do_not_accumulate_records(setup, tmp_path, verdict):
+    store, _, detector, tracker = setup
+    first = ingest(tracker, observation(tmp_path))[0]
+    comparisons = []
+
+    def compare(*_):
+        comparisons.append(verdict)
+        return SceneVerdict(verdict, "evidence")
+
+    if verdict is not None:
+        detector.compare = compare
+    detector.detections = [Detection("box", "red rectangular device", CENTER)]
+    for timestamp in (2000, 3000, 4000, 5000):
+        records = ingest(tracker, observation(tmp_path, timestamp))
+        assert len(records) == (2 if verdict == "not_matched" else 1)
+    assert store.objects.get(first.id).last_seen == 1000
+    assert all(r.status == "present" for r in records)
+    if verdict == "not_matched":
+        # Once told apart, the new category keeps its own record without further comparisons.
+        assert next(r for r in records if r.id != first.id).last_seen == 5000
+        assert comparisons == ["not_matched"]
+    else:
+        assert len(comparisons) == (4 if verdict else 0)
 
 
 def test_unique_move_requires_empty_old_location(setup, tmp_path):
@@ -225,15 +252,16 @@ def test_two_identical_instances_remain_separate(setup, tmp_path):
     assert all(r.status == "present" for r in second)
 
 
-def test_association_ties_are_non_navigable_hypotheses(setup, tmp_path):
-    _, _, detector, tracker = setup
+def test_association_ties_geometry_cannot_break_are_skipped_without_new_records(setup, tmp_path):
+    store, _, detector, tracker = setup
     first = ingest(tracker, observation(tmp_path, depth=False))[0]
     boxes = (Box(0.44, 0.45, 0.54, 0.55), Box(0.46, 0.45, 0.56, 0.55))
     detector.detections = [Detection("printer", "red printer", box) for box in boxes]
-    second = ingest(tracker, observation(tmp_path, 2000, boxes, ("red", "red"), depth=False))
-    assert len(second) == 3
-    assert sum(r.status == "ambiguous" for r in second) == 2
-    assert next(r for r in second if r.id == first.id).last_seen == 1000
+    prepared = tracker.prepare(observation(tmp_path, 2000, boxes, ("red", "red"), depth=False))
+    tracker.commit(prepared)
+    assert prepared.skipped_ambiguous == 2 and prepared.updates == ()
+    assert store.objects.records(**SCOPE) == [first]
+    assert [e.kind for e in store.objects.history(first.id)] == ["created"]
 
 
 @pytest.mark.parametrize("background,absence", [(1, True), (0, True), (5, False)])
@@ -449,6 +477,9 @@ def test_invalid_object_config_and_foreign_model_fail_before_provider(setup):
         ObjectPolicy(max_views=0)
     with pytest.raises(ValidationError):
         ObjectPolicy(association_margin=2)
+    for weight in (0, 1.5, float("inf")):
+        with pytest.raises(ValidationError):
+            ObjectPolicy(association_distance_weight=weight)
     with pytest.raises(ValidationError):
         ObjectPolicy(visit_interval_s=float("nan"))
     with pytest.raises(ValidationError):
@@ -540,7 +571,64 @@ def test_near_threshold_lookalike_still_prevents_false_identity_match(setup, tmp
     before = ingest(tracker, observation(tmp_path, boxes=boxes, colors=("red", "red")))
     detector.detections = [Detection("printer", "red printer", CENTER)]
     embedder.embed_media = lambda _: np.array([[1, 0, 0]], dtype=np.float32)
-    after = ingest(tracker, observation(tmp_path, 2000))
-    assert len(after) == 3
-    assert sum(record.status == "ambiguous" for record in after) == 1
+    prepared = tracker.prepare(observation(tmp_path, 2000))
+    tracker.commit(prepared)
+    assert prepared.skipped_ambiguous == 1
+    assert store.objects.count() == 2
     assert all(store.objects.get(record.id).last_seen == 1000 for record in before)
+
+
+# Two identical monitors 0.48 m apart, 3 m away, with the default RGB-D position error.
+TWINS = (Box(0.37, 0.45, 0.47, 0.55), Box(0.53, 0.45, 0.63, 0.55))
+
+
+def twins(tmp_path, timestamp, distances=(3.0, 3.0)):
+    obs = observation(tmp_path, timestamp, TWINS, ("gray", "gray"))
+    array = np.full((100, 100), 5, dtype=np.float32)
+    for box, distance in zip(TWINS, distances, strict=True):
+        array[45:55, int(box.left * 100) : int(box.right * 100)] = distance
+    return replace(obs, depth=DepthSnapshot.capture(array, (100, 100, 50, 50), np.eye(4)))
+
+
+def test_identical_neighbours_keep_their_own_identities_across_scans(setup, tmp_path):
+    store, _, detector, tracker = setup
+    detector.detections = [Detection("monitor", "gray monitor", box) for box in TWINS]
+    first = ingest(tracker, twins(tmp_path, 1000))
+    assert first[0].position.uncertainty_m + first[1].position.uncertainty_m > 0.6
+    left, right = sorted(first, key=lambda r: r.position.x)
+    for scan in range(1, 5):
+        obs = twins(tmp_path, 1000 + scan * 1000, (3.0 + 0.02 * scan, 3.0 - 0.02 * scan))
+        prepared = tracker.prepare(obs)
+        tracker.commit(prepared)
+        assert store.objects.count() == 2 and prepared.skipped_ambiguous == 0
+        for record, box in ((left, TWINS[0]), (right, TWINS[1])):
+            current = store.objects.get(record.id)
+            assert current.last_seen == obs.timestamp and current.status == "present"
+            assert current.position == obs.depth.locate(box)
+
+
+def test_second_identical_neighbour_seen_later_gets_a_present_record(setup, tmp_path):
+    store, _, detector, tracker = setup
+    detector.detections = [Detection("monitor", "gray monitor", TWINS[0])]
+    depth = twins(tmp_path, 0).depth
+    first = ingest(tracker, replace(observation(tmp_path, 1000, TWINS[:1], ("gray",)), depth=depth))[0]
+    detector.detections = [Detection("monitor", "gray monitor", box) for box in TWINS]
+    for timestamp in (2000, 3000):
+        records = ingest(tracker, twins(tmp_path, timestamp))
+    assert len(records) == 2 and all(r.status == "present" and r.last_seen == 3000 for r in records)
+    assert store.objects.get(first.id).position.x < 0
+    assert [e.kind for e in store.objects.history(first.id)] == ["created"]
+
+
+def test_legacy_ambiguous_duplicates_yield_to_the_established_record(setup, tmp_path):
+    store, _, _, tracker = setup
+    first = ingest(tracker, observation(tmp_path))[0]
+    view = store.objects.views(first.id)[0]
+    for n in range(3):
+        duplicate = replace(first, id=f"legacy-{n}", status="ambiguous")
+        copy = replace(view, object_id=duplicate.id, memory=replace(view.memory, id=f"legacy-view-{n}"))
+        store.objects.save(duplicate, copy, event="ambiguous")
+    records = ingest(tracker, observation(tmp_path, 2000))
+    assert len(records) == 4
+    assert store.objects.get(first.id).last_seen == 2000
+    assert all(store.objects.get(f"legacy-{n}").last_seen == 1000 for n in range(3))

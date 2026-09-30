@@ -78,10 +78,11 @@ with a fresh empty store and your configured `ObjectTracker`.
 
 Visible predictions are matched one-to-one to human boxes by descending intersection
 over union, with a default threshold of 0.5. Reports include visible detection recall,
-unmatched detections in complete frames, ambiguous hypotheses, identity switches, false
-merges, fragmentations, and up to 32 identity failure examples. An ambiguous detection
-may count as detected while still being unusable for navigation. The matching is a
-bounded greedy assignment, not a standard HOTA or IDF1 benchmark implementation.
+unmatched detections in complete frames, ambiguous detections, identity switches, false
+merges, fragmentations, and up to 32 identity failure examples. The tracker skips an
+ambiguous detection instead of storing it, so it counts as ambiguous but never as
+detected. The matching is a bounded greedy assignment, not a standard HOTA or IDF1
+benchmark implementation.
 
 False-missing rates count known objects labeled visible or occluded. Absence confirmation
 rates count linked objects labeled absent. Unknown identities have a separate count and

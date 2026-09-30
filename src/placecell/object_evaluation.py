@@ -214,7 +214,7 @@ def evaluate_objects(
         visible = [label for label in frame.objects if label.visibility == "visible"]
         predicted = [(record, view) for record, view, _ in prepared.updates if view is not None]
         counts["visible_labels"] += len(visible)
-        counts["ambiguous_detections"] += sum(record.status == "ambiguous" for record, _ in predicted)
+        counts["ambiguous_detections"] += prepared.skipped_ambiguous
         edges = []
         for i, label in enumerate(visible):
             assert label.box is not None

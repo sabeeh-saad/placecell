@@ -5,7 +5,9 @@ only with a strong appearance match, nearby reliable RGB-D coordinates, an unamb
 assignment and a positive paired-image comparison. Checks are bounded per observation.
 The established category is retained in the refreshed caption and re-embedded, so a
 printer temporarily described as a box remains searchable as the verified printer.
-Without those checks, a changed label cannot silently merge or relocate an object.
+Without those checks, a changed label cannot silently merge or relocate an object. An
+unconfirmed detection at the same spot is skipped for that scan instead of becoming a
+second record; a negative comparison gives the new category its own record.
 
 Object memory is optional. It adds persistent object identities alongside the existing
 whole-scene memories. Detection and embedding use your configured providers; enabling
@@ -46,11 +48,26 @@ raise the limit before retrying. Failed jobs also occupy the bounded ingestion q
 
 ## Identity and changes
 
-A nearby detection needs a strong crop similarity and a unique best match on both sides
-of the association. Several lookalike objects are not automatically merged. Unresolved
-nearby associations create separate `ambiguous` hypotheses, which cannot authorize a
-navigation goal. Camera and map versions partition identities; cross-camera identity
-matching is outside this milestone.
+A nearby detection needs a strong crop similarity (default 0.85) and a position inside
+the nearby gate: the larger of 0.35 m and the two positions' combined uncertainty. Without
+depth, it must instead cover the same image region from almost the same viewpoint. Each
+candidate pair scores its appearance similarity minus `association_distance_weight`
+(default 0.25) times its distance as a fraction of that gate; without depth, image overlap
+replaces distance. All detections in a frame are then assigned together, one-to-one and
+best pair first. A pair is accepted only if it beats every other unsettled claim on the
+same detection or record by `association_margin` (default 0.08). Against a changed
+category or an `ambiguous` record, an established record of the same category needs no
+margin, only an equal or higher score. Identical neighbours are therefore separated by
+position: two identical monitors 0.48 m apart, seen from 3 m with about 0.31 m uncertainty
+each, keep their own records.
+
+A detection that remains contested after geometry is skipped for that scan and counted in
+`PreparedObjects.skipped_ambiguous`. It neither updates nor creates a record, and the
+records it might show are not checked for absence. A new record is created only when no
+unsettled record matches the detection. Lookalike objects are never merged automatically.
+Camera and map versions partition identities; cross-camera identity matching is outside
+this milestone. Earlier versions stored contested detections as `ambiguous` records. Those
+records stay non-navigable and yield to an established record, but new ones are not created.
 
 A larger move can preserve identity only when the appearance match is strong and unique,
 and the old location is demonstrably empty in the same RGB-D observation. Otherwise it
