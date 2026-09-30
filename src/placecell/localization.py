@@ -21,10 +21,14 @@ class LocalizationPolicy:
     max_yaw_std_rad: float = 0.35
     max_pose_difference_m: float = 0.5
     max_heading_difference_rad: float = 0.5
+    max_capture_future_s: float = 0.1
 
     def __post_init__(self) -> None:
-        if any(not math.isfinite(v) or v <= 0 for v in vars(self).values()):
+        limits = {k: v for k, v in vars(self).items() if k != "max_capture_future_s"}
+        if any(not math.isfinite(v) or v <= 0 for v in limits.values()):
             raise ValidationError("localization limits must be finite and positive")
+        if not math.isfinite(self.max_capture_future_s) or not 0 <= self.max_capture_future_s < self.max_age_s:
+            raise ValidationError("capture future tolerance must be nonnegative and below the maximum age")
 
 
 class LocalizationGate:
@@ -120,7 +124,7 @@ class LocalizationGate:
         with self._lock:
             if not self._ready() or self._sample is None or not math.isfinite(timestamp):
                 return None
-            if not 0 <= self._clock() - timestamp <= self._policy.max_age_s:
+            if not -self._policy.max_capture_future_s <= self._clock() - timestamp <= self._policy.max_age_s:
                 return None
             if abs(timestamp - self._sample[0]) > self._policy.max_age_s:
                 return None
@@ -146,7 +150,7 @@ class LocalizationGate:
             p = self._policy
             return (
                 math.isfinite(timestamp)
-                and 0 <= self._clock() - timestamp <= p.max_age_s
+                and -p.max_capture_future_s <= self._clock() - timestamp <= p.max_age_s
                 and abs(timestamp - stamp) <= p.max_age_s
                 and pose.same_frame(estimate)
                 and pose.distance_to(estimate) <= p.max_pose_difference_m

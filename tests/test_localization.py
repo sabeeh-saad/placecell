@@ -106,3 +106,19 @@ def test_capture_uncertainty_uses_measured_covariance_and_expires():
     assert gate.uncertainty_at(106) is None
     assert not gate.update(106, pose, covariance(yaw=100))
     assert gate.uncertainty_at(106) is None
+
+
+def test_capture_stamps_within_future_tolerance_are_checked_like_current_ones():
+    gate = LocalizationGate("map", "office", clock=lambda: 100)
+    pose = Pose(0, 0, map_id="office")
+    assert gate.update(100, pose, covariance())
+    assert gate.accepts(pose, 100.05) and gate.uncertainty_at(100.05) is not None
+    assert not gate.accepts(pose, 100.2) and gate.uncertainty_at(100.2) is None
+    strict = LocalizationGate("map", "office", LocalizationPolicy(max_capture_future_s=0), clock=lambda: 100)
+    assert strict.update(100, pose, covariance()) and not strict.accepts(pose, 100.05)
+
+
+@pytest.mark.parametrize("tolerance", [-0.1, 5.0, float("inf")])
+def test_capture_future_tolerance_must_be_below_maximum_age(tolerance):
+    with pytest.raises(ValidationError):
+        LocalizationPolicy(max_capture_future_s=tolerance)

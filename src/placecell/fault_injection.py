@@ -697,8 +697,9 @@ def _provenance_fault(rig: _Rig, fault: str) -> None:
                 rig.advance(1)
                 sensor.observe(rig.stamp, camera=True, depth=False)
         else:
-            rig.advance(0.1)
-        sensor.observe(rig.stamp, camera="depth" in fault, depth=False)
+            for _ in range(3):  # One bad frame is tolerated; consecutive ones revoke trust.
+                rig.advance(0.1)
+                sensor.observe(rig.stamp, camera=False, depth=False)
         if "recovered" in fault:
             rig.advance(0.1)
             sensor.observe(rig.stamp, camera=True, depth=True)

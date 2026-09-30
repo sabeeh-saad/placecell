@@ -189,11 +189,12 @@ class Check:
             rgb.header.stamp = Time(sec=stamp)
             self.rgb.publish(rgb)
             self.spin()
-            assert len(self.captures) == count and not self.node._sensors.ready(camera=True)
+            assert len(self.captures) == count and self.node._sensors.ready(camera=True)
             self.frame()
             count += 1
             assert len(self.captures) == count and self.node._sensors.ready(camera=True, depth=True)
-        self.passed("zero and future RGB stamps are refused without poisoning later synchronization")
+        assert self.node._sensors.health()["future_dropped"] == 1
+        self.passed("isolated zero and future RGB stamps are refused without revoking trust or later synchronization")
         observation = self.captures[-1]
         memory = replace(
             Memory.create("robot", "front", observation.timestamp, observation.pose, observation.evidence, "fixture"),
@@ -240,8 +241,11 @@ class Check:
 
         count = len(self.captures)
         self.frame(malformed=True)
+        assert len(self.captures) == count and self.node._sensors.ready(camera=True)
+        for _ in range(2):
+            self.frame(malformed=True)
         assert len(self.captures) == count and not self.node._sensors.ready(camera=True)
-        self.passed("malformed RGB cannot refresh camera trust")
+        self.passed("malformed RGB cannot refresh camera trust; consecutive malformed frames revoke it")
         self.frame()
         self.goal = replace(self.goal, object_id="object")
         self.start()

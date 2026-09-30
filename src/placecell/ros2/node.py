@@ -639,7 +639,12 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._recording = RecordingWriter(p["recording_dir"]) if p["recording_dir"] else None
             self._map_frame, self._base_frame, self._map_id = p["map_frame"], p["base_frame"], p["map_id"]
             self._localization_required = p["localization_required"]
-            self._sensors = SensorHealth(p["sensor_max_age_s"], clock=self._memory_time)
+            self._sensors = SensorHealth(
+                p["sensor_max_age_s"],
+                max_future_s=p["sensor_max_future_s"],
+                max_failures=p["sensor_max_failures"],
+                clock=self._memory_time,
+            )
             self._clock_jump = self.get_clock().create_jump_callback(
                 JumpThreshold(min_forward=None, min_backward=Duration(nanoseconds=-1), on_clock_change=True),
                 pre_callback=self._sensors.clock_changed.set,
@@ -651,6 +656,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     max_age_s=p["localization_max_age_s"],
                     max_position_std_m=p["localization_max_position_std_m"],
                     max_yaw_std_rad=p["localization_max_yaw_std_rad"],
+                    max_capture_future_s=p["sensor_max_future_s"],
                 ),
                 clock=self._memory_time,
             )
@@ -670,6 +676,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 wait_s=p["rgbd_wait_s"],
                 max_age_s=p["sensor_max_age_s"],
                 max_message_bytes=p["camera_max_message_bytes"],
+                max_future_s=p["sensor_max_future_s"],
             )
             image_qos = (
                 QoSProfile(depth=8, reliability=ReliabilityPolicy.RELIABLE)
@@ -924,6 +931,8 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "localization_topic": "/amcl_pose",
                 "localization_max_age_s": 5.0,
                 "sensor_max_age_s": 5.0,
+                "sensor_max_future_s": 0.1,
+                "sensor_max_failures": 3,
                 "localization_max_position_std_m": 0.3,
                 "localization_max_yaw_std_rad": 0.35,
                 "db_path": "~/.placecell/db",
@@ -1354,7 +1363,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self.get_logger().info(
                 f"queues: questions={self._questions.health()}, maintenance={self._maintenance.health()}, "
                 f"commands={self._command_tasks.health() if self._command_tasks is not None else None}, "
-                f"images={self._pending_images.health()}"
+                f"images={self._pending_images.health()}, sensors={self._sensors.health()}"
             )
             if self._mission_traces is not None:
                 health = self._mission_traces.health()

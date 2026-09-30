@@ -28,9 +28,12 @@ class PendingImages:
         capacity: int = 8,
         max_age_s: float = 5.0,
         max_message_bytes: int = 8 * 1024 * 1024,
+        max_future_s: float = 0.1,
     ) -> None:
         if (
             any(not math.isfinite(v) or v <= 0 for v in (max_skew_s, wait_s, max_age_s))
+            or not math.isfinite(max_future_s)
+            or max_future_s < 0
             or type(capacity) is not int
             or capacity < 1
             or type(max_message_bytes) is not int
@@ -42,7 +45,7 @@ class PendingImages:
         self._images: deque[tuple[Any, bool, float]] = deque(maxlen=capacity)
         self._skew, self._wait = max_skew_s, wait_s
         self._last_stamp = -math.inf
-        self._age = max_age_s
+        self._age, self._future = max_age_s, max_future_s
         self._max_bytes = max_message_bytes
         self._counts = {
             "oversized": 0,
@@ -83,7 +86,7 @@ class PendingImages:
             timestamp = self.stamp(message)
         except (AttributeError, TypeError, ValueError):
             return self._invalid()
-        if source_now is not None and (timestamp <= 0 or not 0 <= source_now - timestamp <= self._age):
+        if source_now is not None and (timestamp <= 0 or not -self._future <= source_now - timestamp <= self._age):
             return self._invalid()
         if timestamp <= self._last_stamp or (self._images and timestamp <= self.stamp(self._images[-1][0])):
             return self._invalid()

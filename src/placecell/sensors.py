@@ -13,6 +13,11 @@ from placecell.errors import ValidationError
 class SensorHealth:
     """Require advancing, validated RGB/TF and aligned depth within a bounded age.
 
+    A single invalid capture does not revoke trust; `max_failures` consecutive ones do,
+    and so does the age limit when no valid capture arrives. Stamps up to `max_future_s`
+    ahead of the node clock are accepted as cross-host skew. Later stamps are dropped
+    and counted without revoking trust or advancing the timestamp watermark.
+
     Clock resets latch a fault: timestamp-based memory identities cannot be reused
     safely in another simulation epoch. Recovery requires a fresh run/collection.
     The ROS jump callback only sets an event, never waits for a controller lock.
@@ -22,12 +27,21 @@ class SensorHealth:
         self,
         max_age_s: float = 5.0,
         *,
+        max_future_s: float = 0.1,
+        max_failures: int = 3,
         clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         if not math.isfinite(max_age_s) or max_age_s <= 0:
             raise ValidationError("sensor maximum age must be finite and positive")
+        if not math.isfinite(max_future_s) or not 0 <= max_future_s < max_age_s:
+            raise ValidationError("sensor future tolerance must be nonnegative and below the maximum age")
+        if type(max_failures) is not int or max_failures < 1:
+            raise ValidationError("sensor failure limit must be a positive integer")
         self._age, self._clock, self._monotonic = max_age_s, clock, monotonic
+        self._future, self._max_failures = max_future_s, max_failures
+        self._failures = 0
+        self._counts = {"future_dropped": 0, "failed": 0}
         self._lock = threading.Lock()
         self.clock_changed = threading.Event()
         self._last_clock = -math.inf
@@ -55,26 +69,38 @@ class SensorHealth:
         else:
             for camera, sample in ((True, self._camera), (False, self._depth)):
                 if sample is not None and not (
-                    0 <= now - sample[0] <= self._age and 0 <= mono - sample[1] <= self._age
+                    -self._future <= now - sample[0] <= self._age and 0 <= mono - sample[1] <= self._age
                 ):
                     self._revoke(camera=camera)
         return now
 
+    def _fail(self) -> bool:
+        self._counts["failed"] += 1
+        self._failures += 1
+        if self._failures >= self._max_failures:
+            self._revoke()
+        return False
+
     def observe(self, stamp: float, *, camera: bool, depth: bool) -> bool:
-        """Offer a validated capture; repeats never refresh receipt age."""
+        """Offer a capture; `camera=False` reports one that failed validation.
+
+        Repeats never refresh receipt age and are neither failures nor successes.
+        """
         with self._lock:
             now = self._refresh()
             if self.clock_changed.is_set():
                 return False
-            if not math.isfinite(stamp) or not 0 < stamp <= now or now - stamp > self._age:
-                self._revoke()
+            if math.isfinite(stamp) and stamp - now > self._future:
+                self._counts["future_dropped"] += 1
                 return False
+            if not math.isfinite(stamp) or stamp <= 0 or now - stamp > self._age:
+                return self._fail()
             if stamp <= self._last_stamp:
                 return False
             self._last_stamp = stamp
             if not camera:
-                self._revoke()
-                return False
+                return self._fail()
+            self._failures = 0
             sample = (stamp, self._monotonic())
             self._camera = sample
             if depth:
@@ -92,6 +118,10 @@ class SensorHealth:
                 and (not camera or self._camera is not None)
                 and (not depth or self._depth is not None)
             )
+
+    def health(self) -> dict[str, int]:
+        with self._lock:
+            return {**self._counts, "consecutive_failures": self._failures}
 
     def generation(self, *, depth: bool = False) -> tuple[int, int]:
         with self._lock:

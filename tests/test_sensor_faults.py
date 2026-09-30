@@ -104,9 +104,11 @@ def test_sensor_faults_revoke_only_affected_capabilities(sensor, fault):
         assert s.health.observe(s.now[0], camera=True, depth=False)
     elif fault == "future":
         assert not s.health.observe(101, camera=True, depth=True)
+        s.now[0] += 2.1  # Only skewed frames arrive until the age limit.
     elif fault == "camera_missing":
-        s.now[0] += 0.1
-        assert not s.health.observe(s.now[0], camera=False, depth=False)
+        for _ in range(3):
+            s.now[0] += 0.1
+            assert not s.health.observe(s.now[0], camera=False, depth=False)
     else:
         s.mono[0] = 3
         if fault == "replayed":
@@ -157,8 +159,12 @@ def test_live_sensor_loss_blocks_dispatch_or_success(mission, sensor, object_goa
     if phase == "dispatch":
         assert m.events[-1].state == "unavailable" and not m.nav.sent
         return
-    s.now[0] += 2.1 if object_goal else 0.1
-    s.health.observe(s.now[0], camera=object_goal, depth=False)
+    if object_goal:
+        s.now[0] += 2.1
+        s.health.observe(s.now[0], camera=True, depth=False)
+    for _ in range(0 if object_goal else 3):
+        s.now[0] += 0.1
+        s.health.observe(s.now[0], camera=False, depth=False)
     if phase == "recovered_result":
         s.now[0] += 0.1
         assert s.health.observe(s.now[0], camera=True, depth=True)
@@ -172,6 +178,86 @@ def test_live_sensor_loss_blocks_dispatch_or_success(mission, sensor, object_goa
         assert m.events[-1].state == "destination_unverified"
     assert not m.tasks and not m.commands.busy
     assert not any(e.state in {"succeeded", "step_succeeded"} for e in m.events)
+
+
+def test_isolated_invalid_captures_do_not_revoke_until_consecutive_limit(sensor):
+    s = sensor
+    assert s.health.observe(100, camera=True, depth=True)
+    generation = s.health.generation(depth=True)
+    for stamp, camera in ((100.1, False), (100.2, False), (100.3, True), (100.4, False)):
+        s.now[0] = stamp
+        s.health.observe(stamp, camera=camera, depth=camera)
+    assert not s.health.observe(math.nan, camera=True, depth=True)
+    assert s.health.ready(camera=True, depth=True)
+    assert s.health.generation(depth=True) == generation
+    assert s.health.health() == {"future_dropped": 0, "failed": 4, "consecutive_failures": 2}
+    s.now[0] = 100.5
+    assert not s.health.observe(97, camera=True, depth=True)  # Stale: third consecutive failure.
+    assert not s.health.ready(camera=True) and not s.health.ready(depth=True)
+    assert s.health.generation(depth=True) != generation
+    s.now[0] = 100.6
+    assert s.health.observe(100.6, camera=True, depth=True)
+    assert s.health.health()["consecutive_failures"] == 0
+
+
+def test_camera_clock_rewind_revokes_after_consecutive_stale_frames(sensor):
+    s = sensor
+    assert s.health.observe(100, camera=True, depth=False)
+    for step in (1, 2, 3):
+        assert s.health.ready(camera=True)
+        s.now[0] = 100 + step / 10
+        assert not s.health.observe(s.now[0] - 50, camera=True, depth=False)
+    assert not s.health.ready(camera=True)
+
+
+def test_small_future_skew_is_accepted_and_larger_skew_is_dropped_without_revoking(sensor):
+    s = sensor
+    assert s.health.observe(100.05, camera=True, depth=True)  # 50 ms ahead of the node clock.
+    assert s.health.ready(camera=True, depth=True)
+    generation = s.health.generation(depth=True)
+    for _ in range(5):
+        assert not s.health.observe(100.5, camera=True, depth=True)
+    assert s.health.ready(camera=True, depth=True) and s.health.generation(depth=True) == generation
+    assert s.health.health() == {"future_dropped": 5, "failed": 0, "consecutive_failures": 0}
+    s.now[0] = 100.2  # Dropped frames did not advance the timestamp watermark.
+    assert s.health.observe(100.2, camera=True, depth=True)
+    s.now[0] = 102.3  # Only skewed frames since: trust ends at the age limit.
+    assert not s.health.observe(103, camera=True, depth=True)
+    assert not s.health.ready(camera=True)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"max_future_s": -0.1},
+        {"max_future_s": 2},
+        {"max_future_s": math.nan},
+        {"max_failures": 0},
+        {"max_failures": 1.0},
+    ],
+)
+def test_invalid_sensor_tolerances_are_rejected(options):
+    with pytest.raises(ValidationError):
+        SensorHealth(2, **options)
+
+
+def test_single_bad_camera_frame_does_not_cancel_memory_trip(mission, sensor, monkeypatch):
+    m, s = mission, sensor
+    goal = Destination("printer", Pose(1, 2, map_id="office"), "memory")
+    from placecell.navigation import Resolution
+
+    monkeypatch.setattr(m.resolver, "resolve", lambda _: Resolution("resolved", "Selected", (goal,)))
+    monkeypatch.setattr(m.resolver, "current", lambda _: True)
+    monkeypatch.setattr(m.resolver, "prepare_destination", lambda d, _: d)
+    m.commands._sensor_ready = lambda d: s.health.ready(camera=d.source == "memory")
+    m.commands._sensor_generation = lambda d: s.health.generation()
+    assert s.health.observe(s.now[0], camera=True, depth=False)
+    start(m)
+    s.now[0] += 0.1
+    s.health.observe(s.now[0] + 0.5, camera=True, depth=False)  # Skewed beyond tolerance.
+    s.health.observe(s.now[0], camera=False, depth=False)  # e.g. one TF lookup timeout.
+    m.commands.poll()
+    assert not m.nav.canceled and m.commands.busy
 
 
 def test_missing_depth_pair_does_not_refresh_or_revoke_recent_valid_depth(sensor):

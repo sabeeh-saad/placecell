@@ -20,6 +20,19 @@ policy, not a measured hardware latency budget. Localization has its separate ex
 Camera health is evaluated before ingestion sampling and worker-capacity checks, so a
 stationary robot's sampling interval does not look like camera loss.
 
+Cameras on other hosts can run slightly ahead of the node clock. RGB stamped up to
+`sensor_max_future_s` (default **0.1 s**) ahead is accepted and checked like a current
+frame, including its capture-time localization. RGB further ahead is dropped and counted
+(`future_dropped` in the periodic `sensors=` diagnostics) without revoking trust. If only
+such frames arrive, trust ends at the ordinary age limit.
+
+A single invalid capture does not revoke trust. A TF lookup timeout, a pose that disagrees
+with localization, a malformed buffer, a zero or stale stamp, or an image rejected by the
+RGB-D queue each counts as one failure. `sensor_max_failures` (default **3**) consecutive
+failures revoke camera and depth trust and increment the trust generation; any valid
+capture resets the count. A camera whose clock jumps backwards therefore loses trust after
+a few frames, and a silent or permanently skewed camera loses it at `sensor_max_age_s`.
+
 RGB must have a nonempty frame, a normalized positive timestamp, supported encoding and a
 consistent bounded buffer (at most 16 MB and four million pixels). Compressed input must
 decode as bounded JPEG; the ROS reference image includes Pillow for validation. Zero RGB
@@ -31,19 +44,21 @@ timeout; a later transform does not retroactively validate an already discarded 
 RGB, depth and calibration must share the optical frame and permitted skew (default
 80 ms). Static CameraInfo with timestamp zero remains supported. Rectification, dimensions,
 depth units/stride, camera rotation and localization uncertainty are still validated.
-Out-of-order or repeated RGB never refreshes receipt age. Zero, stale and future RGB are
-refused before they can advance the synchronizer's timestamp watermark. Invalid depth
-timestamps are refused before entering the bounded cache. The RGB-D wait timer uses a
-steady clock, including when `/clock` pauses.
+Out-of-order or repeated RGB never refreshes receipt age and is not counted as a failure.
+Zero, stale and too-far-future RGB are refused before they can advance the synchronizer's
+timestamp watermark. Invalid depth timestamps are refused before entering the bounded
+cache. The RGB-D wait timer uses a steady clock, including when `/clock` pauses.
 
 The subsequent [Gazebo checkpoint](gazebo-checkpoint.md) refined packet-loss handling:
 after an unpaired RGB capture's wait expires, a newer complete queued capture takes
 precedence. If none exists, scene-only fallback remains available. An unpaired capture
 does not refresh depth age or revoke a still-fresh valid depth sample. Sustained depth
 loss expires at the same source/monotonic `sensor_max_age_s` bound and increments the
-trust generation. Invalid camera/TF and clock inputs still revoke trust immediately.
-This intentionally replaces Day 11's immediate revocation on every missing depth pair;
-the historical Day 11 validation record describes the earlier source hashes.
+trust generation. Clock inputs still revoke trust immediately; invalid camera/TF inputs
+revoke it after `sensor_max_failures` consecutive failures, as described above.
+This intentionally replaces Day 11's immediate revocation on every missing depth pair
+and on every invalid camera/TF input; the historical Day 11 validation record describes
+the earlier source hashes.
 
 ## Mission behavior
 

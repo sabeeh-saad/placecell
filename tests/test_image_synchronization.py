@@ -85,7 +85,17 @@ def test_no_newer_complete_capture_keeps_bounded_scene_only_fallback():
     assert pending.pop(1.1) == (old, False)
 
 
-@pytest.mark.parametrize("options", [{"wait_s": -1}, {"max_skew_s": float("nan")}, {"capacity": 0}])
+def test_small_future_skew_is_queued_and_larger_skew_is_refused():
+    pending = PendingImages()
+    assert pending.add(message(10), False, 0, source_now=9.95)
+    assert not pending.add(message(11), False, 0, source_now=10.5)
+    assert pending.health()["invalid"] == 1
+    assert pending.add(message(11), False, 0, source_now=11)
+
+
+@pytest.mark.parametrize(
+    "options", [{"wait_s": -1}, {"max_skew_s": float("nan")}, {"capacity": 0}, {"max_future_s": -0.1}]
+)
 def test_invalid_synchronization_bounds_are_rejected(options):
     with pytest.raises(ValidationError):
         PendingImages(**options)
