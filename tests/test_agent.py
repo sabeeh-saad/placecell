@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -15,9 +16,11 @@ from placecell import (
     CollectionInfo,
     InMemoryStore,
     Pose,
+    RankedMemory,
     Recall,
     ToolCall,
 )
+from placecell.agent import _describe
 from placecell.errors import ProviderError, ValidationError
 from placecell.providers import HashingEmbedder, OpenAICompatibleChat
 from tests.conftest import FakeTransport, embedded
@@ -29,15 +32,12 @@ class ScriptedChat:
     def __init__(self, replies: list[ChatReply]) -> None:
         self.replies = list(replies)
         self.calls: list[list[ChatMessage]] = []
+        self.tools: list[list[str]] = []
 
     def complete(self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> ChatReply:
         self.calls.append(list(messages))
-        assert [t["function"]["name"] for t in tools] == [
-            "search_memories",
-            "memories_between",
-            "memories_near",
-            "answer",
-        ]
+        self.tools.append([t["function"]["name"] for t in tools])
+        assert self.tools[-1] in (["search_memories", "memories_between", "memories_near", "answer"], ["answer"])
         return self.replies.pop(0)
 
 
@@ -52,6 +52,88 @@ def test_agent_enforces_tool_and_result_limits(recall) -> None:
     excessive = ChatReply(None, tuple(call("search_memories", query="printer") for _ in range(9)))
     answer = Agent(recall, ScriptedChat([excessive])).ask("printer?")
     assert not answer.grounded and "budget" in answer.text
+
+
+def test_tool_results_keep_captions_and_sighting_lists_short(recall: Recall) -> None:
+    memory = recall._store.get("r1:front:1000000")
+    assert memory is not None
+    sightings = tuple(float(t) for t in range(1000, 1064))
+    ranked = RankedMemory(replace(memory, caption="c" * 2000), 1.0, 0.9, observed_at=sightings)
+    described = _describe(ranked)
+    assert described["caption"] == "c" * 300 + " [truncated]"
+    assert described["observed_at"] == [1000.0, 1060.0, 1061.0, 1062.0, 1063.0]
+    assert described["sightings_omitted"] == 59 and described["time"].startswith("1970-01-01T00:16:40")
+    assert "sightings_omitted" not in _describe(RankedMemory(memory, 1.0, observed_at=sightings[:5]))
+    for name, argument in (("search_memories", "k"), ("memories_between", "limit"), ("memories_near", "limit")):
+        schema = next(t["function"] for t in TOOLS if t["function"]["name"] == name)
+        assert schema["parameters"]["properties"][argument]["maximum"] == 20 and "20" in schema["description"]
+    agent = Agent(recall, ScriptedChat([]))
+    for bad in (
+        call("search_memories", query="printer", k=21),
+        call("memories_between", time_from=0, time_to=1, limit=21),
+        call("memories_near", x=0, y=0, limit=21),
+    ):
+        text, found = agent._run(bad)
+        assert "within 1..20" in json.loads(text)["error"] and found == []
+    text, _ = agent._run(call("memories_between", time_from="x" * 5000, time_to=1))
+    assert len(json.loads(text)["error"]) < 300
+
+
+def test_a_large_result_is_truncated_to_the_transcript_budget_and_forces_the_answer(hashing: HashingEmbedder) -> None:
+    store = InMemoryStore(CollectionInfo("budget", hashing.model_name, hashing.dimension))
+    store.upsert([embedded(hashing, f"shelf {i} " + "x" * 290, t=1000 + i, x=i) for i in range(20)])
+    recall = Recall(store, hashing, clock=lambda: 3000.0)
+    first, last = "r1:front:1000000", "r1:front:1019000"
+    chat = ScriptedChat(
+        [
+            ChatReply(None, (call("memories_between", time_from=0, time_to=5000, limit=20),)),
+            ChatReply(None, (call("answer", text="Shelf zero.", memory_ids=[first]),)),
+        ]
+    )
+    answer = Agent(recall, chat, max_context_chars=6000).ask("which shelves did you see?")
+    result = json.loads(chat.calls[1][3].content or "")
+    assert result[-1]["truncated"] is True and 0 < len(result) - 1 < 20
+    assert result[-1]["omitted_memories"] == 20 - (len(result) - 1)
+    assert sum(len(m.content or "") for m in chat.calls[1]) <= 6000
+    assert chat.tools[1] == ["answer"] and chat.calls[1][-1].role == "user" and "budget" in chat.calls[1][-1].content
+    assert answer.grounded and [r.memory.id for r in answer.evidence] == [first]
+    omitted = ScriptedChat(
+        [
+            ChatReply(None, (call("memories_between", time_from=0, time_to=5000, limit=20),)),
+            ChatReply(None, (call("answer", text="The last shelf.", memory_ids=[last]),)),
+        ]
+    )
+    assert not Agent(recall, omitted, max_context_chars=6000).ask("which shelves?").grounded
+
+
+def test_total_tool_calls_are_bounded_per_question(recall: Recall) -> None:
+    search = call("search_memories", query="chair")
+    chat = ScriptedChat(
+        [
+            ChatReply(None, (search, search)),
+            ChatReply(None, (search, search)),
+            ChatReply(None, (search,)),
+        ]
+    )
+    answer = Agent(recall, chat, max_tool_calls=3).ask("where is the chair?")
+    assert not answer.grounded and "budget" in answer.text and answer.steps == 3
+    assert chat.tools == [chat.tools[0], chat.tools[0], ["answer"]]
+    results = [m for m in chat.calls[2] if m.role == "tool"]
+    assert "budget" in json.loads(results[-1].content or "")["error"]
+    assert isinstance(json.loads(results[-2].content or ""), list)
+    with pytest.raises(ValidationError):
+        Agent(recall, chat, max_tool_calls=0)
+    with pytest.raises(ValidationError):
+        Agent(recall, chat, max_context_chars=100)
+
+
+def test_provider_failures_propagate_to_the_caller(recall: Recall) -> None:
+    class Failing:
+        def complete(self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]]) -> ChatReply:
+            raise ProviderError("https://models.test: HTTP 400: context length exceeded")
+
+    with pytest.raises(ProviderError):
+        Agent(recall, Failing()).ask("where?")
 
 
 @pytest.fixture

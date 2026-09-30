@@ -50,6 +50,9 @@ fields or choosing the last occurrence of a repeated key.
   movement grammar remains limited to 500. Operator JSON envelopes remain capped at 16,384.
 - Mission history: at most 20 objects and 16,000 serialized JSON characters. Complete
   model task data is capped at 32,768, and each mission decision at 16,384.
+- Question agent: at most 20 memories per tool call, 300-character captions, five sighting
+  times per memory, 16 tool calls per question and a 40,000-character transcript by default
+  (see [operations](operations.md)).
 - Chat content/tool arguments and detector JSON: at most 65,536 characters each.
   Visual verdicts and captions are limited to 16,384. Text-part arrays allow at most 64 parts.
   Existing semantic field limits still apply: descriptions 500, explanations 1,000, and

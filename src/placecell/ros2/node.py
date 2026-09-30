@@ -629,7 +629,13 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
 
                 chat = OpenAICompatibleChat(p["chat_model"], *endpoint(p, "chat"), **chat_options(p, "chat"))
                 self._agent = Agent(
-                    self._recall, chat, frame_id=p["map_frame"], map_id=p["map_id"], clock=self._memory_time
+                    self._recall,
+                    chat,
+                    frame_id=p["map_frame"],
+                    map_id=p["map_id"],
+                    clock=self._memory_time,
+                    max_tool_calls=p["chat_max_tool_calls"],
+                    max_context_chars=p["chat_max_context_chars"],
                 )
                 if p["consolidate_interval_s"] > 0:
                     self._consolidator = Consolidator(store, embedder, ChatSummarizer(chat))
@@ -990,6 +996,8 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "chat_max_tokens": 400,
                 "chat_token_parameter": "max_tokens",
                 "chat_temperature": 0.0,
+                "chat_max_tool_calls": 16,
+                "chat_max_context_chars": 40000,
                 "api_key_env": "PLACECELL_API_KEY",
                 "min_interval_s": 2.0,
                 "max_interval_s": 60.0,

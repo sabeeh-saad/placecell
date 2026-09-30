@@ -76,7 +76,13 @@ Keep this journal with the deployment's other persistent state; do not delete it
 navigation or restore an older copy while Nav2 continues running.
 
 Questions use `question_workers` (2) and `question_queue` (8). Overflow receives an explicit
-busy response. Maintenance runs in one background worker with one waiting slot. The node
+busy response. Each question runs at most eight model steps and `chat_max_tool_calls` (16)
+retrieval calls, returning at most 20 memories per call with captions cut to 300 characters
+and five sighting times (the first and the four most recent). `chat_max_context_chars`
+(40,000) bounds the transcript that is resent on every step: a result that does not fit is
+cut behind an explicit `truncated` marker, its omitted memories cannot be cited, and the
+model is then offered only the `answer` tool. A provider failure is published as an `error`
+reply rather than an answer. Maintenance runs in one background worker with one waiting slot. The node
 logs queued and failed jobs, oldest job age and dropped observations every 30 seconds.
 
 Scene admission defaults to 10,000 records, and each memory retains at most 1,024 detailed
