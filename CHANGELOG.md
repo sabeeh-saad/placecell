@@ -14,6 +14,7 @@
 - Bound question answering: at most 20 compact memories per tool call, 16 tool calls per question and a 40,000-character transcript (`chat_max_tool_calls`, `chat_max_context_chars`); oversized results are cut with a marker and the model must then answer.
 - Dispatch a configured place in an agent-planned mission only when the user's instruction (or an earlier one in the planner's history window) names it; otherwise ask for clarification.
 - Keep only the user's words and structured outcomes in conversation context; vision-model arrival reasons, captions and provider error text no longer reach planner or reviewer prompts, including rows saved by earlier versions.
+- Add a store scaling benchmark (`benchmarks/store_scaling.py`): ingest through the merge path, filtered search latency inside and outside transactions, ANN recall@10 and reads beside a concurrent writer.
 - Keep scene-memory targets valid when the robot's own frames reinforce them during a trip; the goal pose still never follows later changes.
 - Never lose or refuse a stop while navigating: deeper command queue, stop/halt/cancel/abort with filler words on text and speech, and stale-target stops cancel the active trip with the mismatch reported.
 - Limit contradiction to the same robot, camera and vector kind, so other cameras, robots and cross-modal vectors no longer supersede memories.
