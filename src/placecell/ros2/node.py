@@ -13,12 +13,10 @@ from __future__ import annotations
 import json
 import math
 import os
-import queue
 import threading
 import time
-import urllib.parse
 from collections import deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -29,13 +27,12 @@ from placecell.command_identity import CommandJournal, CommandScope
 from placecell.consolidation import ChatSummarizer, Consolidator
 from placecell.corrections import JsonlCorrectionLog, correction_now
 from placecell.depth import DepthSnapshot
-from placecell.errors import PlacecellError, ProviderError, ValidationError
+from placecell.errors import PlacecellError, ValidationError
 from placecell.lifecycle import Curator, RetentionPolicy, remove_local_file
 from placecell.localization import LocalizationGate, LocalizationPolicy
 from placecell.maintenance import StorageLease
 from placecell.memory import Pose
 from placecell.mission_context import MissionContext
-from placecell.missions import MissionPlanner, PlanReviewAgent
 from placecell.navigation import (
     DestinationResolver,
     NavigationCommands,
@@ -50,11 +47,16 @@ from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
 from placecell.observer import Observer
 from placecell.operator import navigation_payload as navigation_payload
 from placecell.pipeline import Ingester, Observation, SegmentationPolicy, Segmenter
-from placecell.providers import Captioner, EmbeddingProvider, HashingEmbedder
+from placecell.providers import Captioner
 from placecell.providers._http import RetryPolicy
 from placecell.recordings import RecordingWriter
 from placecell.refinement import REFINEMENT_PROMPT, MemoryRefiner, RefinementPolicy
 from placecell.retrieval import Recall
+from placecell.ros2.answers import ANSWER_SCHEMA_VERSION as ANSWER_SCHEMA_VERSION
+from placecell.ros2.answers import NO_CONFIDENT_ANSWER as NO_CONFIDENT_ANSWER
+from placecell.ros2.answers import answer_error as answer_error
+from placecell.ros2.answers import answer_payload as answer_payload
+from placecell.ros2.answers import answer_question as answer_question
 from placecell.ros2.bridge import (
     KeyframeWriter,
     ObservationBuilder,
@@ -64,485 +66,28 @@ from placecell.ros2.bridge import (
     update_localization,
     update_odometry,
 )
+from placecell.ros2.components import ENDPOINTS as ENDPOINTS
+from placecell.ros2.components import build_embedder as build_embedder
+from placecell.ros2.components import build_mission_planner as build_mission_planner
+from placecell.ros2.components import build_store as build_store
+from placecell.ros2.components import build_trace_store as build_trace_store
+from placecell.ros2.components import chat_options as chat_options
+from placecell.ros2.components import embedding_api_key as embedding_api_key
+from placecell.ros2.components import endpoint as endpoint
+from placecell.ros2.components import shared_api_key as shared_api_key
 from placecell.ros2.depth import PendingImages, aligned_snapshot
 from placecell.ros2.navigation import Nav2Navigator, create_navigation_timers, create_navigator
 from placecell.ros2.operator import OperatorInterface
+from placecell.ros2.workers import BoundedTasks as BoundedTasks
+from placecell.ros2.workers import IngestWorker as IngestWorker
 from placecell.sensors import SensorHealth
-from placecell.store import CollectionInfo, VectorStore
 from placecell.store.base import EVERYTHING
 from placecell.store.limits import StoreLimits
 from placecell.tracing import TraceStore
 from placecell.verification import VisionVerifier
 
-
-def build_embedder(
-    base_url: str,
-    model: str,
-    api_key: str | None,
-    dimension: int,
-    *,
-    backend: str = "auto",
-    device: str = "cpu",
-    revision: str = "",
-    local_files_only: bool = False,
-    batch_size: int = 16,
-    cache_folder: str = "",
-) -> EmbeddingProvider:
-    if backend == "openrouter":
-        from placecell.providers.openrouter import OPENROUTER_BASE_URL, OpenRouterGeminiEmbedder
-
-        return OpenRouterGeminiEmbedder(
-            model or "google/gemini-embedding-2",
-            api_key=api_key,
-            dimension=dimension or 768,
-            base_url=base_url or OPENROUTER_BASE_URL,
-            batch_size=batch_size,
-            retry=RetryPolicy(attempts=1),
-        )
-    if backend == "gemini":
-        from placecell.providers.gemini import DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, GeminiEmbedder
-
-        return GeminiEmbedder(
-            model or DEFAULT_GEMINI_MODEL,
-            api_key=api_key,
-            dimension=dimension or 768,
-            base_url=base_url or GEMINI_BASE_URL,
-            batch_size=batch_size,
-            retry=RetryPolicy(attempts=1),
-        )
-    if backend == "clip":
-        from placecell.providers.clip import DEFAULT_CLIP_MODEL, ClipEmbedder
-
-        embedder = ClipEmbedder(
-            model or DEFAULT_CLIP_MODEL,
-            device=device,
-            revision=revision or None,
-            local_files_only=local_files_only,
-            batch_size=batch_size,
-            cache_folder=cache_folder or None,
-        )
-        if dimension and dimension != embedder.dimension:
-            raise ValidationError("embed_dimension does not match the CLIP checkpoint")
-        return embedder
-    if backend != "auto":
-        raise ValidationError("embed_backend must be auto, gemini, openrouter or clip")
-    if not model:
-        return HashingEmbedder()
-    from placecell.providers import OpenAICompatibleEmbedder
-
-    return OpenAICompatibleEmbedder(
-        model,
-        base_url or "https://api.openai.com/v1",
-        api_key,
-        dimension=dimension or None,
-        retry=RetryPolicy(attempts=1),
-    )
-
-
-def build_store(
-    db_path: str, collection: str, embedder: EmbeddingProvider, *, limits: StoreLimits | None = None
-) -> VectorStore:
-    info = CollectionInfo(collection, embedder.model_name, embedder.dimension)
-    if not db_path:
-        from placecell.store import InMemoryStore
-
-        return InMemoryStore(info, limits=limits)
-    from placecell.store.lancedb_store import LanceDBStore
-
-    return LanceDBStore(Path(db_path).expanduser(), info, limits=limits)
-
-
 INDEX_SYNC_INTERVAL_S = 2.0
 """How often changed memories are copied into a vector index, so searches score few of them exactly."""
-
-# Group -> (base URL parameter, key env parameter, group an empty base URL falls back to).
-ENDPOINTS = {
-    "chat": ("chat_base_url", "chat_api_key_env", ""),
-    "caption": ("caption_base_url", "caption_api_key_env", ""),
-    "verification": ("verification_base_url", "verification_api_key_env", "caption"),
-    "mission": ("mission_base_url", "mission_api_key_env", "chat"),
-    "mission_review": ("mission_review_base_url", "mission_review_api_key_env", "mission"),
-}
-
-
-def endpoint(parameters: Mapping[str, Any], group: str) -> tuple[str, str | None]:
-    """Base URL and API key of one endpoint group.
-
-    The group's own `*_api_key_env` wins. An empty base URL uses the fallback group's URL
-    and key. Otherwise the group gets the shared key only on `chat_base_url`'s origin.
-    """
-    url_parameter, key_parameter, fallback = ENDPOINTS[group]
-    url = parameters[url_parameter]
-    if not url and fallback:
-        url, key = endpoint(parameters, fallback)
-    else:
-        key = shared_api_key(parameters, url)
-    if parameters[key_parameter]:
-        key = os.environ.get(parameters[key_parameter]) or None
-    return url, key
-
-
-def embedding_api_key(parameters: Mapping[str, Any]) -> str | None:
-    """`embed_api_key_env`, then GEMINI_API_KEY for Gemini, then the shared key on the chat origin."""
-    if parameters["embed_api_key_env"]:
-        return os.environ.get(parameters["embed_api_key_env"]) or None
-    backend = parameters["embed_backend"]
-    if backend == "gemini" and os.environ.get("GEMINI_API_KEY"):
-        return os.environ["GEMINI_API_KEY"]
-    from placecell.providers.gemini import GEMINI_BASE_URL
-    from placecell.providers.openrouter import OPENROUTER_BASE_URL
-
-    defaults = {"gemini": GEMINI_BASE_URL, "openrouter": OPENROUTER_BASE_URL}
-    url = parameters["embed_base_url"] or defaults.get(backend, "https://api.openai.com/v1")
-    return shared_api_key(parameters, url)
-
-
-def shared_api_key(parameters: Mapping[str, Any], base_url: str) -> str | None:
-    """The `api_key_env` key, only for the scheme, host and port of `chat_base_url`."""
-    origin = _origin(base_url)
-    if origin is None or origin != _origin(parameters["chat_base_url"]):
-        return None
-    return os.environ.get(parameters["api_key_env"]) or None
-
-
-def _origin(url: str) -> tuple[str, str, int | None] | None:
-    try:
-        parts = urllib.parse.urlsplit(url)
-        port = parts.port or {"http": 80, "https": 443}.get(parts.scheme)
-    except ValueError:
-        return None
-    return (parts.scheme, parts.hostname, port) if parts.hostname else None
-
-
-def chat_options(parameters: Mapping[str, Any], group: str) -> dict[str, Any]:
-    """Request shape of a chat group. A negative `*_temperature` omits it, as reasoning models require."""
-    temperature = parameters[f"{group}_temperature"]
-    return {
-        "max_tokens": parameters[f"{group}_max_tokens"],
-        "token_parameter": parameters[f"{group}_token_parameter"],
-        "temperature": None if temperature < 0 else temperature,
-    }
-
-
-def build_mission_planner(parameters: dict[str, Any]) -> MissionPlanner | None:
-    if not parameters["mission_enabled"]:
-        return None
-    from placecell.providers import OpenAICompatibleChat
-
-    model = parameters["mission_model"]
-    if not model:
-        raise ValidationError("mission_enabled requires mission_model with tool calling")
-    base_url, api_key = endpoint(parameters, "mission")
-    review_url, review_key = endpoint(parameters, "mission_review")
-    options = {
-        "timeout_s": parameters["mission_request_timeout_s"],
-        "retry": RetryPolicy(attempts=1),
-        **chat_options(parameters, "mission"),
-    }
-    planner = OpenAICompatibleChat(model, base_url, api_key, **options)
-    reviewer = OpenAICompatibleChat(parameters["mission_review_model"] or model, review_url, review_key, **options)
-    return MissionPlanner(planner, PlanReviewAgent(reviewer), max_destinations=parameters["mission_max_destinations"])
-
-
-def build_trace_store(parameters: dict[str, Any]) -> TraceStore | None:
-    path = parameters["mission_trace_path"]
-    if not path:
-        return None
-    return TraceStore(
-        path,
-        max_events=parameters["mission_trace_max_events"],
-        max_bytes=parameters["mission_trace_max_bytes"],
-        queue_size=parameters["mission_trace_queue_size"],
-        instruction_text=parameters.get("mission_trace_instruction_text", "raw"),
-        # The Gemini embedding backend also reads GEMINI_API_KEY without a parameter naming it.
-        secrets=[os.environ.get(value, "") for key, value in parameters.items() if key.endswith("api_key_env")]
-        + [os.environ.get("GEMINI_API_KEY", "")],
-    )
-
-
-ANSWER_SCHEMA_VERSION = 1
-NO_CONFIDENT_ANSWER = "No confident answer."
-
-
-def answer_error(question: str, error: str, error_type: str = "") -> str:
-    return json.dumps(
-        {
-            "schema_version": ANSWER_SCHEMA_VERSION,
-            "type": "answer",
-            "question": question,
-            "error": error,
-            "error_type": error_type,
-        }
-    )
-
-
-def answer_payload(
-    question: str, text: str, citations_valid: bool, evidence: Sequence[Any], source: str = "agent"
-) -> str:
-    return json.dumps(
-        {
-            "schema_version": ANSWER_SCHEMA_VERSION,
-            "type": "answer",
-            "source": source,
-            "question": question,
-            "answer": text,
-            "citations_valid": citations_valid,
-            "grounded": citations_valid,  # Deprecated alias with the same meaning.
-            "evidence": [
-                {
-                    "id": r.memory.id,
-                    "x": r.memory.pose.x,
-                    "y": r.memory.pose.y,
-                    "yaw": r.memory.pose.yaw,
-                    "time": r.observed_at[0] if r.observed_at else r.memory.timestamp,
-                    "last_seen": r.memory.last_seen,
-                    "observed_at": list(r.observed_at or r.memory.sighting_times),
-                    "caption": r.memory.caption,
-                    "confidence": r.confidence,
-                    "similarity": r.similarity,
-                    "image_similarity": r.image_similarity,
-                    "caption_similarity": r.caption_similarity,
-                }
-                for r in evidence
-            ],
-        }
-    )
-
-
-def answer_question(question: str, agent: Agent | None, recall: Recall, min_similarity: float) -> str:
-    """Build one `~/answer` payload. Without an agent the best caption is used only when confident."""
-    try:
-        if agent is not None:
-            result = agent.ask(question)
-            return answer_payload(question, result.text, result.citations_valid, result.evidence)
-        hits = [h for h in recall.similar(question, k=5) if h.similarity is not None and h.similarity >= min_similarity]
-        if not hits:
-            return answer_payload(question, NO_CONFIDENT_ANSWER, False, [], source="retrieval")
-        return answer_payload(question, hits[0].memory.caption, True, hits, source="retrieval")
-    except PlacecellError as e:
-        return answer_error(question, str(e), type(e).__name__)
-
-
-class IngestWorker:
-    """One ordered writer consuming durable jobs. Provider calls never hold a shared lock."""
-
-    def __init__(
-        self,
-        ingester: Ingester,
-        lock: threading.Lock | None,
-        batch_size: int,
-        max_queue: int,
-        log: Any,
-        *,
-        max_attempts: int = 5,
-        retry_delay_s: float = 1,
-    ) -> None:
-        if (
-            any(type(v) is not int or v < 1 for v in (batch_size, max_queue, max_attempts))
-            or max_attempts > 32
-            or not math.isfinite(retry_delay_s)
-            or retry_delay_s < 0
-        ):
-            raise ValidationError("invalid worker limits")
-        self._ingester, self._batch_size, self._max_queue = ingester, batch_size, max_queue
-        self._log, self._max_attempts, self._retry_delay_s = log, max_attempts, retry_delay_s
-        self._stop = threading.Event()
-        self._wake = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="placecell-ingest", daemon=True)
-        self._submit_lock = threading.Lock()
-        self.dropped = 0
-        self._last_drop_log = -math.inf
-
-    def reject(self) -> None:
-        """Count pre-encoding camera drops without retaining image data or flooding logs."""
-        with self._submit_lock:
-            self.dropped += 1
-            now = time.monotonic()
-            log = now - self._last_drop_log >= 5
-            if log:
-                self._last_drop_log = now
-            dropped = self.dropped
-        if log:
-            self._log.warning(f"ingest queue full or stopped, dropped {dropped} observations so far")
-
-    def health(self) -> dict[str, float | int | bool]:
-        result: dict[str, float | int | bool] = dict(self._ingester.jobs.stats())
-        with self._submit_lock:
-            result.update(capacity=self._max_queue, dropped=self.dropped, stopped=self._stop.is_set())
-        return result
-
-    def start(self) -> None:
-        self._thread.start()
-
-    def stop(self, timeout: float = 10) -> bool:
-        with self._submit_lock:
-            self._stop.set()
-        self._wake.set()
-        if self._thread.ident is not None:
-            self._thread.join(timeout=timeout)
-        return not self._thread.is_alive()
-
-    def has_capacity(self) -> bool:
-        return not self._stop.is_set() and self._ingester.jobs.stats()["queued"] < self._max_queue
-
-    def submit(self, observation: Observation) -> bool:
-        with self._submit_lock:
-            if not self._stop.is_set() and self._ingester.jobs.enqueue(observation, self._max_queue):
-                self._wake.set()
-                return True
-        self.reject()
-        # The journal pins all accepted evidence, including failed jobs and duplicate submissions.
-        self._ingester.discard([observation])
-        return False
-
-    def _run(self) -> None:
-        try:
-            self._work_loop()
-        except Exception as e:
-            self._log.error(f"ingest worker stopped; queued work retained: {e}")
-        finally:
-            self._stop.set()
-
-    def _work_loop(self) -> None:
-        while not self._stop.is_set():
-            jobs = self._ingester.jobs.pending(self._batch_size)
-            if not jobs:
-                self._wake.wait(0.25)
-                self._wake.clear()
-                continue
-            try:
-                report = self._ingester.ingest([job.observation for job in jobs], preselected=True)
-            except Exception as e:
-                completed = [job.id for job in jobs if self._ingester.persisted(job.observation)]
-                self._ingester.jobs.complete(completed)
-                self._ingester.jobs.fail(
-                    (job.id for job in jobs if job.id not in completed),
-                    str(e),
-                    max_attempts=self._max_attempts,
-                    retry_delay_s=self._retry_delay_s,
-                    defer_queue=True,
-                    retry_after_s=e.retry_after_s if isinstance(e, ProviderError) else 0,
-                )
-                self._log.error(f"ingest failed; work retained for retry: {e}")
-            else:
-                self._ingester.jobs.complete(job.id for job in jobs)
-                self._log.info(
-                    f"ingested {report.accepted}/{report.received}: {report.inserted} new, {report.merged} reinforced"
-                    + (f", {report.unsupported} unsupported" if report.unsupported else "")
-                    + (
-                        f", {report.objects_skipped_ambiguous} ambiguous object detections skipped"
-                        if report.objects_skipped_ambiguous
-                        else ""
-                    )
-                )
-                if report.object_errors:
-                    self._log.warning(
-                        f"object tracking failed for {len(report.object_errors)} observations, "
-                        f"scene memories kept: {report.object_errors[-1]}"
-                    )
-                if report.objects_skipped_capacity:
-                    self._log.warning(
-                        f"object capacity reached, {report.objects_skipped_capacity} new objects not stored; "
-                        "prune old objects or raise object_max_records"
-                    )
-            try:
-                self._ingester.discard([])  # drain cleanup intents after job ownership is released
-            except OSError as e:
-                self._log.error(f"evidence cleanup deferred: {e}")
-
-
-class BoundedTasks:
-    """Fixed workers, atomic admission/shutdown, and observable bounded waiting work."""
-
-    def __init__(self, workers: int, capacity: int, log: Any) -> None:
-        if any(type(v) is not int or v < 1 for v in (workers, capacity)):
-            raise ValidationError("task limits must be positive")
-        self._queue: queue.Queue[tuple[Callable[..., None], tuple[Any, ...], str]] = queue.Queue(maxsize=capacity)
-        self._stop = threading.Event()
-        self._condition = threading.Condition()
-        self._keys: set[str] = set()
-        self._active = 0
-        self._counts = {
-            "accepted": 0,
-            "completed": 0,
-            "failed": 0,
-            "discarded": 0,
-            "rejected_full": 0,
-            "rejected_stopped": 0,
-            "coalesced": 0,
-            "high_water": 0,
-        }
-        self._log = log
-        self._threads = [threading.Thread(target=self._run, daemon=True) for _ in range(workers)]
-        for thread in self._threads:
-            thread.start()
-
-    def submit(self, function: Callable[..., None], *args: Any, key: str = "") -> bool:
-        with self._condition:
-            if self._stop.is_set():
-                self._counts["rejected_stopped"] += 1
-                return False
-            if key and key in self._keys:
-                self._counts["coalesced"] += 1
-                return True
-            try:
-                self._queue.put_nowait((function, args, key))
-            except queue.Full:
-                self._counts["rejected_full"] += 1
-                return False
-            if key:
-                self._keys.add(key)
-            self._counts["accepted"] += 1
-            self._counts["high_water"] = max(self._counts["high_water"], self._queue.qsize())
-            self._condition.notify()
-            return True
-
-    def health(self) -> dict[str, int | bool]:
-        with self._condition:
-            return {
-                **self._counts,
-                "active": self._active,
-                "queued": self._queue.qsize(),
-                "capacity": self._queue.maxsize,
-                "workers": len(self._threads),
-                "stopped": self._stop.is_set(),
-            }
-
-    def _run(self) -> None:
-        while True:
-            with self._condition:
-                self._condition.wait_for(lambda: self._stop.is_set() or not self._queue.empty())
-                if self._stop.is_set():
-                    return
-                function, args, key = self._queue.get_nowait()
-                self._active += 1
-            outcome = "completed"
-            try:
-                function(*args)
-            except Exception as e:
-                outcome = "failed"
-                self._log.error(f"background task failed: {e}")
-            finally:
-                with self._condition:
-                    self._active -= 1
-                    self._counts[outcome] += 1
-                    self._keys.discard(key)
-                    self._queue.task_done()
-                # Do not retain the last request's images/context while this worker is idle.
-                del function, args
-
-    def stop(self, timeout: float = 10) -> bool:
-        with self._condition:
-            self._stop.set()
-            while not self._queue.empty():
-                _, _, key = self._queue.get_nowait()
-                self._keys.discard(key)
-                self._queue.task_done()
-                self._counts["discarded"] += 1
-            self._condition.notify_all()
-        for thread in self._threads:
-            thread.join(timeout=timeout / len(self._threads))
-        return all(not thread.is_alive() for thread in self._threads)
 
 
 def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
