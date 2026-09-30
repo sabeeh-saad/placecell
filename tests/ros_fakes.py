@@ -295,8 +295,11 @@ class Publisher:
 
     def wait_for(self, count: int, timeout: float = 10) -> bool:
         """Block until `count` messages were published; for messages sent from worker threads."""
+        return self.wait_until(lambda messages: len(messages) >= count, timeout)
+
+    def wait_until(self, predicate: Callable[[list[Any]], bool], timeout: float = 10) -> bool:
         with self._changed:
-            return self._changed.wait_for(lambda: len(self.messages) >= count, timeout)
+            return self._changed.wait_for(lambda: predicate(self.messages), timeout)
 
     def get_subscription_count(self) -> int:
         return 0
@@ -336,6 +339,7 @@ class ActionClient:
         self.callback_group = callback_group
         self.ready = False
         self.goals: list[Any] = []
+        self.sent = threading.Event()
         node.action_clients.append(self)
 
     def server_is_ready(self) -> bool:
@@ -343,6 +347,7 @@ class ActionClient:
 
     def send_goal_async(self, goal: Any, feedback_callback: Any = None, **kwargs: Any) -> Future:
         self.goals.append(goal)
+        self.sent.set()
         return Future()
 
 
@@ -621,6 +626,95 @@ def ros(monkeypatch: pytest.MonkeyPatch) -> FakeRos:
 def make_node(ros: FakeRos, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[NodeFactory]:
     # Any default "~/.placecell" path lands in the test directory.
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    before = set(threading.enumerate())
     factory = NodeFactory(ros, tmp_path)
     yield factory
     factory.close()
+    # LanceDB keeps one process-wide event loop thread.
+    leaked = [t.name for t in set(threading.enumerate()) - before if t.name != "LanceDBBackgroundEventLoop"]
+    assert not leaked, f"threads still running after the node was destroyed: {leaked}"
+
+
+# Incoming messages, shaped like the sensor_msgs/geometry_msgs fields the node reads.
+
+CAMERA_FRAME = "camera_optical"
+
+
+def header(sec: Any, nanosec: Any = 0, frame: str = CAMERA_FRAME) -> SimpleNamespace:
+    return SimpleNamespace(stamp=SimpleNamespace(sec=sec, nanosec=nanosec), frame_id=frame)
+
+
+def raw_image(
+    sec: Any, *, frame: str = CAMERA_FRAME, width: int = 4, height: int = 2, encoding: str = "rgb8"
+) -> SimpleNamespace:
+    step = width * 3
+    data = bytes((i * 37) % 256 for i in range(step * height))
+    return SimpleNamespace(
+        header=header(sec, frame=frame), width=width, height=height, encoding=encoding, step=step, data=data
+    )
+
+
+def jpeg_image(sec: Any, *, frame: str = CAMERA_FRAME, width: int = 4, height: int = 2) -> SimpleNamespace:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), (128, 64, 32)).save(buffer, "JPEG")
+    return SimpleNamespace(header=header(sec, frame=frame), format="rgb8; jpeg compressed bgr8", data=buffer.getvalue())
+
+
+def image(sec: Any, *, compressed: bool, **kwargs: Any) -> SimpleNamespace:
+    return jpeg_image(sec, **kwargs) if compressed else raw_image(sec, **kwargs)
+
+
+def localization(
+    sec: float, x: float = 0.0, y: float = 0.0, yaw: float = 0.0, *, frame: str = "map", std: float = 0.1
+) -> SimpleNamespace:
+    covariance = [0.0] * 36
+    for index in (0, 7, 35):
+        covariance[index] = std**2
+    position = SimpleNamespace(x=x, y=y, z=0.0)
+    orientation = SimpleNamespace(x=0.0, y=0.0, z=math.sin(yaw / 2), w=math.cos(yaw / 2))
+    return SimpleNamespace(
+        header=header(int(sec), round(sec % 1 * 1e9), frame),
+        pose=SimpleNamespace(pose=SimpleNamespace(position=position, orientation=orientation), covariance=covariance),
+    )
+
+
+def depth_image(sec: Any, *, frame: str = CAMERA_FRAME, width: int = 4, height: int = 2) -> SimpleNamespace:
+    """Aligned 16UC1 depth, one metre everywhere."""
+    return SimpleNamespace(
+        header=header(sec, frame=frame),
+        width=width,
+        height=height,
+        encoding="16UC1",
+        is_bigendian=0,
+        step=width * 2,
+        data=(1000).to_bytes(2, "little") * (width * height),
+    )
+
+
+def camera_info(sec: Any, *, frame: str = CAMERA_FRAME, width: int = 4, height: int = 2) -> SimpleNamespace:
+    return SimpleNamespace(
+        header=header(sec, frame=frame),
+        width=width,
+        height=height,
+        d=[0.0] * 5,
+        r=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        k=[2.0, 0.0, width / 2, 0.0, 2.0, height / 2, 0.0, 0.0, 1.0],
+        binning_x=0,
+        binning_y=0,
+        roi=SimpleNamespace(x_offset=0, y_offset=0),
+    )
+
+
+def spy(calls: list[str], name: str, function: Callable[..., Any], result: Any = None) -> Callable[..., Any]:
+    """Record `name` and delegate; a non-None `result` replaces the delegated return value."""
+
+    def recorded(*args: Any, **kwargs: Any) -> Any:
+        calls.append(name)
+        value = function(*args, **kwargs)
+        return value if result is None else result
+
+    return recorded
