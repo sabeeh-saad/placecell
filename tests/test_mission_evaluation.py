@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from placecell import mission_evaluation
 from placecell.errors import ValidationError
 from placecell.mission_evaluation import load_dataset, main, run_scripted, score_trials
 
@@ -77,6 +78,63 @@ def test_baseline_v2_scripted_replies_cover_development_only():
     report = score_trials(dataset, run_scripted(dataset, json.loads(REPLIES_V2.read_text()), run_id="v2"))
     assert report["plan"]["passed"] == report["plan"]["eligible"] == 64
     assert report["execution"]["unassessed"] == 64
+    assert report["unnamed_configured_place_trials"] == 0
+    assert report["configuration"]["model_inputs"] == ["instruction", "recent_context", "configured_places"]
+
+
+def test_baseline_v2_declares_configured_places_only_on_its_place_cases():
+    dataset = load_dataset(DATA_V2)
+    places = {case.id: case.configured_places for case in dataset.cases if case.configured_places}
+    assert set(places) == {case.id for case in dataset.cases if case.category == "configured_place"}
+    assert places["dev-place-named"] == ("home", "printer")
+    assert places["held-place-history-name"] == ("charging dock", "front door", "garage")
+    assert not any("schema 1" in case.scenario for case in dataset.cases)
+
+
+def test_scripted_planner_and_reviewer_receive_the_case_configured_places(monkeypatch):
+    payloads = []
+
+    class Recording(mission_evaluation._ScriptedChat):
+        def complete(self, messages, tools, *, tool_choice=None):
+            payloads.append(json.loads(messages[-1].content))
+            return super().complete(messages, tools, tool_choice=tool_choice)
+
+    monkeypatch.setattr(mission_evaluation, "_ScriptedChat", Recording)
+    dataset = load_dataset(DATA_V2)
+    run_scripted(dataset, json.loads(REPLIES_V2.read_text()), run_id="places")
+    named = [p for p in payloads if p["instruction"] == "Take me to the printer, then home."]
+    assert [p["configured_places"] for p in named] == [["home", "printer"]] * 2
+    assert "destinations" in named[1]
+    unconfigured = [p["configured_places"] for p in payloads if p["instruction"] == "Go to the printer"]
+    assert unconfigured and not any(unconfigured)
+
+
+def test_scorer_flags_legs_the_named_place_check_would_refuse():
+    v2 = load_dataset(DATA_V2)
+    fixtures = json.loads(REPLIES_V2.read_text())
+    proposal = fixtures["cases"]["dev-place-purpose-print"]["planner"]["tool_calls"][0]["arguments"]
+    proposal["destinations"] = ["The  Printer"]
+    report = score_trials(v2, run_scripted(v2, fixtures, run_id="guard"))
+    row = next(row for row in report["cases"] if row["case_id"] == "dev-place-purpose-print")
+    assert row["plan"] == "failed" and row["unnamed_configured_place"] == "printer"
+    assert report["unnamed_configured_place_trials"] == 1
+
+    def plan(case_id, destination):
+        result = {"status": "ok", "decision": "ready", "destinations": [destination], "latency_ms": 1.0}
+        return {"case_id": case_id, "plan": result, "execution": None, "cost_usd": None}
+
+    trials = {
+        "schema_version": 1,
+        "dataset_sha256": v2.sha256,
+        "runner": "live_model",
+        "run_id": "held-out-guard",
+        "configuration": {},
+        "trials": [plan("held-place-history-name", "garage"), plan("held-place-purpose-charge", "charging dock")],
+    }
+    rows = {row["case_id"]: row for row in score_trials(v2, trials, split="held_out")["cases"]}
+    assert rows["held-place-history-name"]["unnamed_configured_place"] is None  # named in the earlier instruction
+    assert rows["held-place-purpose-charge"]["unnamed_configured_place"] == "charging dock"
+    assert rows["held-place-named-two"]["unnamed_configured_place"] is None  # missing trial
 
 
 def test_expected_labels_do_not_supply_model_outputs(dataset):
@@ -221,7 +279,8 @@ def test_malformed_or_wrong_dataset_trials_are_rejected(dataset, trials, mutatio
 @pytest.mark.parametrize(
     "mutation",
     [
-        lambda data: data.update(schema_version=2),
+        lambda data: data.update(schema_version=3),
+        lambda data: data["cases"][0].update(configured_places=["printer"]),
         lambda data: data.update(label_status="approved_by_model"),
         lambda data: data.update(groups=[]),
         lambda data: data.update(cases=[]),
@@ -244,6 +303,40 @@ def test_bad_label_contracts_cannot_enter_a_baseline(tmp_path, mutation):
     mutation(data)
     with pytest.raises(ValidationError):
         load_dataset(write_json(tmp_path, data))
+
+
+@pytest.mark.parametrize(
+    "places",
+    [
+        "printer",
+        ["Printer"],
+        ["the printer"],
+        ["meeting  room"],
+        ["printer", "home"],
+        ["home", "home", "printer"],
+        ["home", "printer", "x" * 101],
+        [f"place {index:03}" for index in range(101)],
+    ],
+)
+def test_configured_places_must_be_bounded_resolver_names(tmp_path, places):
+    data = json.loads(DATA_V2.read_text())
+    next(case for case in data["cases"] if case["id"] == "dev-place-named")["configured_places"] = places
+    with pytest.raises(ValidationError):
+        load_dataset(write_json(tmp_path, data))
+
+
+def test_labels_cannot_expect_a_configured_place_the_request_never_names(tmp_path):
+    data = json.loads(DATA_V2.read_text())
+    case = next(case for case in data["cases"] if case["id"] == "dev-place-purpose-print")
+    case["expected"]["destinations"][0].append("the Printer")
+    with pytest.raises(ValidationError, match="never names"):
+        load_dataset(write_json(tmp_path, data))
+    case["expected"]["destinations"][0].pop()
+    case["context"] = [{"kind": "instruction", "data": "not an object"}, {"kind": "instruction", "data": {}}]
+    loaded = load_dataset(write_json(tmp_path, data, "tolerant.json"))
+    assert next(case for case in loaded.cases if case.id == "dev-place-purpose-print").context[0]["data"] == (
+        "not an object"
+    )
 
 
 @pytest.mark.parametrize("leak", ["layout", "recording", "instruction"])

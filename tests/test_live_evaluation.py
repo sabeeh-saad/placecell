@@ -248,6 +248,24 @@ def test_live_runner_repeats_real_planner_and_review_without_label_leak(tmp_path
         assert report["cases"][0]["plan_destinations"] == ["printer"]
 
 
+def test_live_runner_sends_the_case_configured_places_to_planner_and_reviewer(tmp_path):
+    d = load_dataset(DATA_V2)
+    d = replace(d, cases=tuple(case for case in d.cases if case.id == "dev-place-named"))
+    replies = [
+        tool_reply(
+            "propose_navigation_plan",
+            {"decision": "ready", "destinations": ["printer", "home"], "message": "Visit both"},
+        ),
+        tool_reply("review_navigation_plan", {"decision": "approve", "message": "Both named"}),
+    ]
+    t = FakeTransport(replies)
+    b = budget(tmp_path, t)
+    result = run_planning(d, planner(b), b, tmp_path, split="development", repeats=1, configuration={})
+    assert result["all_plans_match_labels"]
+    sent = [json.loads(r["payload"]["messages"][-1]["content"]) for r in t.requests]
+    assert [p["configured_places"] for p in sent] == [["home", "printer"]] * 2 and "destinations" in sent[1]
+
+
 def test_interruption_preserves_denominators_and_does_not_retry(tmp_path):
     d = load_dataset(DATA)
     b = budget(tmp_path, FakeTransport([(401, {}, {"error": "sk-or-private"})]))
@@ -341,6 +359,7 @@ def test_cli_live_run_uses_budget_and_returns_failure_for_label_mismatch(tmp_pat
     assert status.value.code == 1 and len(fake.requests) == 1
     summary = json.loads((out / "summary.json").read_text())
     assert summary["completed"] and summary["plan"]["failed"] == 1
+    assert summary["configuration"]["model_inputs"] == ["instruction", "recent_context", "configured_places"]
     assert summary["budget"]["known_cost_usd"] == 0.001
     assert "sk-or-" not in (out / "summary.json").read_text()
 

@@ -17,10 +17,13 @@ from typing import Any, cast
 from placecell.chat import ChatMessage, ChatReply, ToolCall
 from placecell.errors import ProviderError, ValidationError
 from placecell.missions import MissionPlanner, PlanReviewAgent
+from placecell.navigation import mentions_place
 
 SPLITS = {"development", "held_out"}
 DECISIONS = {"ready", "clarify", "reject"}
 OUTCOMES = {"succeeded", "clarify", "reject", "not_found", "canceled", "failed", "error", "timeout"}
+# Case fields that reach the planner and reviewer, by their payload names.
+MODEL_INPUTS = ("instruction", "recent_context", "configured_places")
 
 
 def _object(value: Any, required: set[str], optional: Set[str] = frozenset()) -> dict[str, Any]:
@@ -75,6 +78,7 @@ class MissionCase:
     outcomes: tuple[str, ...]
     target_ids: tuple[str, ...]
     visual_required: bool
+    configured_places: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -86,10 +90,33 @@ class MissionDataset:
     cases: tuple[MissionCase, ...]
 
 
+def _place_key(text: str) -> str:
+    """A place name or planned destination as the destination resolver keys it."""
+    return " ".join(text.casefold().split()).removeprefix("the ")
+
+
+def _unnamed_place(case: MissionCase, destinations: Sequence[str]) -> str | None:
+    """The first leg the controller would refuse: a configured place the user's words never name."""
+    # Like the controller: this instruction and the earlier instructions the planner was shown.
+    words = (
+        case.instruction,
+        *(
+            event["data"]["text"]
+            for event in case.context
+            if event.get("kind") == "instruction"
+            and isinstance(event.get("data"), dict)
+            and isinstance(event["data"].get("text"), str)
+        ),
+    )
+    keys = (_place_key(destination) for destination in destinations)
+    return next((key for key in keys if key in case.configured_places and not mentions_place(key, words)), None)
+
+
 def load_dataset(path: str | Path) -> MissionDataset:
     data, digest = _read(path)
     data = _object(data, {"schema_version", "id", "label_status", "annotation_notes", "groups", "cases"})
-    if type(data["schema_version"]) is not int or data["schema_version"] != 1:
+    version = data["schema_version"]
+    if type(version) is not int or version not in (1, 2):
         raise ValidationError("unsupported mission dataset schema")
     if not _choice(data["label_status"], {"draft", "human_reviewed"}):
         raise ValidationError("labels must be draft or human_reviewed")
@@ -127,7 +154,12 @@ def load_dataset(path: str | Path) -> MissionDataset:
     identities: set[str] = set()
     inputs: dict[str, str] = {}
     for row in data["cases"]:
-        row = _object(row, {"id", "category", "group", "scenario", "instruction", "context", "expected"})
+        # Schema 2 adds the configured place names of the case's map; schema 1 cases have none.
+        row = _object(
+            row,
+            {"id", "category", "group", "scenario", "instruction", "context", "expected"},
+            {"configured_places"} if version == 2 else frozenset(),
+        )
         identity, group_id = _text(row["id"]), _text(row["group"])
         if identity in identities or group_id not in groups:
             raise ValidationError("duplicate case ID or unknown group")
@@ -161,21 +193,29 @@ def load_dataset(path: str | Path) -> MissionDataset:
             raise ValidationError("invalid mission outcome labels")
         if "succeeded" in outcomes and (not targets or len(targets) != len(destinations)):
             raise ValidationError("successful missions need one target ID per requested visit")
-        cases.append(
-            MissionCase(
-                identity,
-                _text(row["category"]),
-                group_id,
-                _text(row["scenario"]),
-                instruction,
-                tuple(context),
-                decisions,
-                destinations,
-                outcomes,
-                targets,
-                expected["visual_required"],
+        places = _strings(row.get("configured_places", []), empty=True)
+        if any(len(name) > 100 or name != _place_key(name) for name in places) or list(places) != sorted(set(places)):
+            raise ValidationError(
+                "configured places must be at most 100 sorted, distinct names of at most 100 characters, "
+                "as the resolver keys them (casefolded, single-spaced, no leading 'the ')"
             )
+        case = MissionCase(
+            identity,
+            _text(row["category"]),
+            group_id,
+            _text(row["scenario"]),
+            instruction,
+            tuple(context),
+            decisions,
+            destinations,
+            outcomes,
+            targets,
+            expected["visual_required"],
+            places,
         )
+        if any(_unnamed_place(case, aliases) for aliases in destinations):
+            raise ValidationError("labels cannot expect a configured place that the request never names")
+        cases.append(case)
     return MissionDataset(_text(data["id"]), digest, data["label_status"], groups, tuple(cases))
 
 
@@ -286,6 +326,7 @@ def score_trials(dataset: MissionDataset, document: Any, *, split: str = "develo
             "invalid_confirmation": False,
             "plan_status": "missing",
             "execution_outcome": None,
+            "unnamed_configured_place": None,
         }
         if trial is not None:
             plan = trial["plan"]
@@ -294,6 +335,7 @@ def score_trials(dataset: MissionDataset, document: Any, *, split: str = "develo
                 plan_decision=plan["decision"],
                 plan_destinations=plan["destinations"],
                 plan_latency_ms=plan["latency_ms"],
+                unnamed_configured_place=_unnamed_place(case, plan["destinations"]),
             )
             timings.append(plan["latency_ms"])
             matching = len(plan["destinations"]) == len(case.destinations) and all(
@@ -388,6 +430,7 @@ def score_trials(dataset: MissionDataset, document: Any, *, split: str = "develo
         "false_success_trials": sum(row["false_success"] for row in rows),
         "dispatch_without_ready_plan_trials": sum(row["dispatch_without_ready_plan"] for row in rows),
         "invalid_confirmation_trials": sum(row["invalid_confirmation"] for row in rows),
+        "unnamed_configured_place_trials": sum(row["unnamed_configured_place"] is not None for row in rows),
         "known_cost_usd": sum(value for value in costs if value is not None),
         "total_cost_usd": sum(costs) if len(costs) == len(cases) and all(v is not None for v in costs) else None,
         "qualification": "unassessed: this report alone does not satisfy release gates",
@@ -420,7 +463,7 @@ class _ScriptedChat:
 
 
 def run_scripted(dataset: MissionDataset, fixtures: Any, *, run_id: str) -> dict[str, Any]:
-    """Only instruction/context cross into the real planner; replies never derive from labels."""
+    """Only instruction, context and configured places reach the planner; replies never derive from labels."""
     fixtures = _object(fixtures, {"schema_version", "cases"})
     if (
         type(fixtures["schema_version"]) is not int
@@ -438,7 +481,7 @@ def run_scripted(dataset: MissionDataset, fixtures: Any, *, run_id: str) -> dict
         started = time.perf_counter()
         result: dict[str, Any] = {"status": "ok", "decision": None, "destinations": []}
         try:
-            plan = planner.plan(case.instruction, context=case.context)
+            plan = planner.plan(case.instruction, context=case.context, configured_places=case.configured_places)
             result.update(decision=plan.decision, destinations=list(plan.destinations))
         except Exception as error:
             result.update(
@@ -455,12 +498,13 @@ def run_scripted(dataset: MissionDataset, fixtures: Any, *, run_id: str) -> dict
             "planner": "MissionPlanner",
             "reviewer": "PlanReviewAgent",
             "model": "scripted",
+            "model_inputs": list(MODEL_INPUTS),
             "network_calls": 0,
             "robot_calls": 0,
             "python": platform.python_version(),
             "implementation_sha256": {
                 name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-                for name in ("mission_evaluation.py", "missions.py")
+                for name in ("mission_evaluation.py", "missions.py", "navigation.py")
             },
         },
         "trials": rows,

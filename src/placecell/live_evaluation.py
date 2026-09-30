@@ -14,7 +14,7 @@ from typing import Any
 
 from placecell.errors import ValidationError
 from placecell.evaluation_budget import EvaluationBudget, EvaluationStoppedError
-from placecell.mission_evaluation import MissionDataset, _selected, load_dataset, score_trials
+from placecell.mission_evaluation import MODEL_INPUTS, MissionDataset, _selected, load_dataset, score_trials
 from placecell.missions import MissionPlanner, PlanReviewAgent
 from placecell.providers._http import RetryPolicy
 from placecell.providers.chat import OpenAICompatibleChat
@@ -116,7 +116,7 @@ def run_planning(
             result: dict[str, Any] = {"status": "ok", "decision": None, "destinations": []}
             try:
                 # No category, scenario, expected alias/target ID or split crosses this boundary.
-                plan = planner.plan(case.instruction, context=case.context)
+                plan = planner.plan(case.instruction, context=case.context, configured_places=case.configured_places)
                 result.update(decision=plan.decision, destinations=list(plan.destinations))
             except Exception as error:
                 result.update(
@@ -224,6 +224,7 @@ def main(args: list[str] | None = None) -> None:
         "planner_model": options.model,
         "review_model": options.review_model,
         "model_version_note": "Hosted IDs are not immutable weight snapshots; inspect response metadata.",
+        "model_inputs": list(MODEL_INPUTS),
         "python": platform.python_version(),
         "platform": platform.platform(),
         "started_unix_s": time.time(),

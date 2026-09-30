@@ -36,8 +36,9 @@ and one client HTTP attempt. The requested model for each stage defaults to
 Model IDs are hosted aliases, not immutable weight snapshots. Response IDs, returned
 model/provider names, token counts, timestamps and runtime source hashes are retained.
 
-Only the instruction and supplied historical context reach the planner. Scenario text,
-categories, expected aliases, physical target IDs and labels remain with the scorer.
+Only the instruction, supplied historical context and the case's configured place names
+(dataset schema 2) reach the planner and reviewer, as the navigation controller sends them.
+Scenario text, categories, expected aliases, physical target IDs and labels remain with the scorer.
 Each repetition starts fresh model conversations. The reviewer sees the proposed plan
 through the production review path; it is called only when the planner proposes movement.
 No coordinates, robot commands or success-at-arrival claims are produced by this runner.

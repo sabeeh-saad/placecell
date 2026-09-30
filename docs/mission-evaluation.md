@@ -33,8 +33,9 @@ new; choose a different name for another run. Failed scored cases produce a repo
 exit code 1. A zero exit code means the requested check passed, not that release gates passed.
 
 The `scripted` mode runs the actual `MissionPlanner` and `PlanReviewAgent`. Only the
-instruction and historical context enter their prompts. Replies come from a separate
-fixture file; expected labels are read only by the scorer. No language understanding,
+instruction, historical context and the case's configured place names enter their prompts,
+as the navigation controller passes them. Replies come from a separate fixture file;
+expected labels are read only by the scorer. No language understanding,
 visual recognition, robot movement or API availability is measured by this mode.
 Execution remains explicitly `unassessed`, even when all scripted plans match their labels.
 The initial cases are deliberately easy to inspect, not statistically representative.
@@ -62,6 +63,18 @@ fields are:
 - `visual_required`: whether success requires confirmations of every dispatched target.
   Named-place navigation can be scored separately without claiming visual identity.
 
+Schema 2 adds an optional case field, `configured_places`: the names of places configured
+on the case's map. Both runners pass them to the planner and reviewer exactly as the
+controller does, so list them as the resolver keys a places file: casefolded, single-spaced,
+without a leading `the`, sorted and distinct, at most 100 names of up to 100 characters.
+A missing field means none. Schema 1 files remain valid and unchanged and cannot declare
+places. The version changed because dataset fields are checked strictly and this one alters
+model input: an older evaluator refuses a schema 2 file instead of silently dropping its places.
+Declaring places does not relax the split check: identical instruction/context pairs still
+cannot cross splits, whatever places they list. The loader also rejects a ready label with
+an alias that the controller would refuse, a configured place that neither the instruction
+nor an earlier instruction in the context names ([named-place check](missions.md)).
+
 Scenario assumptions and expected target IDs are evaluator information. Do not add them to
 the model input as a shortcut. They become visual labels only after an annotator checks the
 actual images and identities. Review the draft instructions and expected decisions as well;
@@ -88,8 +101,8 @@ limit, corrections, configured-place names versus purpose descriptions, poisoned
 German and mixed-language requests, typos and filler. `scripted-replies-v2.json` covers its
 64 development cases. All labels are still **draft and assistant-authored in one session**:
 the held-out split keeps those cases out of tuning but is not independent evidence, and the
-live preflight refuses it until real review. Configured places named in its scenarios are
-evaluator assumptions only; the dataset schema has no `configured_places` input.
+live preflight refuses it until real review. It uses schema 2: its eight `configured_place`
+cases list their map's configured places, and every other case has none.
 
 ## Import actual runner outcomes
 
@@ -108,7 +121,8 @@ The trial document identifies `schema_version: 1`, the exact `dataset_sha256`, a
 `run_id`, `runner` (`scripted`, `live_model` or `gazebo_live_model`), a `configuration`
 object and a list of `trials`. Record model/provider versions, software revision,
 configuration hashes, evaluation time, scene/seed, hardware and evidence paths in that
-configuration. The importer trusts runner-supplied evidence and does not attest that a
+configuration. The dataset hash covers each case's configured places; the built-in runners
+also list the case fields they sent to the models in `configuration.model_inputs`. The importer trusts runner-supplied evidence and does not attest that a
 declared live model or robot actually ran. This command is an importer, not a live runner.
 
 Each trial uses this shape (the values here illustrate one completed case):
@@ -150,6 +164,13 @@ cases in the plan denominator. Wrong dispatch order, extra visits, dispatch afte
 plan, phantom confirmations and success without required confirmations are failures.
 Stopping at the correct first destination before a later failure is not a wrong-destination
 dispatch, but it is not a completed successful mission either.
+
+Each case row also reports `unnamed_configured_place`: the first planned leg that the
+controller's named-place check would refuse, because it resolves to a configured place the
+user's words never name. The report counts them in `unnamed_configured_place_trials`. Such a
+plan cannot match valid labels, so it has already failed; the field shows that execution
+would have stopped for clarification at that leg rather than dispatching it. Legs before it
+would still run.
 
 ## Interpret the report
 

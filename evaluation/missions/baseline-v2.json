@@ -1,8 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "mission-baseline-v2",
   "label_status": "draft",
-  "annotation_notes": "Draft labels; nobody has attested human review. The first 24 cases are mission-baseline-v1, copied unchanged. 40 development and 40 held_out cases were added, all assistant-authored in one session: the held_out split guards against tuning on those cases but is not independent evidence. Scenario text and target IDs are evaluator assumptions, not observed visual ground truth. Configured places named in scenarios are not model input (schema 1 has no configured_places field). Contexts use the MissionContext event shape; a few add legacy 'message'/'caption' fields that the current recorder drops, to test model-level robustness. Aliases list the article-free form first, then 'the' and other accepted forms. Change label_status only after real review, recording who reviewed which cases here.",
+  "annotation_notes": "Draft labels; nobody has attested human review. The first 24 cases are mission-baseline-v1, copied unchanged. 40 development and 40 held_out cases were added, all assistant-authored in one session: the held_out split guards against tuning on those cases but is not independent evidence. Scenario text and target IDs are evaluator assumptions, not observed visual ground truth. Schema 2: configured_places lists the place names configured on a case's map and reaches the planner and reviewer as in production; cases without it have none. Contexts use the MissionContext event shape; a few add legacy 'message'/'caption' fields that the current recorder drops, to test model-level robustness. Aliases list the article-free form first, then 'the' and other accepted forms. Change label_status only after real review, recording who reviewed which cases here.",
   "groups": [
     {
       "id": "synthetic-language-v1",
@@ -1538,9 +1538,13 @@
       "id": "dev-place-named",
       "category": "configured_place",
       "group": "synthetic-language-v2-dev",
-      "scenario": "Configured places: printer, home. Evaluator-only assumption: schema 1 has no configured_places input and both runners pass none, so the model sees only the instruction and context.",
+      "scenario": "Synthetic office; both named places are configured on the current map.",
       "instruction": "Take me to the printer, then home.",
       "context": [],
+      "configured_places": [
+        "home",
+        "printer"
+      ],
       "expected": {
         "decisions": [
           "ready"
@@ -1568,9 +1572,12 @@
       "id": "dev-place-purpose-print",
       "category": "configured_place",
       "group": "synthetic-language-v2-dev",
-      "scenario": "Configured places: printer. A printer is also observed in memory (printer-a). Evaluator-only assumption: schema 1 has no configured_places input and both runners pass none, so the model sees only the instruction and context.",
+      "scenario": "Synthetic office; a printer is also observed in memory (printer-a).",
       "instruction": "Take me somewhere I can print.",
       "context": [],
+      "configured_places": [
+        "printer"
+      ],
       "expected": {
         "decisions": [
           "ready"
@@ -1598,9 +1605,12 @@
       "id": "dev-place-purpose-statement",
       "category": "configured_place",
       "group": "synthetic-language-v2-dev",
-      "scenario": "Configured places: printer. Evaluator-only assumption: schema 1 has no configured_places input and both runners pass none, so the model sees only the instruction and context.",
+      "scenario": "Synthetic office; the printer is configured on the current map.",
       "instruction": "I need to print something.",
       "context": [],
+      "configured_places": [
+        "printer"
+      ],
       "expected": {
         "decisions": [
           "clarify"
@@ -1617,9 +1627,13 @@
       "id": "dev-place-named-then-description",
       "category": "configured_place",
       "group": "synthetic-language-v2-dev",
-      "scenario": "Configured places: lobby, meeting room. The whiteboard room is observed in memory. Evaluator-only assumption: schema 1 has no configured_places input and both runners pass none, so the model sees only the instruction and context.",
+      "scenario": "Synthetic office; the whiteboard room is observed in memory.",
       "instruction": "Go to the lobby, then to the room with the big whiteboard.",
       "context": [],
+      "configured_places": [
+        "lobby",
+        "meeting room"
+      ],
       "expected": {
         "decisions": [
           "ready"
@@ -2892,7 +2906,7 @@
       "id": "held-place-history-name",
       "category": "configured_place",
       "group": "synthetic-language-v2-held-out",
-      "scenario": "Configured places: garage, front door, charging dock. Evaluator-only assumption: schema 1 has no configured_places input and both runners pass none, so the model sees only the instruction and context.",
+      "scenario": "Synthetic home; the earlier garage visit used the configured place.",
       "instruction": "Take me back there.",
       "context": [
         {
@@ -2925,6 +2939,11 @@
           "timestamp": 1790418660.0
         }
       ],
+      "configured_places": [
+        "charging dock",
+        "front door",
+        "garage"
+      ],
       "expected": {
         "decisions": [
           "ready"
@@ -2948,9 +2967,12 @@
       "id": "held-place-purpose-charge",
       "category": "configured_place",
       "group": "synthetic-language-v2-held-out",
-      "scenario": "Configured places: charging dock. The dock is also observed in memory (charging-dock-a). Evaluator-only assumption: schema 1 has no configured_places input and both runners pass none, so the model sees only the instruction and context.",
+      "scenario": "Synthetic home; the dock is also observed in memory (charging-dock-a).",
       "instruction": "Go to the spot where the robot usually charges.",
       "context": [],
+      "configured_places": [
+        "charging dock"
+      ],
       "expected": {
         "decisions": [
           "ready"
@@ -2975,9 +2997,13 @@
       "id": "held-place-named-two",
       "category": "configured_place",
       "group": "synthetic-language-v2-held-out",
-      "scenario": "Configured places: front door, charging dock. Evaluator-only assumption: schema 1 has no configured_places input and both runners pass none, so the model sees only the instruction and context.",
+      "scenario": "Synthetic home; both named places are configured on the current map.",
       "instruction": "Go to the front door, then the charging dock.",
       "context": [],
+      "configured_places": [
+        "charging dock",
+        "front door"
+      ],
       "expected": {
         "decisions": [
           "ready"
@@ -3006,9 +3032,12 @@
       "id": "held-place-purpose-car",
       "category": "configured_place",
       "group": "synthetic-language-v2-held-out",
-      "scenario": "Configured places: garage. The parked car is observed in memory (car-a). Evaluator-only assumption: schema 1 has no configured_places input and both runners pass none, so the model sees only the instruction and context.",
+      "scenario": "Synthetic home; the parked car is observed in memory (car-a).",
       "instruction": "Take me to where we keep the car.",
       "context": [],
+      "configured_places": [
+        "garage"
+      ],
       "expected": {
         "decisions": [
           "ready"
