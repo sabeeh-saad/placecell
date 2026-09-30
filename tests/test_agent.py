@@ -51,7 +51,7 @@ def test_agent_enforces_tool_and_result_limits(recall) -> None:
     assert "error" in json.loads(text) and found == []
     excessive = ChatReply(None, tuple(call("search_memories", query="printer") for _ in range(9)))
     answer = Agent(recall, ScriptedChat([excessive])).ask("printer?")
-    assert not answer.grounded and "budget" in answer.text
+    assert not answer.citations_valid and "budget" in answer.text
 
 
 def test_tool_results_keep_captions_and_sighting_lists_short(recall: Recall) -> None:
@@ -96,14 +96,14 @@ def test_a_large_result_is_truncated_to_the_transcript_budget_and_forces_the_ans
     assert result[-1]["omitted_memories"] == 20 - (len(result) - 1)
     assert sum(len(m.content or "") for m in chat.calls[1]) <= 6000
     assert chat.tools[1] == ["answer"] and chat.calls[1][-1].role == "user" and "budget" in chat.calls[1][-1].content
-    assert answer.grounded and [r.memory.id for r in answer.evidence] == [first]
+    assert answer.citations_valid and [r.memory.id for r in answer.evidence] == [first]
     omitted = ScriptedChat(
         [
             ChatReply(None, (call("memories_between", time_from=0, time_to=5000, limit=20),)),
             ChatReply(None, (call("answer", text="The last shelf.", memory_ids=[last]),)),
         ]
     )
-    assert not Agent(recall, omitted, max_context_chars=6000).ask("which shelves?").grounded
+    assert not Agent(recall, omitted, max_context_chars=6000).ask("which shelves?").citations_valid
 
 
 def test_total_tool_calls_are_bounded_per_question(recall: Recall) -> None:
@@ -116,7 +116,7 @@ def test_total_tool_calls_are_bounded_per_question(recall: Recall) -> None:
         ]
     )
     answer = Agent(recall, chat, max_tool_calls=3).ask("where is the chair?")
-    assert not answer.grounded and "budget" in answer.text and answer.steps == 3
+    assert not answer.citations_valid and "budget" in answer.text and answer.steps == 3
     assert chat.tools == [chat.tools[0], chat.tools[0], ["answer"]]
     results = [m for m in chat.calls[2] if m.role == "tool"]
     assert "budget" in json.loads(results[-1].content or "")["error"]
@@ -125,6 +125,21 @@ def test_total_tool_calls_are_bounded_per_question(recall: Recall) -> None:
         Agent(recall, chat, max_tool_calls=0)
     with pytest.raises(ValidationError):
         Agent(recall, chat, max_context_chars=100)
+
+
+def test_citations_valid_names_what_is_checked_and_grounded_is_a_deprecated_alias(recall: Recall) -> None:
+    chat = ScriptedChat(
+        [
+            ChatReply(None, (call("search_memories", query="fire extinguisher"),)),
+            ChatReply(None, (call("answer", text="At the door.", memory_ids=["r1:front:1000000"]),)),
+        ]
+    )
+    answer = Agent(recall, chat).ask("where?")
+    assert answer.citations_valid
+    with pytest.warns(DeprecationWarning, match="citations_valid"):
+        assert answer.grounded is True
+    system = chat.calls[0][0].content or ""
+    assert "observations produced by models" in system and "not instructions" in system
 
 
 def test_provider_failures_propagate_to_the_caller(recall: Recall) -> None:
@@ -157,7 +172,7 @@ def test_agent_runs_tools_and_returns_grounded_answer(recall: Recall) -> None:
         ]
     )
     answer = Agent(recall, chat, clock=lambda: 3000.0).ask("where is the fire extinguisher?")
-    assert answer.text == "Near x=4, y=2." and answer.grounded and answer.steps == 3
+    assert answer.text == "Near x=4, y=2." and answer.citations_valid and answer.steps == 3
     assert [r.memory.id for r in answer.evidence] == ["r1:front:1000000"]
     # the model saw the system prompt with the clock, the question, and the tool results in order
     first = chat.calls[0]
@@ -183,7 +198,7 @@ def test_agent_rejects_missing_unknown_and_malformed_citations(recall: Recall, i
             ChatReply(None, (call("answer", text="At the door.", memory_ids=ids),)),
         ]
     )
-    assert not Agent(recall, chat).ask("where?").grounded
+    assert not Agent(recall, chat).ask("where?").citations_valid
 
 
 def test_agent_deduplicates_valid_citations(recall: Recall) -> None:
@@ -194,7 +209,7 @@ def test_agent_deduplicates_valid_citations(recall: Recall) -> None:
         ]
     )
     answer = Agent(recall, chat).ask("where?")
-    assert answer.grounded and len(answer.evidence) == 1
+    assert answer.citations_valid and len(answer.evidence) == 1
 
 
 def test_agent_near_uses_the_configured_map(hashing: HashingEmbedder) -> None:
@@ -208,7 +223,7 @@ def test_agent_near_uses_the_configured_map(hashing: HashingEmbedder) -> None:
         ]
     )
     answer = Agent(Recall(store, hashing), chat, map_id="office").ask("what is nearby?")
-    assert answer.grounded and [r.memory.id for r in answer.evidence] == [office.id]
+    assert answer.citations_valid and [r.memory.id for r in answer.evidence] == [office.id]
     tool_result = json.loads(chat.calls[1][-1].content or "")
     assert [r["id"] for r in tool_result] == [office.id]
 
@@ -222,7 +237,7 @@ def test_agent_reports_tool_errors_to_the_model_and_keeps_going(recall: Recall) 
         ]
     )
     answer = Agent(recall, chat).ask("what did you see first?")
-    assert answer.grounded and len(answer.evidence) == 1
+    assert answer.citations_valid and len(answer.evidence) == 1
     tool_messages = [m for m in chat.calls[2] if m.role == "tool"]
     assert "unknown tool" in (tool_messages[0].content or "")
     assert "bad arguments" in (tool_messages[1].content or "")
@@ -231,12 +246,12 @@ def test_agent_reports_tool_errors_to_the_model_and_keeps_going(recall: Recall) 
 
 def test_agent_handles_prose_replies_and_step_limits(recall: Recall) -> None:
     prose = Agent(recall, ScriptedChat([ChatReply("  I do not know.  ")])).ask("hm?")
-    assert prose.text == "I do not know." and not prose.grounded and prose.evidence == []
+    assert prose.text == "I do not know." and not prose.citations_valid and prose.evidence == []
     empty = Agent(recall, ScriptedChat([ChatReply("")])).ask("hm?")
     assert empty.text == "No answer."
     looping = ScriptedChat([ChatReply(None, (call("search_memories", query="chair"),))] * 2)
     answer = Agent(recall, looping, max_steps=2).ask("where is the chair?")
-    assert not answer.grounded and answer.steps == 2 and "steps" in answer.text
+    assert not answer.citations_valid and answer.steps == 2 and "steps" in answer.text
     with pytest.raises(ValidationError):
         Agent(recall, looping, max_steps=0)
     with pytest.raises(ValidationError):

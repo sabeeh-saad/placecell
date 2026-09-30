@@ -9,10 +9,11 @@ import numpy as np
 import pytest
 
 from placecell import EvidenceKind, InMemoryStore, Pose
+from placecell.agent import Answer
 from placecell.errors import ProviderError, ValidationError
 from placecell.pipeline import Ingester
 from placecell.providers import HashingEmbedder
-from placecell.retrieval import RankedMemory
+from placecell.retrieval import RankedMemory, Recall
 from placecell.ros2.bridge import (
     KeyframeWriter,
     ObservationBuilder,
@@ -24,6 +25,7 @@ from placecell.ros2.node import (
     ENDPOINTS,
     IngestWorker,
     answer_payload,
+    answer_question,
     build_embedder,
     build_store,
     embedding_api_key,
@@ -196,7 +198,8 @@ def test_dropped_duplicate_does_not_delete_a_queued_frame(tmp_path: Path, hashin
 def test_answer_payload_and_factories(hashing: HashingEmbedder, tmp_path: Path) -> None:
     ranked = RankedMemory(embedded(hashing, "a door", t=5, x=1, y=2), confidence=0.5, similarity=0.9)
     payload = json.loads(answer_payload("where?", "at the door", True, [ranked]))
-    assert payload["answer"] == "at the door" and payload["grounded"] is True
+    assert payload["answer"] == "at the door" and payload["grounded"] is payload["citations_valid"] is True
+    assert payload["schema_version"] == 1 and payload["type"] == "answer" and payload["source"] == "agent"
     assert payload["evidence"][0] == {
         "id": "r1:front:5000",
         "x": 1.0,
@@ -298,3 +301,33 @@ def test_embedding_key_follows_backend_url(key_env: pytest.MonkeyPatch) -> None:
     assert embedding_api_key(gemini) == "gemini"
     assert embedding_api_key(gemini | {"embed_api_key_env": "PC_TEST_OWN"}) == "own"
     assert embedding_api_key(gemini | {"embed_api_key_env": "PC_TEST_UNSET"}) is None
+
+
+def test_answers_without_an_agent_need_a_confident_retrieval_match(hashing: HashingEmbedder) -> None:
+    store = InMemoryStore(__import__("placecell").CollectionInfo("answers", hashing.model_name, hashing.dimension))
+    store.upsert([embedded(hashing, "a red fire extinguisher by the door", t=5)])
+    recall = Recall(store, hashing, clock=lambda: 10.0)
+    confident = json.loads(answer_question("a red fire extinguisher by the door", None, recall, 0.5))
+    assert confident["answer"] == "a red fire extinguisher by the door" and confident["citations_valid"] is True
+    assert confident["source"] == "retrieval" and len(confident["evidence"]) == 1
+    weak = json.loads(answer_question("quarterly tax forms", None, recall, 0.5))
+    assert weak["answer"] == "No confident answer." and weak["evidence"] == []
+    assert weak["citations_valid"] is weak["grounded"] is False and weak["schema_version"] == 1
+
+
+def test_answer_question_uses_the_agent_and_reports_its_failures(hashing: HashingEmbedder) -> None:
+    store = InMemoryStore(__import__("placecell").CollectionInfo("answers", hashing.model_name, hashing.dimension))
+    recall = Recall(store, hashing)
+
+    class Failing:
+        def ask(self, question: str) -> None:
+            raise ProviderError("HTTP 400: context length exceeded")
+
+    class Answering:
+        def ask(self, question: str) -> Answer:
+            return Answer("Nothing relevant.", [], 1, False)
+
+    failed = json.loads(answer_question("where?", Failing(), recall, 0.5))  # type: ignore[arg-type]
+    assert failed["error"] and failed["error_type"] == "ProviderError" and failed["type"] == "answer"
+    answered = json.loads(answer_question("where?", Answering(), recall, 0.5))  # type: ignore[arg-type]
+    assert answered["answer"] == "Nothing relevant." and answered["citations_valid"] is False

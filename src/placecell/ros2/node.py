@@ -256,12 +256,34 @@ def build_trace_store(parameters: dict[str, Any]) -> TraceStore | None:
     )
 
 
-def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[Any]) -> str:
+ANSWER_SCHEMA_VERSION = 1
+NO_CONFIDENT_ANSWER = "No confident answer."
+
+
+def answer_error(question: str, error: str, error_type: str = "") -> str:
     return json.dumps(
         {
+            "schema_version": ANSWER_SCHEMA_VERSION,
+            "type": "answer",
+            "question": question,
+            "error": error,
+            "error_type": error_type,
+        }
+    )
+
+
+def answer_payload(
+    question: str, text: str, citations_valid: bool, evidence: Sequence[Any], source: str = "agent"
+) -> str:
+    return json.dumps(
+        {
+            "schema_version": ANSWER_SCHEMA_VERSION,
+            "type": "answer",
+            "source": source,
             "question": question,
             "answer": text,
-            "grounded": grounded,
+            "citations_valid": citations_valid,
+            "grounded": citations_valid,  # Deprecated alias with the same meaning.
             "evidence": [
                 {
                     "id": r.memory.id,
@@ -281,6 +303,20 @@ def answer_payload(question: str, text: str, grounded: bool, evidence: Sequence[
             ],
         }
     )
+
+
+def answer_question(question: str, agent: Agent | None, recall: Recall, min_similarity: float) -> str:
+    """Build one `~/answer` payload. Without an agent the best caption is used only when confident."""
+    try:
+        if agent is not None:
+            result = agent.ask(question)
+            return answer_payload(question, result.text, result.citations_valid, result.evidence)
+        hits = [h for h in recall.similar(question, k=5) if h.similarity is not None and h.similarity >= min_similarity]
+        if not hits:
+            return answer_payload(question, NO_CONFIDENT_ANSWER, False, [], source="retrieval")
+        return answer_payload(question, hits[0].memory.caption, True, hits, source="retrieval")
+    except PlacecellError as e:
+        return answer_error(question, str(e), type(e).__name__)
 
 
 class IngestWorker:
@@ -603,6 +639,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             )
             self._recall = Recall(store, embedder, corrections=self._corrections, clock=self._memory_time)
             self._agent: Agent | None = None
+            self._answer_min_similarity = float(p["answer_min_similarity"])
+            if not 0 < self._answer_min_similarity <= 1:
+                raise ValidationError("answer_min_similarity must be within (0, 1]")
             self._consolidator: Consolidator | None = None
             self._refiner: MemoryRefiner | None = None
             refinement_model = p["refine_model"] or p["caption_model"]
@@ -997,6 +1036,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "chat_token_parameter": "max_tokens",
                 "chat_temperature": 0.0,
                 "chat_max_tool_calls": 16,
+                "answer_min_similarity": 0.5,
                 "chat_max_context_chars": 40000,
                 "api_key_env": "PLACECELL_API_KEY",
                 "min_interval_s": 2.0,
@@ -1290,15 +1330,11 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
         def _on_ask(self, msg: Any) -> None:
             if len(msg.data) > 2000 or not msg.data.strip():
                 self._answers.publish(
-                    String(
-                        data=json.dumps(
-                            {"question": msg.data[:128], "error": "question must contain 1..2000 characters"}
-                        )
-                    )
+                    String(data=answer_error(msg.data[:128], "question must contain 1..2000 characters"))
                 )
                 return
             if not self._questions.submit(self._answer, msg.data):
-                self._answers.publish(String(data=json.dumps({"question": msg.data, "error": "question queue full"})))
+                self._answers.publish(String(data=answer_error(msg.data, "question queue full")))
 
         def _submit_command(self, function: Callable[[], None]) -> bool:
             return self._command_tasks is not None and self._command_tasks.submit(function)
@@ -1314,16 +1350,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             return self._commands is not None and self._commands.busy
 
         def _answer(self, question: str) -> None:
-            try:
-                if self._agent is not None:
-                    result = self._agent.ask(question)
-                    payload = answer_payload(question, result.text, result.grounded, result.evidence)
-                else:
-                    hits = self._recall.similar(question, k=5)
-                    text = hits[0].memory.caption if hits else "No matching memory."
-                    payload = answer_payload(question, text, bool(hits), hits)
-            except PlacecellError as e:
-                payload = json.dumps({"question": question, "error": str(e)})
+            payload = answer_question(question, self._agent, self._recall, self._answer_min_similarity)
             self._answers.publish(String(data=payload))
 
         def _on_correct(self, msg: Any) -> None:

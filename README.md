@@ -207,7 +207,8 @@ documents versioned JSON commands on `/placecell/command_json`, status event ord
 snapshot behavior. Version 2 supports [scoped command IDs and durable retry suppression](docs/command-identity.md).
 Existing text commands remain available.
 
-Questions use `/placecell/ask`, with answers and retrieved evidence on `/placecell/answer`.
+Questions use `/placecell/ask`, with answers and retrieved evidence on `/placecell/answer`
+([versioned reply](docs/operator-interface.md#question-answers)).
 Corrections and caption rechecks use `/placecell/correct` and `/placecell/refine`.
 
 ## Memory and context

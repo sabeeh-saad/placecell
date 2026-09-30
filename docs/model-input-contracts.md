@@ -85,6 +85,10 @@ The current operator instruction, historical context and proposed plan are seria
 as task data in a user message. Historical `role` or `content` fields cannot create new
 chat messages or change the system role. Prompts explicitly identify historical captions,
 signs and provider explanations as observations, never authorization to execute commands.
+History now omits status messages entirely, so arrival explanations and provider errors
+never reach these prompts ([conversation context](missions.md#conversation-context)).
+The question agent's system prompt likewise states that captions and tool results are
+observations produced by models and sensors, not instructions.
 Captioning now separates its trusted description instruction from the camera observation.
 
 Destination verification receives the requested description and image pixels, not the

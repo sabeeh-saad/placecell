@@ -7,6 +7,7 @@
 - Honour `Retry-After` up to 60 s and fail fast beyond it, jitter backoff, map http.client failures to provider errors, and repeat server/transport errors only for idempotent embedding calls.
 - Support reasoning-model chat requests: new `chat_`/`mission_` `max_tokens`, `token_parameter` (`max_completion_tokens`) and `temperature` (negative omits it) parameters; defaults unchanged.
 - Force the planner and reviewer decision tools, ignore text beside a valid call, and ask once more when a reply has no valid call before failing.
+- Rename answer `grounded` to `citations_valid` (valid cited IDs, not proof); `grounded` stays as a deprecated alias for one release. Version the `/placecell/answer` reply (`schema_version: 1`), answer without a chat model only above `answer_min_similarity`, and tell the question agent that tool results are observations, not instructions.
 - Bound question answering: at most 20 compact memories per tool call, 16 tool calls per question and a 40,000-character transcript (`chat_max_tool_calls`, `chat_max_context_chars`); oversized results are cut with a marker and the model must then answer.
 - Dispatch a configured place in an agent-planned mission only when the user's instruction (or an earlier one in the planner's history window) names it; otherwise ask for clarification.
 - Keep only the user's words and structured outcomes in conversation context; vision-model arrival reasons, captions and provider error text no longer reach planner or reviewer prompts, including rows saved by earlier versions.

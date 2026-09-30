@@ -82,7 +82,9 @@ and five sighting times (the first and the four most recent). `chat_max_context_
 (40,000) bounds the transcript that is resent on every step: a result that does not fit is
 cut behind an explicit `truncated` marker, its omitted memories cannot be cited, and the
 model is then offered only the `answer` tool. A provider failure is published as an `error`
-reply rather than an answer. Maintenance runs in one background worker with one waiting slot. The node
+reply rather than an answer. Without `chat_model`, the best-matching caption is returned only
+when its similarity reaches `answer_min_similarity` (0.5); otherwise the reply is
+`No confident answer.` See the [answer schema](operator-interface.md#question-answers). Maintenance runs in one background worker with one waiting slot. The node
 logs queued and failed jobs, oldest job age and dropped observations every 30 seconds.
 
 Scene admission defaults to 10,000 records, and each memory retains at most 1,024 detailed

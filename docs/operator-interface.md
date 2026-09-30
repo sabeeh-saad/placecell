@@ -159,6 +159,27 @@ new optional output fields do not. Command inputs remain strict to avoid executi
 misspelled or unsupported request. Event sequences are diagnostic ordering, not durable
 delivery or cross-process deduplication IDs.
 
+## Question answers
+
+Questions on `/placecell/ask` receive one JSON `std_msgs/msg/String` reply on
+`/placecell/answer`. Replies now carry `schema_version: 1` and `type: "answer"`, plus:
+
+- `question`, `answer` and `evidence` (the memories behind the answer, as before).
+- `source`: `agent` when the chat model answered, `retrieval` when no `chat_model` is
+  configured and the best-matching caption is returned directly.
+- `citations_valid`: the answer cites at least one memory and every cited ID names a memory
+  that retrieval returned during this question. It does not check that the text follows from
+  those memories. For `retrieval`, it is true when the best match reaches
+  `answer_min_similarity` (default 0.5; similarity scales differ between embedding models).
+  Below that, `answer` is `No confident answer.` with empty `evidence`; earlier versions
+  returned the top caption with `grounded: true` whatever its similarity.
+- `grounded`: a deprecated alias with the same value as `citations_valid`, kept for one
+  release. The Python `Answer.grounded` property warns and returns `citations_valid`.
+
+Failures reply with `question`, `error` and `error_type` (an exception class name, empty
+for queue and length refusals) and no `answer`. Version 1 readers should ignore unknown
+fields. An incompatible change to this reply requires a new schema version.
+
 ## Python and validation
 
 `NavigationCommands.snapshot()` returns a frozen `NavigationSnapshot` under the same lock
