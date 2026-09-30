@@ -40,7 +40,9 @@ class OpenRouterGeminiEmbedder(GeminiEmbedder):
             raise ValidationError("OpenRouter Gemini model must have the google/ prefix")
         super().__init__(model.removeprefix("google/"), api_key=api_key, dimension=dimension, batch_size=batch_size)
         self._router_model = model
-        self._endpoint = Endpoint.build(base_url, "/embeddings", api_key, timeout_s, transport, retry, time.sleep, None)
+        self._endpoint = Endpoint.build(
+            base_url, "/embeddings", api_key, timeout_s, transport, retry, time.sleep, None, idempotent=True
+        )
 
     @property
     def model_name(self) -> str:

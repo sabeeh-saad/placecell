@@ -44,7 +44,7 @@ class OpenAICompatibleEmbedder:
             raise ValidationError("batch_size must be positive")
         self._model = model
         self._endpoint = Endpoint.build(
-            base_url, "/embeddings", api_key, timeout_s, transport, retry, sleep, extra_headers
+            base_url, "/embeddings", api_key, timeout_s, transport, retry, sleep, extra_headers, idempotent=True
         )
         self._dimension = dimension
         self._batch_size = batch_size

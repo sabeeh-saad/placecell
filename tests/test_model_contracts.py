@@ -376,11 +376,22 @@ def test_outer_provider_json_cannot_hide_duplicate_or_nonfinite_fields(raw):
 
 @pytest.mark.parametrize("header", ["NaN", "Infinity", "-5", "invalid"])
 def test_bad_retry_after_uses_bounded_backoff(header):
-    assert RetryPolicy().delay(0, header) == 0.5
+    assert RetryPolicy(jitter=0).delay(0, header) == 0.5
+    assert 0.25 <= RetryPolicy().delay(0, header) <= 0.5
 
 
 @pytest.mark.parametrize(
-    "options", [{"attempts": True}, {"attempts": 33}, {"base_delay_s": float("nan")}, {"max_delay_s": float("inf")}]
+    "options",
+    [
+        {"attempts": True},
+        {"attempts": 33},
+        {"base_delay_s": float("nan")},
+        {"max_delay_s": float("inf")},
+        {"max_retry_after_s": -1},
+        {"max_retry_after_s": float("inf")},
+        {"jitter": 1.5},
+        {"jitter": float("nan")},
+    ],
 )
 def test_invalid_retry_configuration_is_rejected(options):
     with pytest.raises(ValidationError):

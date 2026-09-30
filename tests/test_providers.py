@@ -80,7 +80,7 @@ def test_openai_embedder_probes_dimension_when_not_given() -> None:
 
 def test_openai_embedder_retries_rate_limits_then_gives_up() -> None:
     sleeps: list[float] = []
-    retry = RetryPolicy(attempts=3, base_delay_s=1.0, max_delay_s=4.0)
+    retry = RetryPolicy(attempts=3, base_delay_s=1.0, max_delay_s=4.0, jitter=0)
     transport = FakeTransport(
         [(429, {"Retry-After": "2"}, {"error": {"message": "slow down"}}), (503, {}, "bad gateway"), _ok([[1, 0]])]
     )

@@ -53,10 +53,17 @@ Zero base delay is allowed for deterministic fixtures. Production configurations
 use a positive delay. This cooldown applies to one ingestion queue; it is not an
 account-wide limit covering navigation, questions and maintenance.
 
-The shared HTTP adapter preserves numeric and HTTP-date `Retry-After` values. If the
-requested wait exceeds its inline sleep budget, it returns a typed provider error with
-the cooldown instead of retrying early. Other callers receive that error without a new
-automatic retry loop.
+The shared HTTP adapter preserves numeric and HTTP-date `Retry-After` values. It waits
+out up to `RetryPolicy.max_retry_after_s` (60 seconds); a longer requested wait returns a
+`RateLimitedError` with the cooldown instead of retrying early. Other callers receive that
+error without a new automatic retry loop. Library callers with several attempts get this
+retry matrix; computed backoff is jittered by up to half its value:
+
+| Failure | Embeddings (idempotent) | Chat, captions, verification, detection |
+| --- | --- | --- |
+| 429, 503 | retried | retried: the request was not processed |
+| Other 5xx | retried | fails at once: work may have been done and billed |
+| Connection reset, timeout, truncated reply | retried | fails at once, as a `ProviderError` |
 
 ## Diagnostics
 

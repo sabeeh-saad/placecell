@@ -1,15 +1,19 @@
 """HTTP plumbing shared by provider adapters: transport, retries, error mapping.
 
-The transport is injectable so tests never open a socket. Retries cover rate limits and
-server errors with exponential backoff, honouring `Retry-After` when the server sends one.
+The transport is injectable so tests never open a socket. Retries use jittered exponential
+backoff and honour `Retry-After` up to a cap; a longer requested wait fails at once. 429 and
+503 are retried for every call. Other server errors and transport failures may follow work
+the provider already did (and billed), so only idempotent calls such as embeddings repeat them.
 Redirects are never followed, and credentials go over plain http only to this machine.
 """
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import math
+import random
 import time
 import urllib.error
 import urllib.parse
@@ -35,6 +39,10 @@ def _read_body(response: Any) -> Any:
     return decode_body(raw)
 
 
+class TransportError(ProviderError):
+    """The request failed on the network: it may or may not have reached the provider."""
+
+
 class Transport(Protocol):
     """Minimal HTTP surface: post JSON, get status, headers and decoded body back."""
 
@@ -57,7 +65,10 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
 
 
 class UrllibTransport:
-    """Standard-library transport. HTTP errors are returned, not raised, so the caller can retry."""
+    """Standard-library transport. HTTP errors are returned, not raised, so the caller can retry.
+
+    Network failures raise TransportError, including http.client errors that are not OSErrors.
+    """
 
     def post_json(
         self, url: str, headers: Mapping[str, str], payload: Mapping[str, Any], timeout_s: float
@@ -68,13 +79,15 @@ class UrllibTransport:
             url, data=body, method="POST", headers={**headers, "Content-Type": "application/json"}
         )
         try:
-            with urllib.request.build_opener(_RefuseRedirects).open(request, timeout=timeout_s) as response:
-                return response.status, dict(response.headers.items()), _read_body(response)
-        except urllib.error.HTTPError as e:
-            with e:
-                return e.code, dict(e.headers.items()), _read_body(e)
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            raise ProviderError(f"request to {url} failed: {e}") from e
+            try:
+                with urllib.request.build_opener(_RefuseRedirects).open(request, timeout=timeout_s) as response:
+                    return response.status, dict(response.headers.items()), _read_body(response)
+            except urllib.error.HTTPError as e:
+                with e:
+                    return e.code, dict(e.headers.items()), _read_body(e)
+        # URLError, timeouts and resets are OSErrors; IncompleteRead and BadStatusLine are not.
+        except (OSError, http.client.HTTPException) as e:
+            raise TransportError(f"request to {url} failed: {e}") from e
 
 
 def check_http_url(url: str) -> None:
@@ -112,30 +125,37 @@ def decode_body(raw: bytes) -> Any:
 
 @dataclass(frozen=True, slots=True)
 class RetryPolicy:
+    """Bounded attempts with jittered exponential backoff.
+
+    `max_retry_after_s` caps how long a server's `Retry-After` is waited out; a longer one
+    fails at once. `jitter` is the randomized fraction of each backoff, so clients spread out.
+    """
+
     attempts: int = 5
     base_delay_s: float = 0.5
     max_delay_s: float = 8.0
+    max_retry_after_s: float = 60.0
+    jitter: float = 0.5
 
     def __post_init__(self) -> None:
         if (
             type(self.attempts) is not int
             or not 1 <= self.attempts <= 32
-            or not math.isfinite(self.base_delay_s)
-            or not math.isfinite(self.max_delay_s)
+            or not all(math.isfinite(v) for v in (self.base_delay_s, self.max_delay_s, self.max_retry_after_s))
             or self.base_delay_s < 0
             or self.max_delay_s < self.base_delay_s
+            or self.max_retry_after_s < 0
+            or not 0 <= self.jitter <= 1
         ):
             raise ValidationError("retry policy out of range")
 
-    def delay(self, attempt: int, retry_after: str | None) -> float:
-        if retry_after:
-            try:
-                delay = float(retry_after)
-                if math.isfinite(delay) and delay >= 0:
-                    return min(delay, self.max_delay_s)
-            except ValueError:
-                pass
-        return min(self.base_delay_s * 2.0**attempt, self.max_delay_s)
+    def delay(self, attempt: int, retry_after: str | None = None) -> float:
+        """The server's `Retry-After` up to its cap, otherwise jittered exponential backoff."""
+        requested = _retry_after(retry_after)
+        if requested is not None:
+            return min(requested, self.max_retry_after_s)
+        spread = self.jitter * random.random()  # noqa: S311 - timing jitter, not security
+        return min(self.base_delay_s * 2.0**attempt, self.max_delay_s) * (1 - spread)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +168,7 @@ class Endpoint:
     transport: Transport
     retry: RetryPolicy
     sleep: Callable[[float], None] = time.sleep
+    idempotent: bool = False
 
     def __post_init__(self) -> None:
         if any(value and key.casefold() in CREDENTIAL_HEADERS for key, value in self.headers.items()):
@@ -164,6 +185,8 @@ class Endpoint:
         retry: RetryPolicy | None,
         sleep: Callable[[float], None],
         extra_headers: Mapping[str, str] | None,
+        *,
+        idempotent: bool = False,
     ) -> Endpoint:
         check_http_url(base_url)
         if not math.isfinite(timeout_s) or timeout_s <= 0:
@@ -178,6 +201,7 @@ class Endpoint:
             transport or UrllibTransport(),
             retry or RetryPolicy(),
             sleep,
+            idempotent,
         )
 
     def post(self, payload: Mapping[str, Any]) -> Any:
@@ -197,38 +221,60 @@ class Endpoint:
     def _post(self, payload: Mapping[str, Any], details: dict[str, Any]) -> Any:
         for attempt in range(self.retry.attempts):
             details["attempts"] = attempt + 1
-            status, headers, body = self.transport.post_json(self.url, self.headers, payload, self.timeout_s)
+            last = attempt + 1 == self.retry.attempts
+            try:
+                status, headers, body = self.transport.post_json(self.url, self.headers, payload, self.timeout_s)
+            except TransportError:  # the provider may already have done the work
+                if last or not self.idempotent:
+                    raise
+                self.sleep(self.retry.delay(attempt))
+                continue
             details["http_status"] = status
             details["usage"] = provider_usage(body)
             if status == 200:
                 return body
-            if status == 429 or status >= 500:
-                required_wait = retry_after_seconds(header(headers, "retry-after"))
-                if attempt + 1 < self.retry.attempts and required_wait <= self.retry.max_delay_s:
-                    self.sleep(max(required_wait, self.retry.delay(attempt, header(headers, "retry-after"))))
-                    continue
-                if status == 429:
-                    raise RateLimitedError(
-                        f"{self.url}: rate limited after {attempt + 1} attempts", retry_after_s=required_wait
-                    )
-                raise ProviderError(
-                    f"{self.url}: server error {status} after {attempt + 1} attempts", retry_after_s=required_wait
+            if status != 429 and status < 500:
+                raise ProviderError(f"{self.url}: HTTP {status}: {message(body)}")
+            retry_after = header(headers, "retry-after")
+            wait = retry_after_seconds(retry_after)
+            # 429 and 503 mean the request was not processed; other server errors may follow billed work.
+            if status not in (429, 503) and not self.idempotent:
+                raise ProviderError(f"{self.url}: server error {status}, not retried", retry_after_s=wait)
+            if wait > self.retry.max_retry_after_s:
+                raise RateLimitedError(
+                    f"{self.url}: HTTP {status} asks to wait {wait:.0f} s, "
+                    f"longer than the {self.retry.max_retry_after_s:g} s retry limit",
+                    retry_after_s=wait,
                 )
-            raise ProviderError(f"{self.url}: HTTP {status}: {message(body)}")
+            if not last:
+                self.sleep(self.retry.delay(attempt, retry_after))
+            elif status == 429:
+                raise RateLimitedError(f"{self.url}: rate limited after {attempt + 1} attempts", retry_after_s=wait)
+            else:
+                raise ProviderError(
+                    f"{self.url}: server error {status} after {attempt + 1} attempts", retry_after_s=wait
+                )
         raise ProviderError("unreachable")  # pragma: no cover
 
 
 def retry_after_seconds(value: str | None) -> float:
     """Preserve numeric/HTTP-date cooldowns instead of shortening them to the sleep budget."""
+    return _retry_after(value) or 0
+
+
+def _retry_after(value: str | None) -> float | None:
+    """Seconds from a numeric or HTTP-date `Retry-After`; None when absent or invalid."""
+    if not value:
+        return None
     try:
-        delay = float(value or "0")
-        return delay if math.isfinite(delay) and delay >= 0 else 0
+        delay = float(value)
+        return delay if math.isfinite(delay) and delay >= 0 else None
     except ValueError:
         try:
-            date = parsedate_to_datetime(value or "")
-            return max(0, date.timestamp() - time.time()) if date.tzinfo is not None else 0
+            date = parsedate_to_datetime(value)
+            return max(0, date.timestamp() - time.time()) if date.tzinfo is not None else None
         except (ValueError, TypeError, OverflowError):
-            return 0
+            return None
 
 
 def header(headers: Mapping[str, str], name: str) -> str | None:

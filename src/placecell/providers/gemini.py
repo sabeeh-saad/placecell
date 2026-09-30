@@ -63,6 +63,7 @@ class GeminiEmbedder:
             retry,
             sleep,
             {"x-goog-api-key": api_key},
+            idempotent=True,
         )
 
     @property

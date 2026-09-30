@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from placecell import CollectionInfo, Ingester, Pose
-from placecell.errors import ProviderError, ValidationError
+from placecell.errors import ProviderError, RateLimitedError, ValidationError
 from placecell.providers import OpenAICompatibleEmbedder
 from placecell.ros2.bridge import KeyframeWriter, ObservationBuilder
 from placecell.ros2.depth import PendingImages
@@ -177,13 +177,13 @@ def test_ingestion_flood_retains_only_accepted_images_and_recovers_without_dupli
 
 
 @pytest.mark.parametrize("status", [429, 503])
-def test_long_retry_after_is_preserved_without_early_retry(status):
-    transport = FakeTransport([(status, {"Retry-After": "60"}, {})])
+def test_retry_after_beyond_the_cap_is_preserved_without_early_retry(status):
+    transport = FakeTransport([(status, {"Retry-After": "61"}, {})])
     sleeps = []
     embed = OpenAICompatibleEmbedder("m", transport=transport, sleep=sleeps.append)
-    with pytest.raises(ProviderError) as error:
+    with pytest.raises(RateLimitedError) as error:
         embed.embed_text(["printer"])
-    assert error.value.retry_after_s == 60
+    assert error.value.retry_after_s == 61
     assert len(transport.requests) == 1 and not sleeps
 
 

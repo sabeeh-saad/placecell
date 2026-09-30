@@ -52,9 +52,12 @@ fields or choosing the last occurrence of a repeated key.
   the configured mission destination count (default eight).
 - Standard-library HTTP transport: reads at most 8 MiB plus one byte from both success
   and error responses, refusing oversize bodies and closing the stream.
-- Retry configuration: 1–32 attempts with finite nonnegative bounded delays. Invalid,
-  negative or non-finite `Retry-After` values use configured backoff. Timeout configuration
-  must be finite and positive. HTTP error text shown to callers is capped at 200 characters.
+- Retry configuration: 1–32 attempts with finite nonnegative bounded delays, a finite
+  `Retry-After` cap and jitter within 0–1. Invalid, negative or non-finite `Retry-After`
+  values use configured backoff. Timeout configuration must be finite and positive. HTTP
+  error text shown to callers is capped at 200 characters. Transport failures, including
+  truncated replies and bad status lines, are provider errors
+  ([retry matrix](overload.md#provider-retries)).
 
 The navigation mission planner/reviewer and visual verifier retain their one-attempt
 policies. HTTP errors and malformed outputs cannot become approvals. Custom injected

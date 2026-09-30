@@ -315,7 +315,7 @@ def test_fault_artifacts_explain_plan_visual_checks_and_transport(case):
 def test_reported_http_usage_and_credentials_without_recording_payloads(store):
     transport = FakeTransport(
         [
-            (500, {}, {"error": "transient"}),
+            (503, {}, {"error": "transient"}),
             (
                 200,
                 {},

@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from placecell.errors import ProviderError, ValidationError
+from placecell.errors import ProviderError, RateLimitedError, ValidationError
 from placecell.providers import GeminiEmbedder, OpenAICompatibleChat
-from placecell.providers._http import Endpoint
+from placecell.providers._http import Endpoint, RetryPolicy, TransportError
 from placecell.providers.openai_compatible import UrllibTransport
 
 
@@ -169,3 +169,111 @@ def test_plain_http_is_allowed_without_credentials_or_on_loopback() -> None:
     assert OpenAICompatibleChat("m", "https://10.0.0.5:8000/v1", "key").model_name == "m"
     with pytest.raises(ValidationError, match="invalid endpoint URL"):
         OpenAICompatibleChat("m", "http://[::1/v1", "key")
+
+
+class _Broken(BaseHTTPRequestHandler):
+    """Replies that make http.client raise its own, non-OSError exceptions."""
+
+    def do_POST(self) -> None:
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        if self.path == "/status-line":
+            self.wfile.write(b"garbage\r\n\r\n")
+            return
+        self.send_response(200 if self.path == "/short-body" else 503)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        self.wfile.write(b'64\r\n{"a":')  # announces 100 bytes, then the connection closes
+        self.close_connection = True
+
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+
+@pytest.mark.parametrize("path", ["/status-line", "/short-body", "/short-error-body"])
+def test_http_client_failures_become_provider_errors(path) -> None:
+    httpd = HTTPServer(("127.0.0.1", 0), _Broken)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(TransportError, match="failed"):
+            UrllibTransport().post_json(f"http://127.0.0.1:{httpd.server_port}{path}", {}, {"input": ["a"]}, 5)
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+
+
+class _Scripted:
+    """Responses or exceptions, in order."""
+
+    def __init__(self, *outcomes: Any) -> None:
+        self.outcomes, self.calls = list(outcomes), 0
+
+    def post_json(self, url, headers, payload, timeout_s):
+        self.calls += 1
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def _endpoint(transport: Any, sleeps: list[float], *, idempotent: bool, **policy: Any) -> Endpoint:
+    retry = RetryPolicy(**{"jitter": 0, **policy})
+    return Endpoint.build(
+        "https://x.test", "/v1", None, 5, transport, retry, sleeps.append, None, idempotent=idempotent
+    )
+
+
+@pytest.mark.parametrize("status", [500, 502, 504])
+def test_server_errors_that_may_follow_billed_work_repeat_only_idempotent_calls(status) -> None:
+    sleeps: list[float] = []
+    transport = _Scripted((status, {}, {}), (200, {}, {"ok": True}))
+    with pytest.raises(ProviderError, match=f"server error {status}, not retried") as error:
+        _endpoint(transport, sleeps, idempotent=False).post({})
+    assert transport.calls == 1 and not sleeps and not isinstance(error.value, RateLimitedError)
+    transport = _Scripted((status, {}, {}), (200, {}, {"ok": True}))
+    assert _endpoint(transport, sleeps, idempotent=True).post({}) == {"ok": True}
+    assert transport.calls == 2 and sleeps == [0.5]
+
+
+@pytest.mark.parametrize("idempotent", [False, True])
+@pytest.mark.parametrize("status", [429, 503])
+def test_unprocessed_requests_are_repeated_for_every_call(status, idempotent) -> None:
+    sleeps: list[float] = []
+    transport = _Scripted((status, {}, {}), (status, {"Retry-After": "30"}, {}), (200, {}, {"ok": True}))
+    assert _endpoint(transport, sleeps, idempotent=idempotent).post({}) == {"ok": True}
+    assert transport.calls == 3 and sleeps == [0.5, 30.0]
+
+
+def test_transport_failures_are_repeated_only_for_idempotent_calls() -> None:
+    sleeps: list[float] = []
+    reset = TransportError("request to https://x.test/v1 failed: connection reset")
+    transport = _Scripted(reset, (200, {}, {"ok": True}))
+    with pytest.raises(TransportError):
+        _endpoint(transport, sleeps, idempotent=False).post({})
+    assert transport.calls == 1 and not sleeps
+    transport = _Scripted(reset, (200, {}, {"ok": True}))
+    assert _endpoint(transport, sleeps, idempotent=True).post({}) == {"ok": True}
+    transport = _Scripted(reset, reset)
+    with pytest.raises(TransportError):
+        _endpoint(transport, sleeps, idempotent=True, attempts=2).post({})
+    assert transport.calls == 2 and sleeps == [0.5, 0.5]
+
+
+@pytest.mark.parametrize("idempotent", [False, True])
+@pytest.mark.parametrize("status", [429, 503])
+def test_retry_after_beyond_the_cap_fails_at_once_without_hammering(status, idempotent) -> None:
+    sleeps: list[float] = []
+    for header, cap in (("61", 60.0), ("6", 5.0)):
+        transport = _Scripted((status, {"Retry-After": header}, {}), (200, {}, {}))
+        with pytest.raises(RateLimitedError, match="retry limit") as error:
+            _endpoint(transport, sleeps, idempotent=idempotent, max_retry_after_s=cap).post({})
+        assert error.value.retry_after_s == float(header) and transport.calls == 1 and not sleeps
+
+
+def test_computed_backoff_is_jittered_below_its_bound() -> None:
+    policy = RetryPolicy(base_delay_s=1.0, max_delay_s=8.0, jitter=0.5)
+    delays = [policy.delay(2) for _ in range(200)]
+    assert all(2.0 <= d <= 4.0 for d in delays) and len(set(delays)) > 1
+    assert all(4.0 <= policy.delay(5) <= 8.0 for _ in range(20))
+    assert RetryPolicy(jitter=0.5).delay(0, "3") == 3.0  # a server-requested wait is never shortened
