@@ -127,9 +127,12 @@ def test_reembedding_a_summary_uses_its_caption_not_the_inherited_anchor_image(m
     assert rows[0].caption_embedding is None and media_embedder.media_calls == []
 
 
-def test_caption_index_recovers_reopens_and_rebuilds(tmp_path, hashing):
+def test_caption_index_recovers_reopens_and_rebuilds(tmp_path, hashing, monkeypatch):
     pytest.importorskip("lancedb")
+    from placecell.store import lancedb_store
     from placecell.store.lancedb_store import LanceDBStore
+
+    monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 0)
 
     store = LanceDBStore(tmp_path, CollectionInfo("dual", hashing.model_name, hashing.dimension))
     memory = dual(hashing, "desk", "printer", t=1)

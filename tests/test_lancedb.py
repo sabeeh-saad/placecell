@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from placecell import SCHEMA_VERSION, CollectionInfo, Filter, Pose, Reinforcer
 from placecell.errors import ModelMismatchError, ValidationError
 from placecell.providers import HashingEmbedder
 from placecell.store.base import EVERYTHING
+from tests import test_multimodal, test_store
 from tests.conftest import DIM, embedded
 
 pytest.importorskip("lancedb")
@@ -107,9 +109,12 @@ def test_sql_translation() -> None:
     )
 
 
-def test_vector_projection_recovers_and_can_be_rebuilt(tmp_path: Path, hashing: HashingEmbedder) -> None:
+def test_vector_projection_recovers_and_can_be_rebuilt(tmp_path: Path, hashing: HashingEmbedder, monkeypatch) -> None:
     from unittest.mock import patch
 
+    from placecell.store import lancedb_store
+
+    monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 0)
     store = LanceDBStore(tmp_path, CollectionInfo("projection", hashing.model_name, DIM))
     rows = [embedded(hashing, f"printer {i}", t=i) for i in range(40)]
     store.upsert(rows)
@@ -196,3 +201,135 @@ def test_version_two_collections_upgrade_without_losing_memories(
     assert reopened.count(Filter(observation_id=repeat.id)) == 1
     assert json.loads(meta.read_text())["schema_version"] == SCHEMA_VERSION
     reopened.close()
+
+
+def _random(hashing: HashingEmbedder, count: int, robots: int = 1, seed: int = 0) -> list:
+    rng = np.random.default_rng(seed)
+    return [
+        embedded(hashing, f"view {i}", t=i, x=i % 17, robot=f"r{i % robots}").with_embedding(
+            rng.standard_normal(DIM), hashing.model_name, kind="caption"
+        )
+        for i in range(count)
+    ]
+
+
+def test_vector_indexes_are_retrained_as_the_collection_doubles(
+    tmp_path: Path, hashing: HashingEmbedder, monkeypatch
+) -> None:
+    from unittest.mock import patch
+
+    from placecell.store import lancedb_store
+
+    monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 0)
+    store = LanceDBStore(tmp_path, CollectionInfo("grow", hashing.model_name, DIM))
+    rows = _random(hashing, 80)
+    store.upsert(rows[:40])
+    store.maintain(vector_index_min_rows=32)
+    indexes = {index.columns[0]: index for index in store._table.list_indices()}
+    assert indexes["vector"].index_type == indexes["caption_vector"].index_type == "IvfSq"
+    assert all(indexes[c].index_type == "Bitmap" for c in ("robot_id", "camera_id", "map_id", "frame_id", "role"))
+    assert indexes["superseded"].index_type == "Bitmap" and indexes["id"].index_type == "BTree"
+    assert store._indexes["vector"] == {"rows": 40, "partitions": 6}
+    with patch.object(store._table, "optimize") as optimize:
+        store.maintain(vector_index_min_rows=32)
+    assert not optimize.called, "an unchanged projection needs no maintenance"
+
+    store.upsert(rows[40:79])
+    with patch.object(store._table, "create_index", wraps=store._table.create_index) as create:
+        store.maintain(vector_index_min_rows=32)
+    assert not create.called and store._indexes["vector"] == {"rows": 40, "partitions": 6}
+    store.upsert(rows[79:])
+    store.maintain(vector_index_min_rows=32)
+    assert store._indexes["vector"] == store._indexes["caption_vector"] == {"rows": 80, "partitions": 9}
+    assert store.search(rows[3].embedding, 1)[0].memory.id == rows[3].id
+    store.close()
+
+    reopened = LanceDBStore.open(tmp_path, "grow")
+    assert reopened._indexes["vector"] == {"rows": 80, "partitions": 9}
+    reopened.rebuild_index()
+    assert reopened._indexes == {} and json.loads((tmp_path / "grow.index.json").read_text()) == {}
+    reopened.maintain(vector_index_min_rows=32)
+    assert reopened._indexes["vector"] == {"rows": 80, "partitions": 9}
+    reopened.close()
+
+
+def test_projection_updates_keep_the_index_covering_unchanged_rows(tmp_path: Path, hashing: HashingEmbedder) -> None:
+    store = LanceDBStore(tmp_path, CollectionInfo("covered", hashing.model_name, DIM))
+    rows = _random(hashing, 64)
+    store.upsert(rows)
+    store.maintain(vector_index_min_rows=32)
+    moved = rows[5].with_embedding(np.ones(DIM), hashing.model_name, kind="caption")
+    store.upsert([moved, *_random(hashing, 66)[64:]])
+    store._sync_index()
+    coverage = {index.name: (index.num_indexed_rows, index.num_unindexed_rows) for index in store._table.list_indices()}
+    assert coverage["vector_idx"] == (63, 3)
+    store.close()
+
+
+def test_an_index_without_a_training_record_is_retrained(tmp_path: Path, hashing: HashingEmbedder) -> None:
+    from lancedb.index import IvfFlat
+
+    store = LanceDBStore(tmp_path, CollectionInfo("legacy_index", hashing.model_name, DIM))
+    store.upsert(_random(hashing, 50))
+    store.maintain(vector_index_min_rows=1000)
+    store._table.create_index("vector", config=IvfFlat(distance_type="cosine", num_partitions=1))
+    assert store._indexes == {}
+    store.maintain(vector_index_min_rows=40)
+    assert store._indexes == {"vector": {"rows": 50, "partitions": 7}, "caption_vector": {"rows": 50, "partitions": 7}}
+    store.close()
+
+
+def test_small_filtered_sets_are_scored_exactly(tmp_path: Path, hashing: HashingEmbedder, monkeypatch) -> None:
+    from unittest.mock import patch
+
+    from placecell.store import lancedb_store
+
+    monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 10)
+    store = LanceDBStore(tmp_path, CollectionInfo("exact", hashing.model_name, DIM))
+    rows = _random(hashing, 60, robots=6)
+    store.upsert(rows)
+    query = rows[7].embedding
+    with patch.object(store._table, "search", side_effect=AssertionError("vector index used")):
+        hits = store.search(query, 3, Filter(robot_id="r1"))
+        assert hits[0].memory.id == rows[7].id and hits[0].score == pytest.approx(1)
+        with pytest.raises(AssertionError):
+            store.search(query, 3)
+    assert store.search(query, 3)[0].memory.id == rows[7].id
+    store.close()
+
+
+def test_selective_prefilters_still_fill_k_results(tmp_path: Path, hashing: HashingEmbedder, monkeypatch) -> None:
+    from placecell.store import lancedb_store
+
+    monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 0)
+    monkeypatch.setattr(lancedb_store, "_probes", lambda partitions: 1)
+    store = LanceDBStore(tmp_path, CollectionInfo("sparse", hashing.model_name, DIM))
+    rows = _random(hashing, 400, robots=25)
+    store.upsert(rows)
+    store.maintain(vector_index_min_rows=100)
+    assert store._indexes["vector"]["partitions"] == 20
+    for robot in ("r0", "r3", "r24"):
+        hits = store.search(rows[0].embedding, 10, Filter(robot_id=robot))
+        assert len(hits) == 10 and {hit.memory.robot_id for hit in hits} == {robot}
+    assert len(store.search(rows[0].embedding, 20, Filter(robot_id="r3"))) == 16
+    store.close()
+
+
+@pytest.mark.parametrize(
+    "contract",
+    [
+        test_store.test_search_ranks_by_cosine_and_respects_filters,
+        test_store.test_search_on_empty_store,
+        test_store.test_invalid_batch_preserves_rows_and_search_index,
+        test_multimodal.test_omitted_caption_is_recovered_outside_recent_candidate_window,
+        test_multimodal.test_channel_filters_missing_vectors_and_atomic_caption_updates,
+    ],
+    ids=lambda contract: contract.__name__,
+)
+def test_vector_index_path_fulfils_the_search_contract(tmp_path, hashing, monkeypatch, contract) -> None:
+    from placecell.store import lancedb_store
+
+    monkeypatch.setattr(lancedb_store, "EXACT_SEARCH_ROWS", 0)
+    store = LanceDBStore(tmp_path, CollectionInfo("indexed", hashing.model_name, DIM))
+    contract(store, hashing)
+    store.close()

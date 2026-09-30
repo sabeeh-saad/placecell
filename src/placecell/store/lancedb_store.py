@@ -10,15 +10,17 @@ Needs `pip install placecell[lancedb]`.
 from __future__ import annotations
 
 import json
+import math
 import threading
 from dataclasses import asdict, replace
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike
 
 from placecell.errors import ModelMismatchError, PlacecellError, ValidationError
-from placecell.memory import SCHEMA_VERSION, SearchChannel
+from placecell.memory import SCHEMA_VERSION, SearchChannel, Vector
 from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row as _from_row
 from placecell.store.codec import to_row as _to_row
@@ -27,6 +29,12 @@ from placecell.store.schema import check_file
 from placecell.store.state import StateStore
 
 _MAX_IN_LIST = 500
+_SCALAR_COLUMNS = ("robot_id", "camera_id", "map_id", "frame_id", "superseded", "role")
+"""Low-cardinality filter columns, indexed as bitmaps."""
+EXACT_SEARCH_ROWS = 2048
+"""Filtered sets up to this size are scored exactly in the state store instead of the vector index."""
+REFINE_FACTOR = 5
+"""Indexed searches rescore this many times k candidates with full-precision vectors."""
 
 
 class LanceDBStore(StateStore):
@@ -119,7 +127,14 @@ class LanceDBStore(StateStore):
             )
             self._table = self._db.create_table(info.name, schema=schema)
             self._write_info(info)
+        # Rows in any other column order make merge_insert rewrite whole fragments and drop their index coverage.
+        self._columns = self._table.schema.names
         self._projection_lock = threading.RLock()
+        self._index_path = self._path / f"{info.name}.index.json"
+        self._indexes: dict[str, dict[str, int]] = (
+            json.loads(self._index_path.read_text()) if self._index_path.exists() else {}
+        )
+        self._maintained: tuple[int, int] | None = None
         super().__init__(info, self._path / f"{info.name}.state.sqlite3", limits=limits)
         if not self._conn.execute("SELECT 1 FROM settings WHERE key='imported'").fetchone():
             # Existing memories are imported whole; capacity applies only to new observations.
@@ -137,6 +152,12 @@ class LanceDBStore(StateStore):
         pending = self._meta_path.with_suffix(".json.tmp")
         pending.write_text(json.dumps(asdict(info), indent=2))
         pending.replace(self._meta_path)
+
+    def _write_indexes(self) -> None:
+        """Record the size each vector index was trained at; a lost record only means an early rebuild."""
+        pending = self._index_path.with_suffix(".json.tmp")
+        pending.write_text(json.dumps(self._indexes, indent=2))
+        pending.replace(self._index_path)
 
     @classmethod
     def open(cls, path: str | Path, name: str) -> LanceDBStore:
@@ -177,7 +198,8 @@ class LanceDBStore(StateStore):
                         if memory is None:
                             deleted.append(item[0])
                         else:
-                            rows.append(_to_row(memory))
+                            row = _to_row(memory)
+                            rows.append({name: row[name] for name in self._columns if name in row})
                 if rows:
                     self._table.merge_insert("id").when_matched_update_all().when_not_matched_insert_all().execute(rows)
                 if deleted:
@@ -193,69 +215,99 @@ class LanceDBStore(StateStore):
         if channel not in {"primary", "image", "caption"}:
             raise ValidationError("search channel must be primary, image or caption")
         scope = where or Filter()
-        # A writer must see its uncommitted updates, and history filters belong to the state store.
-        # Exact scans are paged and spatial filters are indexed before vectors are loaded.
+        query = np.asarray(vector, dtype=np.float32)
+        if k < 1 or query.shape != (self.info.dimension,) or not np.all(np.isfinite(query)):
+            raise ValidationError("invalid search size or query vector")
+        if not np.linalg.norm(query):
+            return []
+        # A writer must see its uncommitted updates, and history filters and fields that change
+        # without rewriting vector rows belong to the state store. Small sets are scored exactly.
         with self._lock:
             if (
                 self._depth
                 or scope.time_from is not None
                 or scope.time_to is not None
                 or scope.observation_id is not None
+                or scope.evidence_uri is not None
+                or scope.unconsolidated
+                or self._count_upto(scope, channel, EXACT_SEARCH_ROWS + 1) <= EXACT_SEARCH_ROWS
             ):
                 return super().search(vector, k, scope, channel=channel)
         with self._projection_lock:
-            query = np.asarray(vector, dtype=np.float32)
-            if k < 1 or query.shape != (self.info.dimension,) or not np.all(np.isfinite(query)):
-                raise ValidationError("invalid search size or query vector")
-            if not np.linalg.norm(query):
-                return []
             self._sync_index()
-            from lancedb.query import LanceVectorQueryBuilder
-
             column = "caption_vector" if channel == "caption" else "vector"
-            builder = self._table.search(query.tolist(), query_type="vector", vector_column_name=column)
-            if not isinstance(builder, LanceVectorQueryBuilder):  # pragma: no cover
-                raise PlacecellError("unexpected vector query builder")
-            builder = builder.distance_type("cosine")
-            # These fields change without rewriting vector rows, so use the authoritative scan.
-            if scope.evidence_uri is not None or scope.unconsolidated:
-                return super().search(vector, k, scope, channel=channel)
             expr = _sql(scope)
             if channel == "image":
                 expr = f"({expr or 'true'}) AND embedding_kind = 'image'"
             elif channel == "caption":
                 expr = f"({expr or 'true'}) AND embedding_kind <> 'legacy' AND caption_vector IS NOT NULL"
-            if expr:
-                builder = builder.where(expr, prefilter=True)
+            partitions = self._indexes.get(column, {}).get("partitions", 0)
+            probes = _probes(partitions) if partitions else None
+            rows = self._nearest(query, column, expr, k, probes)
+            while probes is not None and len(rows) < k and probes < partitions:
+                # A selective filter can leave fewer than k matches in the partitions probed.
+                probes = min(partitions, 4 * probes)
+                rows = self._nearest(query, column, expr, k, probes)
             return [
                 Hit(memory, 1.0 - float(row["_distance"]))
-                for row in builder.limit(k).to_list()
+                for row in rows
                 if (memory := self.get(row["id"])) is not None and scope.matches(memory)
             ]
 
-    def maintain(self, vector_index_min_rows: int = 1000) -> None:
-        """Refresh the projection, create an index at the threshold, and compact old versions.
+    def _nearest(
+        self, query: Vector, column: str, expr: str | None, k: int, probes: int | None
+    ) -> list[dict[str, Any]]:
+        from lancedb.query import LanceVectorQueryBuilder
 
-        Schedule this outside camera callbacks. Small collections use exact search.
+        builder = self._table.search(query.tolist(), query_type="vector", vector_column_name=column)
+        if not isinstance(builder, LanceVectorQueryBuilder):  # pragma: no cover
+            raise PlacecellError("unexpected vector query builder")
+        builder = builder.distance_type("cosine").select(["id", "_distance"]).limit(k)
+        if probes is not None:
+            # Quantized distances pick candidates; the stored vectors rank them.
+            builder = builder.nprobes(probes).refine_factor(REFINE_FACTOR)
+        if expr:
+            builder = builder.where(expr, prefilter=True)
+        return builder.to_list()
+
+    def maintain(self, vector_index_min_rows: int = 1000) -> None:
+        """Refresh the projection, size its indexes to the collection, and compact old versions.
+
+        A vector index is built once a column holds `vector_index_min_rows` vectors and
+        retrained whenever that count has doubled since. Nothing is rebuilt or compacted when
+        no row changed since the last pass. Schedule this outside camera callbacks.
         """
         with self._projection_lock:
             self._sync_index()
-            for column in ("vector", "caption_vector"):
-                count = self._table.count_rows(f"{column} IS NOT NULL")
-                if count >= vector_index_min_rows and not any(
-                    column in index.columns for index in self._table.list_indices()
-                ):
-                    from lancedb.index import IvfFlat
+            if self._maintained == (self._table.version, vector_index_min_rows):
+                return
+            from lancedb.index import Bitmap, IvfSq
 
+            indexed = {column for index in self._table.list_indices() for column in index.columns}
+            for column in _SCALAR_COLUMNS:
+                if column not in indexed:
+                    self._table.create_index(column, config=Bitmap())
+            for column in ("vector", "caption_vector"):
+                rows = self._table.count_rows(f"{column} IS NOT NULL")
+                built = self._indexes.get(column, {}).get("rows", 0) if column in indexed else 0
+                if rows >= max(1, vector_index_min_rows) and rows >= 2 * built:
+                    partitions = _partitions(rows)
                     self._table.create_index(
-                        column,
-                        config=IvfFlat(distance_type="cosine", num_partitions=max(1, count // 4096)),
+                        column, config=IvfSq(distance_type="cosine", num_partitions=partitions), replace=True
                     )
+                    self._indexes[column] = {"rows": rows, "partitions": partitions}
+                    self._write_indexes()
             self._table.optimize()
+            self._maintained = (self._table.version, vector_index_min_rows)
 
     def rebuild_index(self) -> None:
-        """Rebuild the derived vector table without changing authoritative memories or jobs."""
+        """Rebuild the derived vector table without changing authoritative memories or jobs.
+
+        The vector indexes are retrained by the next `maintain()`.
+        """
         with self._projection_lock:
+            self._indexes.clear()
+            self._write_indexes()
             self._table.delete("id IS NOT NULL")
             with self.transaction():
                 self._conn.execute(
@@ -313,3 +365,13 @@ def _sql(where: Filter) -> str | None:
         clauses.append(f"map_id = {_quote(p.map_id)}")
         clauses.append(f"((x - {p.x!r}) * (x - {p.x!r}) + (y - {p.y!r}) * (y - {p.y!r})) <= {where.radius**2!r}")
     return " AND ".join(clauses) if clauses else None
+
+
+def _partitions(rows: int) -> int:
+    """IVF partitions for a column of `rows` vectors: about the square root, so each holds about as many."""
+    return max(1, min(4096, round(math.sqrt(rows))))
+
+
+def _probes(partitions: int) -> int:
+    """Partitions searched per query: a tenth of them, and at least 32."""
+    return min(partitions, max(32, math.ceil(partitions / 10)))

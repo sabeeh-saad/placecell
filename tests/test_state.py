@@ -86,3 +86,9 @@ def test_recent_candidates_enter_freshness_ranking() -> None:
 def test_default_retention_expires_abandoned_reinforced_memories(store: VectorStore, hashing: HashingEmbedder) -> None:
     store.upsert([embedded(hashing, "printer", t=1, observations=100)])
     assert Curator(store).run(now=91 * 86400).aged_out == 1
+
+
+def test_equal_scores_resolve_the_same_way_in_any_row_order(store: VectorStore, hashing: HashingEmbedder) -> None:
+    store.upsert([embedded(hashing, "printer", t=t) for t in (5, 1, 4, 2, 3)])
+    hits = store.search(hashing.embed_text(["printer"])[0], 2)
+    assert [hit.memory.id for hit in hits] == ["r1:front:4000", "r1:front:5000"]

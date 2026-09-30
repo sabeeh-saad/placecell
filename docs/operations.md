@@ -113,11 +113,21 @@ reconsolidation. Retrieval groups summaries with their members and combines sema
 recent candidates before confidence and feedback ranking. This bounded candidate strategy
 is approximate; evaluate recall and false contradictions on your own scenes.
 
-The ROS maintenance pass calls `store.maintain()` to synchronize vectors, build an index
-once the collection reaches 1,000 rows, and compact database versions. Standalone callers
-should schedule it themselves. `store.rebuild_index()` reconstructs the vector projection
-from authoritative state after an indexing failure. Back up or operate through the store
-API rather than editing its underlying tables.
+The ROS maintenance pass calls `store.maintain()` to synchronize vectors, size the indexes
+to the collection and compact database versions. Each vector column gets an IVF index with
+scalar quantization and about √n partitions once it holds 1,000 vectors, and the index is
+retrained whenever that count has doubled; `<collection>.index.json` records the size it
+was trained at. Robot, camera, map, frame, role and superseded columns carry bitmap
+indexes. A pass with no changed rows returns without work. Standalone callers should
+schedule it themselves. `store.rebuild_index()` reconstructs the vector projection from
+authoritative state after an indexing failure; the next `maintain()` retrains the indexes.
+Back up or operate through the store API rather than editing its underlying tables.
+
+A search whose filter leaves at most 2,048 rows, such as a place or time filter, is scored
+exactly from the state store. Larger searches probe a tenth of the index partitions (at
+least 32), rescore five times k candidates with full-precision vectors, and probe further
+when a selective filter leaves fewer than k matches. `benchmarks/store_scaling.py` measures
+latency and recall@10 at a given collection size.
 
 ## Provider credentials
 

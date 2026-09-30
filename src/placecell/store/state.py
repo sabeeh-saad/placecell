@@ -10,7 +10,6 @@ available through the paged sightings API. Temporal filters always use that hist
 
 from __future__ import annotations
 
-import heapq
 import itertools
 import json
 import math
@@ -26,7 +25,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from placecell.errors import ModelMismatchError, ValidationError
-from placecell.memory import Evidence, EvidenceKind, Memory, SearchChannel, Sighting
+from placecell.memory import Evidence, EvidenceKind, Memory, SearchChannel, Sighting, Vector
 from placecell.store.base import CollectionInfo, Filter, Hit
 from placecell.store.codec import from_row, to_row
 from placecell.store.jobs import WorkJournal
@@ -502,29 +501,30 @@ class StateStore:
         if not norm:
             return []
         query = query / norm
-        expr, params = self._predicate(where or Filter())
+        expr, params, column = self._vector_predicate(where or Filter(), channel)
+        with self._lock:
+            cursor = self._conn.execute(f"SELECT m.id,m.{column} FROM memories m WHERE " + expr, params)
+            best = _best(iter(lambda: cursor.fetchmany(1024), []), query, k)
+            return [Hit(memory, score) for identity, score in best if (memory := self.get(identity)) is not None]
+
+    def _vector_predicate(self, where: Filter, channel: SearchChannel) -> tuple[str, list[Any], str]:
+        """The filter restricted to rows that carry the channel's vector, and that vector's column."""
+        expr, params = self._predicate(where)
         column = "caption_vector" if channel == "caption" else "vector"
         expr += f" AND m.{column} IS NOT NULL"
         if channel == "image":
             expr += " AND m.embedding_kind='image'"
-        best: list[tuple[float, str]] = []
+        return expr, params, column
+
+    def _count_upto(self, where: Filter, channel: SearchChannel, limit: int) -> int:
+        """How many rows a search would score, counting no further than `limit`."""
+        expr, params, _ = self._vector_predicate(where, channel)
         with self._lock:
-            cursor = self._conn.execute(
-                f"SELECT m.id,m.{column} FROM memories m WHERE " + expr + " ORDER BY m.id", params
+            return int(
+                self._conn.execute(
+                    "SELECT COUNT(*) FROM (SELECT 1 FROM memories m WHERE " + expr + " LIMIT ?)", [*params, limit]
+                ).fetchone()[0]
             )
-            while rows := cursor.fetchmany(256):
-                matrix = np.stack([np.frombuffer(row[1], dtype=np.float32) for row in rows])
-                norms = np.linalg.norm(matrix, axis=1)
-                scores = matrix @ query / np.where(norms, norms, 1)
-                for row, score in zip(rows, scores, strict=True):
-                    heapq.heappush(best, (float(score), row[0]))
-                    if len(best) > k:
-                        heapq.heappop(best)
-            return [
-                Hit(memory, score)
-                for score, identity in sorted(best, key=lambda v: (-v[0], v[1]))
-                if (memory := self.get(identity)) is not None
-            ]
 
     def count(self, where: Filter | None = None) -> int:
         expr, params = self._predicate(where or Filter())
@@ -615,3 +615,25 @@ class StateStore:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+
+def _best(pages: Iterable[list[sqlite3.Row]], query: Vector, k: int) -> list[tuple[str, float]]:
+    """The k best (id, cosine) pairs of (id, vector blob) rows, best first.
+
+    Keeps the k highest (score, id) pairs, so equal scores are resolved the same way
+    whatever order the rows arrive in, and lists equal scores by id.
+    """
+    ids: list[str] = []
+    scores: Vector = np.empty(0, dtype=np.float32)
+    for rows in pages:
+        matrix = np.frombuffer(b"".join(row[1] for row in rows), dtype=np.float32).reshape(len(rows), -1)
+        norms = np.linalg.norm(matrix, axis=1)
+        ids += [row[0] for row in rows]
+        scores = np.concatenate([scores, matrix @ query / np.where(norms, norms, 1)])
+        if len(ids) > k:
+            kth = np.partition(scores, len(ids) - k)[len(ids) - k]
+            keep = np.flatnonzero(scores > kth).tolist()
+            tied = sorted(np.flatnonzero(scores == kth).tolist(), key=ids.__getitem__, reverse=True)
+            keep += tied[: k - len(keep)]
+            ids, scores = [ids[i] for i in keep], scores[keep]
+    return sorted(zip(ids, scores.tolist(), strict=True), key=lambda v: (-v[1], v[0]))
