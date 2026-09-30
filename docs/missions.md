@@ -51,6 +51,8 @@ match "station 3". Otherwise that leg ends with `clarification_required` and fai
 A purpose description such as "where we started" therefore cannot select a configured place
 by itself; the user names it. Direct `go to <place>` commands are the user's own words and
 are not affected. Places have no aliases yet: the configured name is the only accepted form.
+Both prompts state this rule, so the planner keeps a purpose description for memory lookup and
+the reviewer asks for clarification before dispatch; the controller check still applies.
 
 ## Enable the ROS interface
 
