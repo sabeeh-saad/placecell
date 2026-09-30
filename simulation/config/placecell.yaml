@@ -20,6 +20,8 @@ placecell:
     embed_dimension: 768
     embed_api_key_env: OPENROUTER_API_KEY
     api_key_env: OPENROUTER_API_KEY
+    # The shared key is sent only to endpoints on this scheme, host and port.
+    chat_base_url: https://openrouter.ai/api/v1
     caption_base_url: https://openrouter.ai/api/v1
     caption_model: google/gemini-2.5-flash
     object_backend: chat

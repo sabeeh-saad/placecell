@@ -2,25 +2,30 @@
 
 The transport is injectable so tests never open a socket. Retries cover rate limits and
 server errors with exponential backoff, honouring `Retry-After` when the server sends one.
+Redirects are never followed, and credentials go over plain http only to this machine.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
-from typing import Any, Protocol
+from http.client import HTTPMessage
+from typing import IO, Any, NoReturn, Protocol
 
 from placecell.errors import ProviderError, RateLimitedError, ValidationError
 from placecell.providers._contracts import strict_json
 from placecell.tracing import current_trace, provider_usage, trace_span
 
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+CREDENTIAL_HEADERS = frozenset({"authorization", "x-api-key", "x-goog-api-key"})
 
 
 def _read_body(response: Any) -> Any:
@@ -38,6 +43,16 @@ class Transport(Protocol):
     ) -> tuple[int, Mapping[str, str], Any]: ...
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """urllib would resend the credential headers to the redirect target, on any host."""
+
+    def redirect_request(
+        self, req: urllib.request.Request, fp: IO[bytes], code: int, msg: str, headers: HTTPMessage, newurl: str
+    ) -> NoReturn:
+        fp.close()
+        raise ProviderError(f"{req.full_url}: refused HTTP {code} redirect to {newurl[:200]}")
+
+
 class UrllibTransport:
     """Standard-library transport. HTTP errors are returned, not raised, so the caller can retry."""
 
@@ -50,7 +65,7 @@ class UrllibTransport:
             url, data=body, method="POST", headers={**headers, "Content-Type": "application/json"}
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310 - scheme checked above
+            with urllib.request.build_opener(_RefuseRedirects).open(request, timeout=timeout_s) as response:
                 return response.status, dict(response.headers.items()), _read_body(response)
         except urllib.error.HTTPError as e:
             with e:
@@ -62,6 +77,25 @@ class UrllibTransport:
 def check_http_url(url: str) -> None:
     if not url.startswith(("https://", "http://")):
         raise ValidationError(f"only http(s) endpoints are supported, got {url!r}")
+
+
+def check_credential_url(url: str) -> None:
+    """Credentials need TLS unless they stay on this machine (localhost, 127.0.0.0/8, ::1)."""
+    if url.startswith("https://"):
+        return
+    try:
+        host = urllib.parse.urlsplit(url).hostname or ""
+    except ValueError as e:
+        raise ValidationError(f"invalid endpoint URL: {e}") from e
+    try:
+        loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = False
+    if not loopback:
+        raise ValidationError(
+            f"refusing to send an API key over plain http to {host or 'an empty host'}; "
+            "use https, a loopback address, or no key"
+        )
 
 
 def decode_body(raw: bytes) -> Any:
@@ -112,6 +146,10 @@ class Endpoint:
     retry: RetryPolicy
     sleep: Callable[[float], None] = time.sleep
 
+    def __post_init__(self) -> None:
+        if any(value and key.casefold() in CREDENTIAL_HEADERS for key, value in self.headers.items()):
+            check_credential_url(self.url)
+
     @classmethod
     def build(
         cls,
@@ -147,7 +185,7 @@ class Endpoint:
                 [
                     value.removeprefix("Bearer ")
                     for key, value in self.headers.items()
-                    if key.casefold() in {"authorization", "x-api-key", "x-goog-api-key"}
+                    if key.casefold() in CREDENTIAL_HEADERS
                 ]
             )
         with trace_span("provider_request", model=payload.get("model"), usage=provider_usage(None)) as details:

@@ -20,7 +20,15 @@ from placecell.ros2.bridge import (
     stamp_to_seconds,
     yaw_from_quaternion,
 )
-from placecell.ros2.node import IngestWorker, answer_payload, build_embedder, build_store
+from placecell.ros2.node import (
+    ENDPOINTS,
+    IngestWorker,
+    answer_payload,
+    build_embedder,
+    build_store,
+    embedding_api_key,
+    endpoint,
+)
 from tests.conftest import FakeCaptioner, embedded
 
 
@@ -211,3 +219,82 @@ def test_answer_payload_and_factories(hashing: HashingEmbedder, tmp_path: Path) 
     pytest.importorskip("lancedb")
     persistent = build_store(str(tmp_path / "db"), "c", offline)
     assert persistent.info.model == offline.model_name and persistent.count() == 0
+
+
+def keys(**overrides: str) -> dict[str, str]:
+    parameters = {
+        "api_key_env": "PC_TEST_SHARED",
+        "chat_base_url": "https://api.example.com/v1",
+        "caption_base_url": "https://api.example.com/v1",
+        "verification_base_url": "",
+        "mission_base_url": "",
+        "mission_review_base_url": "",
+        "embed_base_url": "",
+        "embed_backend": "auto",
+        "embed_api_key_env": "",
+    }
+    parameters |= {key: "" for _, key, _ in ENDPOINTS.values()}
+    return parameters | overrides
+
+
+@pytest.fixture
+def key_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
+    monkeypatch.setenv("PC_TEST_SHARED", "shared")
+    monkeypatch.setenv("PC_TEST_OWN", "own")
+    monkeypatch.delenv("PC_TEST_UNSET", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    return monkeypatch
+
+
+def test_endpoints_on_the_chat_origin_inherit_the_shared_key(key_env: pytest.MonkeyPatch) -> None:
+    assert {group: endpoint(keys(), group) for group in ENDPOINTS} == dict.fromkeys(
+        ENDPOINTS, ("https://api.example.com/v1", "shared")
+    )
+    for url in ("https://API.example.com:443/other", "https://api.example.com"):
+        assert endpoint(keys(caption_base_url=url), "caption") == (url, "shared")
+
+
+def test_endpoints_on_another_origin_get_no_shared_key(key_env: pytest.MonkeyPatch) -> None:
+    local = keys(mission_review_base_url="http://10.0.0.5:8000/v1")
+    assert endpoint(local, "mission_review") == ("http://10.0.0.5:8000/v1", None)
+    assert endpoint(local, "mission") == ("https://api.example.com/v1", "shared")
+    for url in (
+        "http://api.example.com/v1",
+        "https://api.example.com:8443/v1",
+        "https://other.example.com/v1",
+        "https://api.example.com:99999/v1",
+        "http://[::1/v1",
+        "not a url",
+        "",
+    ):
+        assert endpoint(keys(caption_base_url=url), "caption") == (url, None)
+    assert endpoint(keys(chat_base_url="", caption_base_url=""), "caption") == ("", None)
+
+
+def test_own_key_env_wins_and_follows_the_url_fallback(key_env: pytest.MonkeyPatch) -> None:
+    vision = keys(caption_base_url="https://vision.example.com/v1", caption_api_key_env="PC_TEST_OWN")
+    assert endpoint(vision, "caption") == ("https://vision.example.com/v1", "own")
+    assert endpoint(vision, "verification") == ("https://vision.example.com/v1", "own")
+    split = vision | {"verification_base_url": "https://api.example.com/v1"}
+    assert endpoint(split, "verification") == ("https://api.example.com/v1", "shared")
+    explicit = keys(mission_api_key_env="PC_TEST_OWN", chat_api_key_env="PC_TEST_UNSET")
+    assert endpoint(explicit, "chat") == ("https://api.example.com/v1", None)
+    assert endpoint(explicit, "mission") == ("https://api.example.com/v1", "own")
+    assert endpoint(explicit, "mission_review") == ("https://api.example.com/v1", "own")
+    reviewer = keys(mission_review_base_url="http://127.0.0.1:8000/v1", mission_review_api_key_env="PC_TEST_OWN")
+    assert endpoint(reviewer, "mission_review") == ("http://127.0.0.1:8000/v1", "own")
+
+
+def test_embedding_key_follows_backend_url(key_env: pytest.MonkeyPatch) -> None:
+    openai = keys(chat_base_url="https://api.openai.com/v1")
+    assert embedding_api_key(openai) == "shared"
+    assert embedding_api_key(keys()) is None
+    assert embedding_api_key(openai | {"embed_base_url": "https://embed.example.com/v1"}) is None
+    assert embedding_api_key(openai | {"embed_backend": "openrouter"}) is None
+    assert embedding_api_key(keys(chat_base_url="https://openrouter.ai/api/v1", embed_backend="openrouter")) == "shared"
+    gemini = openai | {"embed_backend": "gemini"}
+    assert embedding_api_key(gemini) is None
+    key_env.setenv("GEMINI_API_KEY", "gemini")
+    assert embedding_api_key(gemini) == "gemini"
+    assert embedding_api_key(gemini | {"embed_api_key_env": "PC_TEST_OWN"}) == "own"
+    assert embedding_api_key(gemini | {"embed_api_key_env": "PC_TEST_UNSET"}) is None

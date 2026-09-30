@@ -111,6 +111,42 @@ should schedule it themselves. `store.rebuild_index()` reconstructs the vector p
 from authoritative state after an indexing failure. Back up or operate through the store
 API rather than editing its underlying tables.
 
+## Provider credentials
+
+The ROS node reads API keys only from environment variables named by parameters. The
+shared `api_key_env` key (default `PLACECELL_API_KEY`) goes to the chat endpoint and to
+any other endpoint whose base URL has the same scheme, host and port as `chat_base_url`.
+An endpoint on another origin gets no key unless its own variable is named:
+
+| Endpoint | Base URL | Key variable |
+| --- | --- | --- |
+| Chat, consolidation | `chat_base_url` | `chat_api_key_env` |
+| Captioning, refinement | `caption_base_url` | `caption_api_key_env` |
+| Visual verification | `verification_base_url`, else captioning | `verification_api_key_env` |
+| Mission planning | `mission_base_url`, else chat | `mission_api_key_env` |
+| Plan review | `mission_review_base_url`, else planning | `mission_review_api_key_env` |
+| Embeddings | `embed_base_url`, else the backend default | `embed_api_key_env` |
+| Object detection and arrival | `object_base_url` | `object_api_key_env` (`GEMINI_API_KEY`) |
+
+Key variable parameters default to empty, except `object_api_key_env`. An endpoint with
+an empty base URL uses the URL and key of the endpoint it falls back to. A named variable always wins; if it is
+unset, no key is sent. The Gemini embedding backend tries `GEMINI_API_KEY` before the
+shared key. For a single provider, set `chat_base_url` to it and export
+`PLACECELL_API_KEY`. A second provider needs its own variable:
+
+```bash
+export REVIEW_API_KEY="your-key"
+placecell-ros2 --ros-args \
+  -p mission_review_base_url:=https://reviewer.example.com/v1 \
+  -p mission_review_api_key_env:=REVIEW_API_KEY
+```
+
+Keys travel only over https, or over plain http to `localhost`, 127.0.0.0/8 or `::1`.
+Configuring a key for any other http endpoint fails at startup; keyless http endpoints,
+such as a local model server, still work. Provider redirects are never followed: a 3xx
+response fails the request with its status and target, so no key reaches another host.
+Mission traces redact every configured key.
+
 ## Collection compatibility and evidence
 
 Time queries match actual sighting timestamps, not the interval between the first and last

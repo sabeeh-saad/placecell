@@ -96,7 +96,11 @@ placecell-ros2 --ros-args \
 ```
 
 Set those environment variables to your provider configuration and `PLACECELL_API_KEY`
-when its endpoint requires a key. `places_file` is optional for memory-based destinations.
+when its endpoint requires a key. That key goes only to URLs with the same scheme, host and
+port as `chat_base_url` (default `https://api.openai.com/v1`): point `chat_base_url` at your
+provider, or name another endpoint's key variable with its `*_api_key_env` parameter (see
+[provider credentials](operations.md#provider-credentials)). `places_file` is optional for
+memory-based destinations.
 Navigation defaults to disabled so existing memory-only installations keep working. In
 simulation, set `use_sim_time:=true`: memory ranking, retention and destination freshness
 then use the ROS clock, matching observation timestamps. Transport deadlines use monotonic
@@ -147,7 +151,9 @@ parameter has been removed. A choice or pending lookup expires after 30 seconds.
 identity, pose, map, age, localization and operator verdicts are checked again before dispatch.
 
 Set `verification_model` and optionally `verification_base_url` to a vision endpoint.
-They default to `caption_model` and `caption_base_url`. Each verification request has an
+They default to `caption_model` and `caption_base_url`, sharing the captioning key. A
+separate URL gets `PLACECELL_API_KEY` only on `chat_base_url`'s scheme, host and port;
+otherwise name its key variable with `verification_api_key_env`. Each verification request has an
 eight-second timeout and no automatic retries. Without a verifier, memory destinations
 are unavailable; configured named places and numeric coordinates still work. Using the
 same model for captioning and verification can repeat the same mistake; query-specific
@@ -254,5 +260,5 @@ The main parameters are `navigation_enabled`, `nav2_action`, `places_file`,
 `navigation_min_similarity`, `navigation_min_confidence`, `navigation_max_memory_age_s`,
 `navigation_lookup_timeout_s`, `navigation_response_timeout_s`, `navigation_timeout_s`,
 `navigation_arrival_timeout_s`, `navigation_arrival_max_attempts`, `verification_model`, `verification_base_url`,
-`verification_request_timeout_s`, `localization_topic`, `localization_max_age_s`,
+`verification_api_key_env`, `verification_request_timeout_s`, `localization_topic`, `localization_max_age_s`,
 `localization_max_position_std_m`, and `localization_max_yaw_std_rad`.

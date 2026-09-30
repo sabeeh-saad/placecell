@@ -60,9 +60,12 @@ Keep the camera, localization, map and verification configuration in the
 ```
 
 `MISSION_MODEL` must identify a model with function/tool calling. The endpoint uses the
-existing chat provider interface and `PLACECELL_API_KEY` (or `api_key_env`). The review
-defaults to the same model/endpoint; `mission_review_model` and `mission_review_base_url`
-can select another. An empty mission URL uses `chat_base_url`. Planning and review each
+existing chat provider interface. The review defaults to the same model/endpoint;
+`mission_review_model` and `mission_review_base_url` can select another. An empty mission
+URL uses `chat_base_url`. `PLACECELL_API_KEY` (or `api_key_env`) is sent only to URLs with
+the same scheme, host and port as `chat_base_url`; a planner or reviewer elsewhere gets its
+key from `mission_api_key_env` or `mission_review_api_key_env`, or runs without one (see
+[provider credentials](operations.md#provider-credentials)). Planning and review each
 have an eight-second provider timeout and no automatic retries; the overall existing
 `navigation_lookup_timeout_s` also bounds planning. `mission_max_destinations` defaults
 to eight, configurable from one to twenty. Plain prose, malformed output, extra fields,

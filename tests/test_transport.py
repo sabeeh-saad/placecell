@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 
 from placecell.errors import ProviderError, ValidationError
+from placecell.providers import GeminiEmbedder, OpenAICompatibleChat
+from placecell.providers._http import Endpoint
 from placecell.providers.openai_compatible import UrllibTransport
 
 
@@ -73,3 +75,97 @@ def test_transport_rejects_other_schemes_and_reports_connection_failures() -> No
     probe.server_close()  # nothing listens on this port any more
     with pytest.raises(ProviderError):
         UrllibTransport().post_json(f"http://127.0.0.1:{port}/ok", {}, {}, 2)
+
+
+class _Redirect(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        self.send_response(int(self.path.strip("/")))
+        self.send_header("Location", self.server.target)  # type: ignore[attr-defined]
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+
+class _Record(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        self.server.seen.append(dict(self.headers.items()))  # type: ignore[attr-defined]
+        self.send_response(200)
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def do_POST(self) -> None:
+        self.do_GET()
+
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+
+@pytest.fixture
+def redirect() -> Iterator[tuple[str, list[dict[str, str]]]]:
+    """A redirecting server whose target is a second, recording server."""
+    target = HTTPServer(("127.0.0.1", 0), _Record)
+    target.seen = []  # type: ignore[attr-defined]
+    source = HTTPServer(("127.0.0.1", 0), _Redirect)
+    source.target = f"http://localhost:{target.server_port}/stolen"  # type: ignore[attr-defined]
+    threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in (source, target)]
+    for thread in threads:
+        thread.start()
+    try:
+        yield f"http://127.0.0.1:{source.server_port}", target.seen  # type: ignore[attr-defined]
+    finally:
+        for s in (source, target):
+            s.shutdown()
+            s.server_close()
+        for thread in threads:
+            thread.join(timeout=5)
+
+
+@pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+def test_transport_refuses_redirects_so_credentials_stay_on_the_configured_host(redirect, code) -> None:
+    url, seen = redirect
+    headers = {"Authorization": "Bearer secret-value", "X-Goog-Api-Key": "secret-value"}
+    with pytest.raises(ProviderError, match=f"refused HTTP {code} redirect to http://localhost") as error:
+        UrllibTransport().post_json(f"{url}/{code}", headers, {"input": ["a"]}, 5)
+    assert "secret-value" not in str(error.value)
+    endpoint = Endpoint.build(url, f"/{code}", "secret-value", 5, None, None, lambda _: None, None)
+    with pytest.raises(ProviderError, match="refused"):
+        endpoint.post({"input": ["a"]})
+    assert seen == []
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda url: OpenAICompatibleChat("m", url, "key"),
+        lambda url: OpenAICompatibleChat("m", url, extra_headers={"X-Api-Key": "key"}),
+        lambda url: GeminiEmbedder(api_key="key", base_url=url),
+    ],
+)
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://10.0.0.5:8000/v1",
+        "http://api.example.com/v1",
+        "http://localhost.example.com/v1",
+        "http://127.0.0.1.example.com/v1",
+        "http://[::2]/v1",
+        "http://",
+    ],
+)
+def test_credentials_are_refused_over_plain_http_to_other_hosts(build, url) -> None:
+    with pytest.raises(ValidationError, match="plain http"):
+        build(url)
+
+
+def test_plain_http_is_allowed_without_credentials_or_on_loopback() -> None:
+    for url in ("http://10.0.0.5:8000/v1", "http://api.example.com/v1"):
+        assert OpenAICompatibleChat("m", url).model_name == "m"
+        assert OpenAICompatibleChat("m", url, "", extra_headers={"X-Api-Key": ""}).model_name == "m"
+    for url in ("http://localhost:8000/v1", "http://LOCALHOST/v1", "http://127.0.0.2/v1", "http://[::1]:8000/v1"):
+        assert OpenAICompatibleChat("m", url, "key").model_name == "m"
+    assert OpenAICompatibleChat("m", "https://10.0.0.5:8000/v1", "key").model_name == "m"
+    with pytest.raises(ValidationError, match="invalid endpoint URL"):
+        OpenAICompatibleChat("m", "http://[::1/v1", "key")

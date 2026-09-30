@@ -464,6 +464,8 @@ def test_schema_isolation_and_single_writer(store, tmp_path):
 def test_ros_trace_configuration_and_configured_secret_redaction(tmp_path, monkeypatch):
     assert build_trace_store({"mission_trace_path": ""}) is None
     monkeypatch.setenv("TRACE_TEST_KEY", "example-configured-value")
+    monkeypatch.setenv("TRACE_REVIEW_KEY", "example-review-value")
+    monkeypatch.setenv("GEMINI_API_KEY", "example-gemini-value")
     traces = build_trace_store(
         {
             "mission_trace_path": str(tmp_path / "ros.sqlite3"),
@@ -471,10 +473,12 @@ def test_ros_trace_configuration_and_configured_secret_redaction(tmp_path, monke
             "mission_trace_max_bytes": 1048576,
             "mission_trace_queue_size": 5,
             "api_key_env": "TRACE_TEST_KEY",
+            "mission_review_api_key_env": "TRACE_REVIEW_KEY",
         }
     )
     try:
-        traces.context("mission", "request").emit("instruction", text="example-configured-value")
-        assert "example-configured-value" not in json.dumps(exported(traces))
+        text = "example-configured-value example-review-value example-gemini-value"
+        traces.context("mission", "request").emit("instruction", text=text)
+        assert "example-" not in json.dumps(exported(traces))
     finally:
         traces.close()

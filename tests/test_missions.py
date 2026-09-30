@@ -430,23 +430,31 @@ def test_ros_builder_requires_explicit_model_and_creates_separate_roles(monkeypa
         return Model(proposal() if len(calls) == 1 else review())
 
     monkeypatch.setattr(providers, "OpenAICompatibleChat", model)
-    assert build_mission_planner({"mission_enabled": False}, None) is None
+    monkeypatch.setenv("MISSION_TEST_KEY", "fake-key")
+    assert build_mission_planner({"mission_enabled": False}) is None
     with pytest.raises(ValidationError):
-        build_mission_planner({"mission_enabled": True, "mission_model": ""}, None)
+        build_mission_planner({"mission_enabled": True, "mission_model": ""})
     planner = build_mission_planner(
         {
             "mission_enabled": True,
             "mission_model": "planner",
             "mission_base_url": "https://models.test/v1",
+            "mission_api_key_env": "",
             "mission_review_model": "reviewer",
             "mission_review_base_url": "",
+            "mission_review_api_key_env": "",
+            "chat_base_url": "https://models.test/v2",
+            "chat_api_key_env": "",
+            "api_key_env": "MISSION_TEST_KEY",
             "mission_max_destinations": 8,
             "mission_request_timeout_s": 8.0,
-        },
-        "fake-key",
+        }
     )
     assert planner.plan("visit printer then cupboard").decision == "ready"
-    assert [c[0][0] for c in calls] == ["planner", "reviewer"]
+    assert [c[0] for c in calls] == [
+        ("planner", "https://models.test/v1", "fake-key"),
+        ("reviewer", "https://models.test/v1", "fake-key"),
+    ]
     assert all(c[1]["retry"].attempts == 1 for c in calls)
 
 

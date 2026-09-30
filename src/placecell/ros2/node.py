@@ -2,8 +2,10 @@
 background, and answers questions published on `~/ask` with JSON on `~/answer`.
 
 Run with `placecell-ros2` inside a sourced ROS 2 environment, or `ros2 run` once packaged.
-Configuration is plain ROS parameters; the API key comes from the environment variable named
-by `api_key_env`, never from a parameter, so it does not end up in launch files or logs.
+Configuration is plain ROS parameters; API keys come from the environment variables named
+by `api_key_env` and the per-endpoint `*_api_key_env` parameters, never from a parameter, so
+they do not end up in launch files or logs. The shared `api_key_env` key goes only to the
+scheme, host and port of `chat_base_url`; see `endpoint`.
 """
 
 from __future__ import annotations
@@ -14,8 +16,9 @@ import os
 import queue
 import threading
 import time
+import urllib.parse
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -148,7 +151,66 @@ def build_store(
     return LanceDBStore(Path(db_path).expanduser(), info, limits=limits)
 
 
-def build_mission_planner(parameters: dict[str, Any], api_key: str | None) -> MissionPlanner | None:
+# Group -> (base URL parameter, key env parameter, group an empty base URL falls back to).
+ENDPOINTS = {
+    "chat": ("chat_base_url", "chat_api_key_env", ""),
+    "caption": ("caption_base_url", "caption_api_key_env", ""),
+    "verification": ("verification_base_url", "verification_api_key_env", "caption"),
+    "mission": ("mission_base_url", "mission_api_key_env", "chat"),
+    "mission_review": ("mission_review_base_url", "mission_review_api_key_env", "mission"),
+}
+
+
+def endpoint(parameters: Mapping[str, Any], group: str) -> tuple[str, str | None]:
+    """Base URL and API key of one endpoint group.
+
+    The group's own `*_api_key_env` wins. An empty base URL uses the fallback group's URL
+    and key. Otherwise the group gets the shared key only on `chat_base_url`'s origin.
+    """
+    url_parameter, key_parameter, fallback = ENDPOINTS[group]
+    url = parameters[url_parameter]
+    if not url and fallback:
+        url, key = endpoint(parameters, fallback)
+    else:
+        key = shared_api_key(parameters, url)
+    if parameters[key_parameter]:
+        key = os.environ.get(parameters[key_parameter]) or None
+    return url, key
+
+
+def embedding_api_key(parameters: Mapping[str, Any]) -> str | None:
+    """`embed_api_key_env`, then GEMINI_API_KEY for Gemini, then the shared key on the chat origin."""
+    if parameters["embed_api_key_env"]:
+        return os.environ.get(parameters["embed_api_key_env"]) or None
+    backend = parameters["embed_backend"]
+    if backend == "gemini" and os.environ.get("GEMINI_API_KEY"):
+        return os.environ["GEMINI_API_KEY"]
+    from placecell.providers.gemini import GEMINI_BASE_URL
+    from placecell.providers.openrouter import OPENROUTER_BASE_URL
+
+    defaults = {"gemini": GEMINI_BASE_URL, "openrouter": OPENROUTER_BASE_URL}
+    url = parameters["embed_base_url"] or defaults.get(backend, "https://api.openai.com/v1")
+    return shared_api_key(parameters, url)
+
+
+def shared_api_key(parameters: Mapping[str, Any], base_url: str) -> str | None:
+    """The `api_key_env` key, only for the scheme, host and port of `chat_base_url`."""
+    origin = _origin(base_url)
+    if origin is None or origin != _origin(parameters["chat_base_url"]):
+        return None
+    return os.environ.get(parameters["api_key_env"]) or None
+
+
+def _origin(url: str) -> tuple[str, str, int | None] | None:
+    try:
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+    except ValueError:
+        return None
+    return (parts.scheme, parts.hostname, port) if parts.hostname else None
+
+
+def build_mission_planner(parameters: dict[str, Any]) -> MissionPlanner | None:
     if not parameters["mission_enabled"]:
         return None
     from placecell.providers import OpenAICompatibleChat
@@ -156,19 +218,15 @@ def build_mission_planner(parameters: dict[str, Any], api_key: str | None) -> Mi
     model = parameters["mission_model"]
     if not model:
         raise ValidationError("mission_enabled requires mission_model with tool calling")
-    base_url = parameters["mission_base_url"] or parameters["chat_base_url"]
+    base_url, api_key = endpoint(parameters, "mission")
+    review_url, review_key = endpoint(parameters, "mission_review")
     options = {
-        "api_key": api_key,
         "timeout_s": parameters["mission_request_timeout_s"],
         "max_tokens": 2048,
         "retry": RetryPolicy(attempts=1),
     }
-    planner = OpenAICompatibleChat(model, base_url, **options)
-    reviewer = OpenAICompatibleChat(
-        parameters["mission_review_model"] or model,
-        parameters["mission_review_base_url"] or base_url,
-        **options,
-    )
+    planner = OpenAICompatibleChat(model, base_url, api_key, **options)
+    reviewer = OpenAICompatibleChat(parameters["mission_review_model"] or model, review_url, review_key, **options)
     return MissionPlanner(planner, PlanReviewAgent(reviewer), max_destinations=parameters["mission_max_destinations"])
 
 
@@ -181,7 +239,9 @@ def build_trace_store(parameters: dict[str, Any]) -> TraceStore | None:
         max_events=parameters["mission_trace_max_events"],
         max_bytes=parameters["mission_trace_max_bytes"],
         queue_size=parameters["mission_trace_queue_size"],
-        secrets=[os.environ.get(value, "") for key, value in parameters.items() if key.endswith("api_key_env")],
+        # The Gemini embedding backend also reads GEMINI_API_KEY without a parameter naming it.
+        secrets=[os.environ.get(value, "") for key, value in parameters.items() if key.endswith("api_key_env")]
+        + [os.environ.get("GEMINI_API_KEY", "")],
     )
 
 
@@ -452,16 +512,10 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._storage_lease = StorageLease.for_parameters(p)
             if p["navigation_enabled"] and (not p["map_id"].strip() or not p["localization_required"]):
                 raise ValidationError("Navigation requires a versioned map_id and localization_required:=true.")
-            api_key = os.environ.get(p["api_key_env"]) or None
-            embed_api_key = api_key
-            if p["embed_api_key_env"]:
-                embed_api_key = os.environ.get(p["embed_api_key_env"])
-            elif p["embed_backend"] == "gemini":
-                embed_api_key = os.environ.get("GEMINI_API_KEY") or api_key
             embedder = build_embedder(
                 p["embed_base_url"],
                 p["embed_model"],
-                embed_api_key,
+                embedding_api_key(p),
                 p["embed_dimension"],
                 backend=p["embed_backend"],
                 device=p["embed_device"],
@@ -483,11 +537,12 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 ),
             )
             captioner: Captioner | None = None
+            caption_url, caption_key = endpoint(p, "caption")
             if p["caption_model"]:
                 from placecell.providers import OpenAICompatibleCaptioner
 
                 captioner = OpenAICompatibleCaptioner(
-                    p["caption_model"], p["caption_base_url"], api_key, retry=RetryPolicy(attempts=1)
+                    p["caption_model"], caption_url, caption_key, retry=RetryPolicy(attempts=1)
                 )
             if captioner is None and not embedder.capabilities.image:
                 self.get_logger().warning(
@@ -540,7 +595,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 from placecell.providers import OpenAICompatibleCaptioner
 
                 reviewer = OpenAICompatibleCaptioner(
-                    refinement_model, p["caption_base_url"], api_key, prompt=REFINEMENT_PROMPT, detail="high"
+                    refinement_model, caption_url, caption_key, prompt=REFINEMENT_PROMPT, detail="high"
                 )
                 self._refiner = MemoryRefiner(
                     store,
@@ -552,7 +607,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             if p["chat_model"]:
                 from placecell.providers import OpenAICompatibleChat
 
-                chat = OpenAICompatibleChat(p["chat_model"], p["chat_base_url"], api_key)
+                chat = OpenAICompatibleChat(p["chat_model"], *endpoint(p, "chat"))
                 self._agent = Agent(
                     self._recall, chat, frame_id=p["map_frame"], map_id=p["map_id"], clock=self._memory_time
                 )
@@ -670,8 +725,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 verifier = (
                     VisionVerifier(
                         verification_model,
-                        p["verification_base_url"] or p["caption_base_url"],
-                        api_key,
+                        *endpoint(p, "verification"),
                         timeout_s=p["verification_request_timeout_s"],
                     )
                     if verification_model
@@ -783,7 +837,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     arrival_timeout_s=p["navigation_arrival_timeout_s"],
                     max_observation_age_s=p["navigation_max_observation_age_s"],
                     arrival_max_attempts=p["navigation_arrival_max_attempts"],
-                    mission_planner=build_mission_planner(p, api_key),
+                    mission_planner=build_mission_planner(p),
                     mission_context=self._mission_context,
                     trace_store=self._mission_traces,
                     startup_block_reason=lambda: navigator.startup_block_reason,
@@ -886,8 +940,10 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "embed_cache_folder": "",
                 "embed_dimension": 0,
                 "caption_base_url": "https://api.openai.com/v1",
+                "caption_api_key_env": "",
                 "caption_model": "",
                 "chat_base_url": "https://api.openai.com/v1",
+                "chat_api_key_env": "",
                 "chat_model": "",
                 "api_key_env": "PLACECELL_API_KEY",
                 "min_interval_s": 2.0,
@@ -925,8 +981,10 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "mission_enabled": False,
                 "mission_model": "",
                 "mission_base_url": "",
+                "mission_api_key_env": "",
                 "mission_review_model": "",
                 "mission_review_base_url": "",
+                "mission_review_api_key_env": "",
                 "mission_request_timeout_s": 8.0,
                 "mission_max_destinations": 8,
                 "mission_context_path": "~/.placecell/missions.sqlite3",
@@ -940,6 +998,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "command_max_records": 10000,
                 "verification_model": "",
                 "verification_base_url": "",
+                "verification_api_key_env": "",
                 "verification_request_timeout_s": 8.0,
                 "navigation_arrival_timeout_s": 30.0,
                 "navigation_max_observation_age_s": 5.0,

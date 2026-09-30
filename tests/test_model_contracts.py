@@ -285,7 +285,7 @@ def test_object_decision_contracts_reject_extra_actions_and_duplicate_fields(ima
     else:
         body = {"choices": [{"finish_reason": "stop", "message": {"content": raw}}]}
         detector = ChatObjectDetector(
-            "vision", api_key="test", base_url="http://example.test", transport=FakeTransport([(200, {}, body)])
+            "vision", api_key="test", base_url="https://example.test", transport=FakeTransport([(200, {}, body)])
         )
     from pathlib import Path
 
@@ -316,7 +316,7 @@ def test_http_success_and_error_bodies_have_a_read_limit(monkeypatch, status):
             raise urllib.error.HTTPError("http://example.test", 503, "error", {}, body)
         return body
 
-    monkeypatch.setattr("urllib.request.urlopen", open_request)
+    monkeypatch.setattr("urllib.request.OpenerDirector.open", open_request)
     with pytest.raises(ProviderError, match="byte limit"):
         UrllibTransport().post_json("http://example.test", {}, {}, 1)
     assert body.closed

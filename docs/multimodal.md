@@ -24,8 +24,9 @@ placecell-ros2 --ros-args \
 Add your existing camera, map, localization and caption-model parameters. Gemini uses the
 native API endpoint automatically when `embed_base_url` is empty. `embed_api_key_env` lets
 embedding authentication differ from the caption/chat provider; otherwise the Gemini
-backend checks `GEMINI_API_KEY`, then the existing `api_key_env`. Credentials stay in the
-environment. No SDK, PyTorch, CLIP weights or local model download is required.
+backend checks `GEMINI_API_KEY`, then the existing `api_key_env`, which is sent only when
+the embedding URL has the same scheme, host and port as `chat_base_url`. Credentials stay
+in the environment. No SDK, PyTorch, CLIP weights or local model download is required.
 
 ```python
 import os
@@ -61,7 +62,8 @@ switching providers.
 For object detection through the same key, use `object_backend:=chat`,
 `object_base_url:=https://openrouter.ai/api/v1`, `object_api_key_env:=OPENROUTER_API_KEY`
 and `object_model:=google/gemini-2.5-flash`. Captioning and verification use the same
-base URL with `api_key_env:=OPENROUTER_API_KEY`. Native Gemini object detection remains
+base URL with `api_key_env:=OPENROUTER_API_KEY` and `chat_base_url` set to it too: the
+shared key only goes to `chat_base_url`'s host. Native Gemini object detection remains
 the default. See the [complete simulation configuration](../simulation/config/placecell.yaml).
 
 ## Optional local CLIP
