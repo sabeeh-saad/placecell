@@ -50,11 +50,14 @@ enclosing-circle radius, requested clearance, object extent and position uncerta
 The base heading points the camera toward the object. These are surface estimates;
 unseen object geometry is not reconstructed.
 
-Candidate endpoints and paths must fit the enclosing circle inside the costmap. Inscribed
-obstacle, lethal and unknown cells are rejected. The check covers cell interiors and
-interpolates path segments; checking a clear endpoint alone is insufficient. This circle
-is conservative for rectangular or articulated robots and may reject narrow passages
-that their exact footprint could traverse.
+Candidate endpoints and paths must fit the enclosing circle inside the costmap. Nav2's
+raw costmap is already inflated by the robot's inscribed radius, so, as in Nav2, the
+robot's centre must avoid inscribed obstacle, lethal and unknown cells, while the rest
+of the circle must avoid lethal and unknown cells. The check covers cell interiors and
+samples the whole path; checking a clear endpoint alone is insufficient. Samples are
+half a cell apart; when a path is too long for the fixed work bound, the spacing widens
+and the circle grows by half of it. This circle is conservative for rectangular or
+articulated robots and may reject narrow passages that their exact footprint could traverse.
 
 At most three candidates are queried through Nav2's native
 [ComputePathToPose action](https://api.nav2.org/actions/humble/computepathtopose.html).

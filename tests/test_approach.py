@@ -14,6 +14,7 @@ from placecell import (
     PlanningSnapshot,
     Pose,
 )
+from placecell.approach import _PATH_CELLS, _PATH_SAMPLES
 from placecell.depth import Box
 from placecell.errors import ValidationError
 from placecell.object_types import ObjectRecord, ObjectView
@@ -142,6 +143,68 @@ def test_footprint_collision_interior_sampling_and_rotated_origin():
     assert rotated.free(pose(), 0.3)
     assert original.path_free((pose(), pose(1)), 0.3)
     assert not updated.path_free((pose(), pose(3)), 0.3)
+
+
+def inflated(lethal, resolution=0.05, inscribed=0.25, inflation=0.55, scaling=3.0):
+    """Mirror Nav2's inflation layer: centre distances, a 253 inscribed band and exponential decay."""
+    rows, cols = np.nonzero(lethal)
+    yy, xx = np.indices(lethal.shape)
+    distance = np.min(np.hypot(yy[..., None] - rows, xx[..., None] - cols), axis=-1) * resolution
+    cells = np.where(distance <= inflation, 252 * np.exp(-scaling * np.maximum(distance - inscribed, 0)), 0)
+    cells[distance <= inscribed + 1e-9] = 253
+    cells[lethal] = 254
+    return Costmap(pose(), resolution, 1000, cells.astype(np.uint8))
+
+
+@pytest.mark.parametrize(("width", "centre_cost"), [(0.9, 138), (1.0, 119)])
+def test_inflated_doorway_admits_a_robot_that_nav2_would_pass(width, centre_cost):
+    lethal = np.zeros((80, 80), dtype=bool)
+    lethal[:, 40:42] = True  # a wall at x=2 between two rooms
+    half = round(width / 0.05) // 2
+    lethal[40 - half : 40 + half] = False
+    door = inflated(lethal)
+    assert door.cells[40, 40] == centre_cost
+    assert door.free(pose(2.05, 2), 0.25)
+    assert door.path_free((pose(1, 2), pose(2.05, 2), pose(3, 2)), 0.25)
+    assert door.cells[32, 40] == 253
+    assert not door.free(pose(2.05, 1.62), 0.25)  # centre in the inscribed band beside the jamb
+    assert not door.path_free((pose(1, 1.62), pose(3, 1.62)), 0.25)
+    assert not door.free(pose(2.05, 2), 0.5)  # a wider footprint reaches the jamb itself
+
+
+@pytest.mark.parametrize("cost", [253, 254, 255])
+def test_only_the_centre_must_avoid_inscribed_cost_but_the_footprint_must_avoid_lethal_or_unknown(cost):
+    beside, under = np.array(grid().cells), np.array(grid().cells)
+    beside[100, 104] = cost  # 0.175 m from the centre of cell (100, 100)
+    under[100, 100] = cost
+    beside_map, under_map = replace(grid(), cells=beside), replace(grid(), cells=under)
+    assert beside_map.free(pose(0.025, 0.025), 0.3) == (cost == 253)
+    assert not under_map.free(pose(0.025, 0.025), 0.3)
+    assert beside_map.path_free((pose(0.025, -1), pose(0.025, 1)), 0.3) == (cost == 253)
+    assert not under_map.path_free((pose(-1, 0.025), pose(1, 0.025)), 0.3)
+    # The centreline only clips the cell's corner, between samples.
+    assert not under_map.path_free((pose(-1, 1.0998), pose(1.0998, -1)), 0.3)
+
+
+def test_long_paths_at_fine_resolution_stay_checkable_within_the_work_bound(monkeypatch):
+    fine = Costmap(pose(-1.5, -1.5), 0.01, 1000, np.zeros((300, 3300), dtype=np.uint8))
+    corridor = (pose(0), pose(15), pose(30))
+    assert fine.path_free(corridor, 0.3)
+    cells = np.array(fine.cells)
+    cells[150, 3000] = 254
+    assert not replace(fine, cells=cells).path_free(corridor, 0.3)
+    checks = []
+    clear = Costmap._clear
+    monkeypatch.setattr(Costmap, "_clear", lambda self, *args: checks.append(args) or clear(self, *args))
+    assert fine.path_free(corridor, 1.0)
+    reach, slack = checks[0][2:]
+    assert 0.0025 < slack <= 0.02  # sparser samples for a large footprint, barely enlarged
+    assert len(checks) <= _PATH_SAMPLES and len(checks) * (2 * reach / 0.01 + 2) ** 2 <= _PATH_CELLS
+    checks.clear()
+    assert not fine.path_free((pose(0), pose(0, 500)), 0.02)
+    assert not fine.path_free((pose(-1e308), pose(1e308)), 0.3)
+    assert not fine.path_free((pose(),), float("nan"))
+    assert checks == []  # rejected before examining any cell
 
 
 @pytest.mark.parametrize(

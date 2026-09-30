@@ -6,7 +6,7 @@ import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from itertools import pairwise
+from itertools import accumulate, pairwise
 from typing import Protocol
 
 import numpy as np
@@ -15,6 +15,10 @@ from numpy.typing import NDArray
 from placecell.errors import ValidationError
 from placecell.memory import Pose
 from placecell.object_types import ObjectRecord, ObjectView
+
+# Work bound for one path check: footprint samples, and the costmap cells their windows cover.
+_PATH_SAMPLES = 20_000
+_PATH_CELLS = 32_000_000
 
 
 @dataclass(frozen=True)
@@ -44,12 +48,20 @@ class Costmap:
         object.__setattr__(self, "cells", copied)
 
     def free(self, pose: Pose, radius: float) -> bool:
-        """Reject unknown, inscribed/lethal and outside-map cells intersecting the footprint envelope."""
+        """Apply Nav2's collision rule to a footprint whose circumscribed radius is ``radius``.
+
+        The raw costmap is already inflated by the inscribed radius, so only the centre cell
+        must stay below 253 (inscribed). No lethal (254) or unknown (255) cell may touch the
+        enclosing circle, and the circle must lie inside the map.
+        """
         if not pose.same_frame(self.origin) or not math.isfinite(radius) or not 0 < radius <= 5:
             return False
         dx, dy = pose.x - self.origin.x, pose.y - self.origin.y
         c, s = math.cos(self.origin.yaw), math.sin(self.origin.yaw)
-        x, y = c * dx + s * dy, -s * dx + c * dy
+        return self._clear(c * dx + s * dy, -s * dx + c * dy, radius, 0.0)
+
+    def _clear(self, x: float, y: float, radius: float, slack: float) -> bool:
+        """Check a circle at costmap-local ``x, y``; any cell within ``slack`` counts as a centre cell."""
         height, width = self.cells.shape
         if (
             x - radius < 0
@@ -65,33 +77,44 @@ class Costmap:
         ys = np.arange(lo_y, hi_y + 1) * self.resolution
         gap_x = np.maximum(np.maximum(xs - x, x - xs - self.resolution), 0)
         gap_y = np.maximum(np.maximum(ys - y, y - ys - self.resolution), 0)
-        mask = gap_y[:, None] ** 2 + gap_x[None, :] ** 2 <= radius**2
-        return bool(np.all(self.cells[lo_y : hi_y + 1, lo_x : hi_x + 1][mask] < 253))
+        gap = gap_y[:, None] ** 2 + gap_x[None, :] ** 2
+        window = self.cells[lo_y : hi_y + 1, lo_x : hi_x + 1]
+        return bool(np.all(window[gap <= radius**2] < 254) and np.all(window[gap <= slack**2] < 253))
 
     def path_free(self, path: tuple[Pose, ...], radius: float) -> bool:
-        if not path or len(path) > 4096 or not all(p.same_frame(self.origin) for p in path):
+        """Apply ``free`` along the whole polyline, sampled by arc length within a fixed work bound."""
+        if (
+            not path
+            or len(path) > 4096
+            or not all(p.same_frame(self.origin) for p in path)
+            or not math.isfinite(radius)
+            or not 0 < radius <= 5
+        ):
             return False
-        if not self.free(path[0], radius + self.resolution / 4):
+        arc = list(accumulate((a.distance_to(b) for a, b in pairwise(path)), initial=0.0))
+        length = arc[-1]
+        if not math.isfinite(length):
             return False
-        steps_used = 0
-        max_steps = min(20_000, int(2_000_000 / (2 * radius / self.resolution + 5) ** 2))
-        for start, end in pairwise(path):
-            steps = max(1, math.ceil(start.distance_to(end) / (self.resolution / 2)))
-            steps_used += steps
-            if steps_used > max_steps:
+        # Half-cell spacing, doubled on long paths until the work fits; wider spacing only enlarges the circle.
+        spacing = self.resolution / 2
+        while True:
+            samples = math.ceil(length / spacing) + 1
+            window = (2 * (radius + spacing / 2) / self.resolution + 2) ** 2  # upper bound on cells per sample
+            if samples <= _PATH_SAMPLES and samples * window <= _PATH_CELLS:
+                break
+            spacing *= 2
+            if spacing > radius:
                 return False
-            # Enlarge by half a sampling step to cover space between samples as well.
-            for step in range(1, steps + 1):
-                t = step / steps
-                pose = Pose(
-                    start.x + (end.x - start.x) * t,
-                    start.y + (end.y - start.y) * t,
-                    frame_id=start.frame_id,
-                    map_id=start.map_id,
-                )
-                if not self.free(pose, radius + self.resolution / 4):
-                    return False
-        return True
+        at = np.linspace(0.0, length, samples)
+        dx = np.interp(at, arc, [p.x for p in path]) - self.origin.x
+        dy = np.interp(at, arc, [p.y for p in path]) - self.origin.y
+        c, s = math.cos(self.origin.yaw), math.sin(self.origin.yaw)
+        # Every path point lies within half a spacing of a sample; widen both checks by that much.
+        slack = spacing / 2
+        return all(
+            self._clear(x, y, radius + slack, slack)
+            for x, y in zip((c * dx + s * dy).tolist(), (-s * dx + c * dy).tolist(), strict=True)
+        )
 
 
 @dataclass(frozen=True)
