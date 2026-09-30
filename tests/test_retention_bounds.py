@@ -384,6 +384,87 @@ def test_context_limits_apply_across_scopes_and_survive_reopen(tmp_path):
         reopened.close()
 
 
+def _context_totals(path: Path) -> tuple[tuple[int, int], tuple[int, int]]:
+    db = sqlite3.connect(path)
+    try:
+        kept = db.execute("SELECT events,bytes FROM context_totals WHERE id=1").fetchone()
+        actual = db.execute(
+            "SELECT COUNT(*),COALESCE(SUM(length(CAST(payload AS BLOB))+length(CAST(scope AS BLOB))"
+            "+length(CAST(request_id AS BLOB))+length(kind)+32),0) FROM mission_events"
+        ).fetchone()
+        return kept, actual
+    finally:
+        db.close()
+
+
+def test_context_totals_are_kept_without_rescanning_on_writes(tmp_path):
+    path = tmp_path / "context.db"
+    context = MissionContext(path, scope="a", max_events=6)
+    statements: list[str] = []
+    context._db.set_trace_callback(statements.append)
+    try:
+        for i in range(10):
+            context.record(str(i), "instruction", {"text": f"visit item {i}"})
+            context.record(str(i), "status", {"state": "succeeded"})
+        with pytest.raises(ValidationError, match="capacity"):
+            for step in range(7):
+                context.record("10", "status", {"state": "navigating", "step": step})
+        context.recent()
+        stats = context.stats()
+    finally:
+        context._db.set_trace_callback(None)
+        context.close()
+    assert not [s for s in statements if re.search(r"(?i)\b(count|sum)\(", s)]
+    kept, actual = _context_totals(path)
+    assert kept == actual and kept == (stats["events"], stats["bytes"]) and stats["events"] <= 6
+
+
+def test_existing_context_databases_gain_totals_and_keep_a_conservative_boundary(tmp_path):
+    path = tmp_path / "context.db"
+    for scope in ("a", "b"):
+        context = MissionContext(path, scope=scope, max_events=3)
+        context.record("1", "instruction", {"text": "go to the printer"})
+        context.close()
+    context = MissionContext(path, scope="a", max_events=3)
+    context.record("2", "instruction", {"text": "go to the lab"})
+    context.record("3", "instruction", {"text": "go to the dock"})
+    context.close()
+    db = sqlite3.connect(path)
+    with db:
+        db.executescript("""
+            DROP TRIGGER context_total_insert; DROP TRIGGER context_total_delete;
+            DROP TABLE context_totals; DROP TABLE context_scope_removed;
+        """)
+    db.close()
+    reopened = MissionContext(path, scope="b", max_events=3)
+    try:
+        kept, actual = _context_totals(path)
+        assert kept == actual == (reopened.stats()["events"], reopened.stats()["bytes"])
+        assert "history_boundary" in reopened.recent()[0]  # Removal before the upgrade cannot be attributed.
+    finally:
+        reopened.close()
+
+
+def test_history_boundary_reports_removals_from_its_own_scope_only(tmp_path):
+    path = tmp_path / "context.db"
+    busy, quiet = (MissionContext(path, scope=scope, max_events=4) for scope in ("busy", "quiet"))
+    try:
+        for i in range(4):
+            busy.record(f"b{i}", "instruction", {"text": f"go to shelf {i}"})
+        quiet.record("q0", "instruction", {"text": "go to the printer"})  # Prunes b0.
+        assert busy.stats()["pruned_events"] == 1 and "history_boundary" in busy.recent()[0]
+        assert [(e["request_id"], "history_boundary" in e) for e in quiet.recent()] == [("q0", False)]
+        for i in range(1, 4):
+            quiet.record(f"q{i}", "instruction", {"text": f"go to room {i}"})  # Prunes b1..b3.
+        assert all("history_boundary" not in e for e in quiet.recent())
+        quiet.record("q4", "instruction", {"text": "go to the dock"})  # Prunes q0.
+        window = quiet.recent()
+        assert window[0]["request_id"] == "q1" and "history_boundary" in window[0]
+    finally:
+        busy.close()
+        quiet.close()
+
+
 def test_context_age_and_bytes_are_enforced_on_reads(tmp_path):
     now = [100.0]
     context = MissionContext(tmp_path / "context.db", max_bytes=1200, retention_s=10, clock=lambda: now[0])

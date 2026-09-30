@@ -36,6 +36,27 @@ _FIELDS = {
 }
 
 
+_SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS mission_events (id INTEGER PRIMARY KEY, scope TEXT NOT NULL, "
+    "request_id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, timestamp REAL NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS mission_scope ON mission_events(scope, id)",
+    "CREATE INDEX IF NOT EXISTS mission_request ON mission_events(scope, request_id, id)",
+    "CREATE TABLE IF NOT EXISTS context_retention (id INTEGER PRIMARY KEY CHECK(id=1), removed INTEGER NOT NULL)",
+    "INSERT OR IGNORE INTO context_retention VALUES (1,0)",
+    # Retained totals, kept in the writing transaction so pruning and rollbacks stay exact.
+    "CREATE TABLE IF NOT EXISTS context_totals "
+    "(id INTEGER PRIMARY KEY CHECK(id=1), events INTEGER NOT NULL, bytes INTEGER NOT NULL)",
+    "CREATE TRIGGER IF NOT EXISTS context_total_insert AFTER INSERT ON mission_events BEGIN "
+    "UPDATE context_totals SET events=events+1,bytes=bytes+(length(CAST(new.payload AS BLOB))"
+    "+length(CAST(new.scope AS BLOB))+length(CAST(new.request_id AS BLOB))+length(new.kind)+32) WHERE id=1; END",
+    "CREATE TRIGGER IF NOT EXISTS context_total_delete AFTER DELETE ON mission_events BEGIN "
+    "UPDATE context_totals SET events=events-1,bytes=bytes-(length(CAST(old.payload AS BLOB))"
+    "+length(CAST(old.scope AS BLOB))+length(CAST(old.request_id AS BLOB))+length(old.kind)+32) WHERE id=1; END",
+    # Scopes that lost rows to pruning; only they report a history boundary for it.
+    "CREATE TABLE IF NOT EXISTS context_scope_removed (scope TEXT PRIMARY KEY, removed INTEGER NOT NULL)",
+)
+
+
 def _structured(kind: str, payload: Any) -> dict[str, Any]:
     fields = _FIELDS.get(kind, frozenset())
     return {key: value for key, value in payload.items() if key in fields} if isinstance(payload, dict) else {}
@@ -73,17 +94,22 @@ class MissionContext:
         self._clock = clock
         self._references_available = references_available
         self._db = sqlite3.connect(str(path), timeout=0.25, check_same_thread=False)
-        self._db.executescript("""
-            CREATE TABLE IF NOT EXISTS mission_events (
-                id INTEGER PRIMARY KEY, scope TEXT NOT NULL, request_id TEXT NOT NULL,
-                kind TEXT NOT NULL, payload TEXT NOT NULL, timestamp REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS mission_scope ON mission_events(scope, id);
-            CREATE INDEX IF NOT EXISTS mission_request ON mission_events(scope, request_id, id);
-            CREATE TABLE IF NOT EXISTS context_retention (id INTEGER PRIMARY KEY CHECK(id=1), removed INTEGER NOT NULL);
-            INSERT OR IGNORE INTO context_retention VALUES (1,0);
-        """)
         try:
+            with self._db:
+                self._db.execute("BEGIN IMMEDIATE")
+                for statement in _SCHEMA:
+                    self._db.execute(statement)
+                if self._db.execute("SELECT 1 FROM context_totals").fetchone() is None:
+                    self._db.execute(
+                        "INSERT INTO context_totals SELECT 1,COUNT(*),COALESCE(SUM(length(CAST(payload AS BLOB))"
+                        "+length(CAST(scope AS BLOB))+length(CAST(request_id AS BLOB))+length(kind)+32),0) "
+                        "FROM mission_events"
+                    )
+                    # Earlier versions counted pruning globally; any retained scope may have lost rows.
+                    self._db.execute(
+                        "INSERT OR IGNORE INTO context_scope_removed SELECT DISTINCT scope,1 FROM mission_events "
+                        "WHERE (SELECT removed FROM context_retention WHERE id=1)>0"
+                    )
             self.prune()
         except Exception:
             self._db.close()
@@ -96,10 +122,7 @@ class MissionContext:
         return now
 
     def _totals(self) -> tuple[int, int]:
-        row = self._db.execute(
-            "SELECT COUNT(*),COALESCE(SUM(length(CAST(payload AS BLOB))+length(CAST(scope AS BLOB))"
-            "+length(CAST(request_id AS BLOB))+length(kind)+32),0) FROM mission_events"
-        ).fetchone()
+        row = self._db.execute("SELECT events,bytes FROM context_totals WHERE id=1").fetchone()
         return int(row[0]), int(row[1])
 
     def _prune(self, now: float, protected: str = "") -> int:
@@ -119,7 +142,13 @@ class MissionContext:
                 if over:
                     raise ValidationError("current mission exceeds context retention capacity")
                 break
-            removed += self._db.execute("DELETE FROM mission_events WHERE scope=? AND request_id=?", row[:2]).rowcount
+            deleted = self._db.execute("DELETE FROM mission_events WHERE scope=? AND request_id=?", row[:2]).rowcount
+            self._db.execute(
+                "INSERT INTO context_scope_removed VALUES (?,?) "
+                "ON CONFLICT(scope) DO UPDATE SET removed=removed+excluded.removed",
+                (row[0], deleted),
+            )
+            removed += deleted
         self._db.execute("UPDATE context_retention SET removed=removed+? WHERE id=1", (removed,))
         return removed
 
@@ -160,7 +189,9 @@ class MissionContext:
                 "WHERE scope = ? AND request_id != ? ORDER BY id DESC LIMIT ?",
                 (self._scope, exclude_request_id, limit + 1),
             ).fetchall()
-            truncated = bool(self._db.execute("SELECT removed FROM context_retention WHERE id=1").fetchone()[0])
+            truncated = bool(
+                self._db.execute("SELECT removed FROM context_scope_removed WHERE scope=?", (self._scope,)).fetchone()
+            )
         result: list[dict[str, Any]] = []
         # Reserve space for an explicit boundary rather than hide pruning from the agents.
         used = len(json.dumps({"history_boundary": _WINDOW_NOTICE})) + 4

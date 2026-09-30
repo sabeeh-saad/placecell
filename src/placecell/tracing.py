@@ -44,6 +44,24 @@ _SENSITIVE = re.compile(
 )
 
 
+# Retained event count and body bytes as meta rows (no extra page under the size cap), kept in
+# the writing transaction so trims and rollbacks stay exact.
+_TOTAL_KEYS = ("retained_events", "retained_bytes")
+_TRACE_TOTALS = (
+    "INSERT OR REPLACE INTO trace_meta SELECT 'retained_events',count(*) FROM trace_events",
+    "INSERT OR REPLACE INTO trace_meta SELECT 'retained_bytes',coalesce(sum(length(CAST(body AS BLOB))),0) "
+    "FROM trace_events",
+    "CREATE TRIGGER IF NOT EXISTS trace_total_insert AFTER INSERT ON trace_events BEGIN "
+    "UPDATE trace_meta SET value=CAST(value AS INTEGER)+1 WHERE key='retained_events'; "
+    "UPDATE trace_meta SET value=CAST(value AS INTEGER)+length(CAST(new.body AS BLOB)) WHERE key='retained_bytes'; "
+    "END",
+    "CREATE TRIGGER IF NOT EXISTS trace_total_delete AFTER DELETE ON trace_events BEGIN "
+    "UPDATE trace_meta SET value=CAST(value AS INTEGER)-1 WHERE key='retained_events'; "
+    "UPDATE trace_meta SET value=CAST(value AS INTEGER)-length(CAST(old.body AS BLOB)) WHERE key='retained_bytes'; "
+    "END",
+)
+
+
 def _clean(value: Any, secrets: tuple[str, ...], clipped: list[bool], depth: int = 0) -> Any:
     if depth > 6:
         clipped[0] = True
@@ -280,6 +298,10 @@ class TraceStore:
             old = dict(self._db.execute("SELECT key,value FROM trace_meta"))
             if old.get("schema_version", "1") != "1":
                 raise ValidationError("unsupported trace schema version")
+            if not all(key in old for key in _TOTAL_KEYS):
+                self._db.execute("BEGIN IMMEDIATE")
+                for statement in _TRACE_TOTALS:
+                    self._db.execute(statement)
             self._counts = {key: int(old.get(key, "0")) for key in _HEALTH_COUNTS}
             self._counts["unclean_shutdowns"] += int(old.get("open_session", "false") == "true")
             self._db.execute("INSERT OR REPLACE INTO trace_meta VALUES ('schema_version', '1')")
@@ -374,9 +396,8 @@ class TraceStore:
 
     def _write(self, item: tuple[str, str]) -> None:
         with self._db:
-            count, size = self._db.execute(
-                "SELECT count(*),coalesce(sum(length(CAST(body AS BLOB))),0) FROM trace_events"
-            ).fetchone()
+            totals = dict(self._db.execute("SELECT key,value FROM trace_meta WHERE key IN (?,?)", _TOTAL_KEYS))
+            count, size = int(totals["retained_events"]), int(totals["retained_bytes"])
             removed = 0
             while count and (count >= self._max_events or size + len(item[1].encode()) > self._payload_budget):
                 seq, length = self._db.execute(
@@ -480,7 +501,7 @@ def read_trace(path: str | Path, mission_id: str | None = None) -> dict[str, Any
     return {
         "schema_version": 1,
         "mission_id": mission_id,
-        "health": {key: json.loads(value) for key, value in meta.items()},
+        "health": {key: json.loads(value) for key, value in meta.items() if key not in _TOTAL_KEYS},
         "summary": {
             "capture_status": "open_or_unclean" if meta.get("open_session") == "true" else "closed",
             "loss_counters_nonzero": [key for key, value in losses.items() if value],

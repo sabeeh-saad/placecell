@@ -124,6 +124,50 @@ def test_retention_limits_event_count_and_database_bytes(tmp_path, max_events, m
         assert traces.close()
 
 
+def _trace_totals(path):
+    db = sqlite3.connect(path)
+    try:
+        kept = tuple(
+            int(db.execute("SELECT value FROM trace_meta WHERE key=?", (key,)).fetchone()[0])
+            for key in ("retained_events", "retained_bytes")
+        )
+        actual = db.execute("SELECT count(*),coalesce(sum(length(CAST(body AS BLOB))),0) FROM trace_events").fetchone()
+        return kept, actual
+    finally:
+        db.close()
+
+
+def test_trace_totals_are_kept_without_rescanning_on_writes(tmp_path):
+    traces = TraceStore(tmp_path / "ring.sqlite3", max_events=5)
+    statements = []
+    traces._db.set_trace_callback(statements.append)
+    context = traces.context("mission", "request")
+    for number in range(12):
+        context.emit("sample", number=number, text="x" * (100 * number))
+    assert traces.flush()
+    traces._db.set_trace_callback(None)
+    assert traces.close()
+    assert not [s for s in statements if "count(" in s.casefold() or "sum(" in s.casefold()]
+    kept, actual = _trace_totals(traces.path)
+    assert kept == actual and kept[0] == 5
+    db = sqlite3.connect(traces.path)
+    try:
+        with pytest.raises(sqlite3.IntegrityError), db:
+            db.execute("INSERT INTO trace_events(mission_id,body) VALUES ('m','{}')")
+            db.execute("INSERT INTO trace_meta VALUES ('schema_version','1')")  # Fails; the whole write rolls back.
+        db.executescript(
+            "DROP TRIGGER trace_total_insert; DROP TRIGGER trace_total_delete; "
+            "DELETE FROM trace_meta WHERE key LIKE 'retained_%'"
+        )
+    finally:
+        db.close()
+    reopened = TraceStore(traces.path, max_events=5)
+    reopened.context("mission", "later").emit("sample", number=12)
+    assert reopened.flush() and reopened.close()
+    kept, actual = _trace_totals(traces.path)
+    assert kept == actual and kept[0] == 5
+
+
 def test_writer_failure_is_visible_and_recovers_without_raising_into_caller(store, monkeypatch):
     original = store._write
 

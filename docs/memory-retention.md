@@ -104,9 +104,15 @@ current request alone cannot fit, its new event is refused and the transaction r
 back. Existing persistence-failure handling still blocks new motion and preserves stop
 handling. Reads and startup also enforce aging; expired context need not wait for the
 timer. `stats()` reports retained events, accounted bytes and cumulative pruned events.
+Retained totals are kept by SQLite triggers in the writing transaction, so inserts and
+pruning never rescan the table; opening a database from an earlier version counts it once.
 
 Planning and review retain their twenty-event, 16,000-character prompt budget.
-Truncation and pruning now leave an explicit history boundary. A newer event that
+Truncation and pruning now leave an explicit history boundary. Pruning marks only the
+scope (robot, map and conversation) that lost rows; another conversation sharing the
+database keeps a clean window until its own history is removed. Databases written by
+earlier versions only counted pruning globally, so after an upgrade every scope with
+retained rows keeps the boundary if anything had been pruned. A newer event that
 cannot fit never causes an older destination to be substituted. The ROS adapter also
 checks referenced scene/object identities: an unavailable reference removes that
 request and older events from the prompt, leaving a boundary instead of an older

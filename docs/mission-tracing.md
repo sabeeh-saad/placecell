@@ -118,7 +118,9 @@ Callbacks sanitize bounded data and enqueue without waiting for disk writes. A b
 writer commits SQLite events. Defaults retain at most 10,000 events in a 16 MiB main
 database, with a 256-event queue. A payload budget leaves room for indexes/metadata;
 SQLite also enforces a page cap. The rollback journal can temporarily require comparable
-additional disk space. The exporter loads the retained snapshot into memory.
+additional disk space. Retained event and byte totals are kept by triggers in the writing
+transaction, so a write never rescans the table; a database from an earlier version is
+counted once when first opened. The exporter loads the retained snapshot into memory.
 
 Retention removes the oldest events, including parts of old or long-running missions.
 Texts and collections have field limits; oversized events are replaced by an omission
