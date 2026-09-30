@@ -93,8 +93,8 @@ def child(root, backend, target):
     ingester = Ingester(embed, store, Caption())
     original_persist = ingester.persist
 
-    def persist(memory):
-        result = original_persist(memory)
+    def persist(memory, candidates=None):
+        result = original_persist(memory, candidates)
         checkpoint("memory_uncommitted")
         return result
 
