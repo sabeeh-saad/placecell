@@ -299,3 +299,33 @@ def test_curator_scope_supersede_and_forget(store: InMemoryStore, hashing: Hashi
     assert store.count(EVERYTHING) == 0
     with pytest.raises(ValidationError):
         RetentionPolicy(min_confidence=2)
+
+
+def test_prefetched_candidates_are_rechecked_inside_the_transaction(store, hashing):
+    from unittest.mock import patch
+
+    r = Reinforcer(store, ReinforcementPolicy(min_similarity=0.95), remover=None)
+    first = embedded(hashing, "printer", t=100)
+    store.upsert([first])
+    repeat = embedded(hashing, "printer", t=200, x=0.2)
+    candidates = r.candidates(repeat)
+    assert [hit.memory.id for hit in candidates] == [first.id]
+    with patch.object(store, "search", wraps=store.search) as search:
+        stored, merged = r.reinforce_or_insert(repeat, candidates)
+    assert merged and stored.id == first.id and stored.confidence == pytest.approx(0.8) and not search.called
+
+    # A candidate changed after the search is judged again as it is now.
+    again = embedded(hashing, "printer", t=300, x=0.1)
+    stale = r.candidates(again)
+    store.upsert([replace(store.get(first.id), confidence=0.2)])
+    stored, merged = r.reinforce_or_insert(again, stale)
+    assert merged and stored.confidence == pytest.approx(0.2) and stored.observations == 3
+
+    # A candidate deleted after the search is not merged into.
+    late = embedded(hashing, "printer", t=400, x=0.1)
+    stale = r.candidates(late)
+    store.delete([first.id])
+    stored, merged = r.reinforce_or_insert(late, stale)
+    assert not merged and stored.id == late.id and store.count() == 1
+    with pytest.raises(ValidationError):
+        r.candidates(embedded(hashing, "a", embedding=None, model=""))

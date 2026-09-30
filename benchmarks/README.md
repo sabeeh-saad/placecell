@@ -8,7 +8,8 @@ the repository root with the source tree on the path.
 `store_scaling.py` loads a synthetic collection of each requested size and measures:
 
 - **ingest**: observations per second through `Ingester` with contradiction checks, as the
-  ROS node runs it; about 40 % are revisits that merge into an existing memory;
+  ROS node runs it, and how long each write transaction holds the store; about 40 % are
+  revisits that merge into an existing memory;
 - **search**: p50/p95 latency of `search(k=10)` without a filter and with a robot, a
   place (5 m radius) and a one-day time filter, outside and inside `store.transaction()`;
 - **recall@10** of each search against exact brute force over a snapshot of the store;

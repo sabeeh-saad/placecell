@@ -145,8 +145,8 @@ def test_retry_preserves_completed_batches_and_deduplicates_partial_writes(
     class FailThird(Reinforcer):
         calls = 0
 
-        def reinforce_or_insert(self, memory):
-            result = super().reinforce_or_insert(memory)
+        def reinforce_or_insert(self, memory, candidates=None):
+            result = super().reinforce_or_insert(memory, candidates)
             self.calls += 1
             if self.calls == 3:
                 raise ProviderError("write succeeded before the connection failed")
@@ -258,8 +258,8 @@ def test_partial_retry_does_not_read_keyframes_already_replaced(
     class FailSecond(Reinforcer):
         calls = 0
 
-        def reinforce_or_insert(self, memory):
-            result = super().reinforce_or_insert(memory)
+        def reinforce_or_insert(self, memory, candidates=None):
+            result = super().reinforce_or_insert(memory, candidates)
             self.calls += 1
             if self.calls == 2:
                 raise ProviderError("write succeeded before response failed")
@@ -276,3 +276,21 @@ def test_partial_retry_does_not_read_keyframes_already_replaced(
     assert [len(items) for items in captioner.calls] == [3, 2]
     assert store.query()[0].observations == 3
     assert len(list(tmp_path.glob("*.jpg"))) == 1
+
+
+def test_ingestion_searches_merge_candidates_outside_the_write_transaction(store, hashing):
+    from unittest.mock import patch
+
+    ingester = Ingester(hashing, store, FakeCaptioner("printer"), remover=None)
+    ingester.ingest([obs(100)])
+    depths = []
+    search = store.search
+
+    def recording(*args, **kwargs):
+        depths.append(store._depth)
+        return search(*args, **kwargs)
+
+    with patch.object(store, "search", side_effect=recording):
+        report = ingester.ingest([obs(200, x=0.2)])
+    assert report.merged == 1 and depths == [0]
+    assert store.get("r1:front:100000").observations == 2

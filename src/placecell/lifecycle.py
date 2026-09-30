@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from placecell.corrections import CorrectionLog
 from placecell.errors import ValidationError
 from placecell.memory import Evidence, Memory
-from placecell.store.base import EVERYTHING, Filter, VectorStore
+from placecell.store.base import EVERYTHING, Filter, Hit, VectorStore
 from placecell.store.limits import StoreLimits
 
 EvidenceRemover = Callable[[Evidence], None]
@@ -91,29 +91,53 @@ class Reinforcer:
         self._policy = policy or ReinforcementPolicy()
         self._remover = remover
 
-    def reinforce_or_insert(self, memory: Memory) -> tuple[Memory, bool]:
+    def reinforce_or_insert(self, memory: Memory, candidates: Sequence[Hit] | None = None) -> tuple[Memory, bool]:
         """Store the memory. Returns the memory as stored and whether it merged into an existing one.
 
         A memory whose id is already present is a replay of the same observation and is
         left untouched, which makes ingestion idempotent. A superseded memory of the same
         thing at the same place is revived: the object came back.
+
+        `candidates` from `candidates()`, searched before this call, keep the search out of
+        the write transaction. A chosen candidate that changed or disappeared since is decided
+        again inside it; a memory that became similar meanwhile is not, and stays separate.
         """
         with self._store.transaction():
-            result = self._reinforce(memory)
+            result = self._reinforce(memory, candidates)
         if self._remover is not None:
             self._store.drain_cleanup(self._remover)
         return result
 
-    def _reinforce(self, memory: Memory) -> tuple[Memory, bool]:
+    def candidates(self, memory: Memory) -> list[Hit]:
+        """Stored memories the memory could merge into, best first."""
+        if memory.embedding is None:
+            raise ValidationError("only embedded memories can be stored")
+        where = same_view(memory, self._policy.radius_m, include_superseded=True)
+        return self._store.search(memory.embedding, 12, where)
+
+    def _reinforce(self, memory: Memory, candidates: Sequence[Hit] | None) -> tuple[Memory, bool]:
         if memory.embedding is None:
             raise ValidationError("only embedded memories can be stored")
         existing = self.find_observation(memory.id)
         if existing is not None:
             self._discard_evidence([memory])
             return existing, True
-        where = same_view(memory, self._policy.radius_m, include_superseded=True)
-        hits = self._store.search(memory.embedding, 12, where)
-        match = next(
+        match = self._match(memory, self.candidates(memory) if candidates is None else candidates)
+        if match is not None and candidates is not None:
+            current = self._store.get(match.id)
+            if current is None or current != match or not current.same_embeddings(match):
+                match = self._match(memory, self.candidates(memory))
+        if match is not None:
+            merged = self._merge(match, memory)
+            self._store.upsert([merged])
+            self._discard_evidence([match, memory])
+            return merged, True
+        self._store.upsert([memory])
+        return memory, False
+
+    def _match(self, memory: Memory, hits: Iterable[Hit]) -> Memory | None:
+        """The most similar hit seen from the same place and heading, if similar enough."""
+        return next(
             (
                 hit.memory
                 for hit in hits
@@ -130,13 +154,6 @@ class Reinforcer:
             ),
             None,
         )
-        if match is not None:
-            merged = self._merge(match, memory)
-            self._store.upsert([merged])
-            self._discard_evidence([match, memory])
-            return merged, True
-        self._store.upsert([memory])
-        return memory, False
 
     def find_observation(self, observation_id: str) -> Memory | None:
         """Find an observation even when it was folded into another memory."""

@@ -5,7 +5,8 @@ The data is synthetic so runs are reproducible: clustered unit vectors, poses on
 and then measured:
 
 - ingest: observations through `Ingester` (reinforcement, contradiction and admission, as
-  the ROS node runs it), about 40 % of them revisits that merge into an existing memory;
+  the ROS node runs it), about 40 % of them revisits that merge into an existing memory,
+  and how long each of its write transactions holds the store;
 - search: p50/p95 latency per filter, outside and inside a store transaction;
 - recall@10 of the store's search against exact brute force over a snapshot;
 - reads: search latency while another thread ingests.
@@ -25,6 +26,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -242,6 +244,33 @@ def open_store(backend: str, info: CollectionInfo, limits: StoreLimits, director
     return LanceDBStore(directory, info, limits=limits)
 
 
+@contextmanager
+def held_transactions(store: VectorStore) -> Iterator[list[float]]:
+    """Time how long each outermost store transaction opened inside the block is held."""
+    held: list[float] = []
+    transaction = store.transaction
+    local = threading.local()
+
+    @contextmanager
+    def timed() -> Iterator[None]:
+        depth = getattr(local, "depth", 0)
+        with transaction():
+            local.depth = depth + 1
+            started = time.perf_counter()
+            try:
+                yield
+            finally:
+                local.depth = depth
+                if not depth:
+                    held.append(time.perf_counter() - started)
+
+    store.transaction = timed  # type: ignore[method-assign]
+    try:
+        yield held
+    finally:
+        del store.transaction
+
+
 def ingest(store: VectorStore, embedder: LookupEmbedder, observations: list[Observation]) -> tuple[float, IngestReport]:
     """Ingest like the ROS node: batches of eight with contradiction checks and no file removal."""
     ingester = Ingester(embedder, store, observer=Observer(store), remover=None, batch_size=8)
@@ -318,13 +347,15 @@ def run_size(options: argparse.Namespace, size: int, directory: Path) -> dict[st
             started = time.perf_counter()
             maintain()
             result["maintain_s"] = round(time.perf_counter() - started, 2)
-        rate, report = ingest(store, embedder, scene.observations(options.ingest, embedder))
+        with held_transactions(store) as held:
+            rate, report = ingest(store, embedder, scene.observations(options.ingest, embedder))
         result["ingest"] = {
             "observations": options.ingest,
             "per_s": round(rate, 1),
             "inserted": report.inserted,
             "merged": report.merged,
             "contradicted": report.contradicted,
+            "transaction": _ms(held),
         }
         queries = scene.queries(options.queries)
         for vector, where in (queries[name][0] for name in FILTERS):
@@ -373,13 +404,14 @@ def table(report: dict[str, Any]) -> str:
             recall = "-" if s["recall_at_10"] is None else f"{s['recall_at_10']:.3f}"
             lines.append("| " + " | ".join(str(cell) for cell in (*head, name, *latencies, recall)) + " |")
             head = [""] * 4
-    lines += ["", "| size | idle read p95 | reads during ingest | read p50 | read p95 | writes/s |"]
-    lines.append("| ---: | ---: | ---: | ---: | ---: | ---: |")
+    lines += ["", "| size | ingest tx p50 | tx p95 | idle read p95 | busy reads | read p50 | read p95 | writes/s |"]
+    lines.append("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
     for result in report["results"]:
+        held = result["ingest"]["transaction"]
         idle, busy = result["reads"]["idle"], result["reads"]["during_ingest"]
         lines.append(
-            f"| {result['size']} | {idle['p95_ms']:.1f} | {busy['reads']} | {busy['p50_ms']:.1f} | "
-            f"{busy['p95_ms']:.1f} | {busy['writes_per_s']} |"
+            f"| {result['size']} | {held['p50_ms']:.1f} | {held['p95_ms']:.1f} | {idle['p95_ms']:.1f} | "
+            f"{busy['reads']} | {busy['p50_ms']:.1f} | {busy['p95_ms']:.1f} | {busy['writes_per_s']} |"
         )
     return "\n".join(lines) + "\n"
 

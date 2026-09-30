@@ -129,6 +129,11 @@ least 32), rescore five times k candidates with full-precision vectors, and prob
 when a selective filter leaves fewer than k matches. `benchmarks/store_scaling.py` measures
 latency and recall@10 at a given collection size.
 
+Ingestion searches for merge candidates before it opens the write transaction, so the
+transaction holds the store only for the write. Inside it the chosen candidate is read
+again; if it changed or was deleted meanwhile, the merge is decided again. A memory that
+became similar in between is not reconsidered and the observation is stored separately.
+
 ## Provider credentials
 
 The ROS node reads API keys only from environment variables named by parameters. The

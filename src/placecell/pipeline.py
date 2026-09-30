@@ -18,7 +18,7 @@ from placecell.objects import ObjectTracker
 from placecell.observer import Observer
 from placecell.providers.base import Captioner, EmbeddingProvider
 from placecell.providers.embedding import embed_memories
-from placecell.store.base import VectorStore
+from placecell.store.base import Hit, VectorStore
 from placecell.store.jobs import WorkJournal
 
 
@@ -194,12 +194,14 @@ class Ingester:
                     except PlacecellError as e:
                         # Objects are optional evidence; their failure must not cost the scene memory.
                         object_errors.append(f"{type(e).__name__}: {e}")
+                # Searching before the transaction keeps concurrent reads and writes moving.
+                candidates = self._reinforcer.candidates(m)
                 with self._store.transaction():
                     if self._reinforcer.find_observation(m.id) is not None:
                         merged += 1
                         self._discard_evidence([m.evidence] if m.evidence else [])
                         continue
-                    stored, was_merged = self.persist(m)
+                    stored, was_merged = self.persist(m, candidates)
                     merged += was_merged
                     inserted += not was_merged
                     if self._observer is not None:
@@ -279,5 +281,5 @@ class Ingester:
         """Attach independent media and caption vectors, returning (embedded, rejected)."""
         return embed_memories(memories, self._embedder)
 
-    def persist(self, memory: Memory) -> tuple[Memory, bool]:
-        return self._reinforcer.reinforce_or_insert(memory)
+    def persist(self, memory: Memory, candidates: Sequence[Hit] | None = None) -> tuple[Memory, bool]:
+        return self._reinforcer.reinforce_or_insert(memory, candidates)
