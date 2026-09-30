@@ -23,7 +23,7 @@ def envelope(**changes):
         "scope": asdict(SCOPE),
         "issued_at_unix_s": 1000,
         "command": "instruction",
-        "text": "Visit the printer",
+        "text": "Visit the printer, then the cupboard",
         **changes,
     }
 

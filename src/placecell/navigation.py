@@ -157,6 +157,25 @@ def _trace_destination(destination: Destination | None) -> dict[str, object] | N
     }
 
 
+_ARTICLES = frozenset({"the", "a", "an"})
+
+
+def _words(text: str, articles: bool) -> list[str]:
+    words = re.sub(r"[\W_]+", " ", text.casefold()).split()
+    return words if articles else [w for w in words if w not in _ARTICLES]
+
+
+def mentions_place(place: str, texts: tuple[str, ...]) -> bool:
+    """The place name appears as whole words in one text, ignoring case, punctuation, spacing and articles."""
+    articles = all(w in _ARTICLES for w in _words(place, True))  # A name made only of articles keeps them.
+    name = _words(place, articles)
+    for text in texts:
+        words = _words(text, articles)
+        if name and any(words[i : i + len(name)] == name for i in range(len(words) - len(name) + 1)):
+            return True
+    return False
+
+
 def load_named_places(path: str | Path) -> dict[str, Pose]:
     """Load operator-defined navigation poses: {name: {x, y, yaw, frame_id, map_id}}."""
     try:
@@ -674,6 +693,7 @@ class NavigationCommands:
         self._mission: MissionPlan | None = None
         self._mission_id = ""
         self._mission_step = 0
+        self._mission_grounding: tuple[str, ...] = ()
         self._context = mission_context or (MissionContext() if mission_planner is not None else None)
         self._context_ok = True
         self._last_context_state: tuple[str, str] | None = None
@@ -833,6 +853,7 @@ class NavigationCommands:
 
     def _clear_mission(self) -> None:
         self._mission, self._mission_id, self._mission_step = None, "", 0
+        self._mission_grounding = ()
         self._accepted_localization = None
 
     def _provenance_ready(self, destination: Destination | None = None) -> bool:
@@ -1073,6 +1094,16 @@ class NavigationCommands:
                 )
                 return
             self._mission = plan
+            # The user's words that a configured place must appear in: this request and the
+            # earlier instructions the planner was shown.
+            self._mission_grounding = (
+                text,
+                *(
+                    event["data"]["text"]
+                    for event in context
+                    if event.get("kind") == "instruction" and isinstance(event.get("data", {}).get("text"), str)
+                ),
+            )
             self._reset_leg(request_id)
             self._emit(NavigationUpdate(request_id, "planned", plan.message))
             self._emit(NavigationUpdate(request_id, "resolving", "Looking up the first mission destination."))
@@ -1175,6 +1206,24 @@ class NavigationCommands:
                 )
                 if result.state != "ambiguous":
                     self._clear_mission()
+                return
+            place = result.choices[0]
+            if (
+                self._mission is not None
+                and place.source == "named_place"
+                and not mentions_place(place.label, self._mission_grounding)
+            ):
+                # Named places skip visual checks, so a plan may only choose one the user named.
+                trace_event("plan.place_ungrounded", place=place.label, step=self._mission_step + 1)
+                self._complete(
+                    NavigationUpdate(
+                        request_id,
+                        "clarification_required",
+                        f"The plan chose the configured place '{place.label}', which the request does not name. "
+                        "Please name the place to visit.",
+                        failure_stage="identity",
+                    )
+                )
                 return
             self._destination, self._state = result.choices[0], "submitting"
             self._accepted_sensors = self._sensor_generation(self._destination)

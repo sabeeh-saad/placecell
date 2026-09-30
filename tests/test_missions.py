@@ -344,6 +344,61 @@ def test_next_goal_is_resolved_against_current_state_and_not_precomputed(mission
     assert not m.commands.busy
 
 
+def test_a_configured_place_the_user_never_named_is_not_dispatched(mission):
+    m = mission
+    m.model.replies = [proposal(("printer",))]
+    m.commands.handle("Visit the loading dock")
+    m.tasks.pop(0)()
+    assert not m.nav.sent and not m.commands.busy
+    final = m.events[-1]
+    assert final.state == "clarification_required" and final.failure_stage == "identity"
+    assert "printer" in final.message and final.mission_step == 1
+    assert m.context.recent(limit=1)[0]["data"]["state"] == "clarification_required"
+
+
+def test_a_later_ungrounded_leg_stops_after_the_named_visits(mission):
+    m = mission
+    m.commands.handle("Go to THE   Printer!")
+    m.tasks.pop(0)()
+    assert m.nav.sent[0][1].label == "printer"
+    m.nav.sent[0][2](NavigationEvent("succeeded"))
+    m.tasks.pop(0)()
+    assert len(m.nav.sent) == 1 and m.events[-1].state == "clarification_required"
+    assert [e.state for e in m.events[-2:]] == ["resolving", "clarification_required"]
+    assert any(e.state == "step_succeeded" for e in m.events) and not m.commands.busy
+
+
+def test_a_follow_up_may_name_the_place_in_an_earlier_instruction(mission):
+    m = mission
+    m.model.replies = [proposal(("cupboard",)), proposal(("cupboard",))]
+    m.critic.replies = [review(), review()]
+    m.commands.handle("please visit the cupboard")
+    m.tasks.pop(0)()
+    m.nav.sent[0][2](NavigationEvent("succeeded"))
+    m.commands.handle("take me there again")
+    m.tasks.pop(0)()
+    assert len(m.nav.sent) == 2 and m.nav.sent[1][1].label == "cupboard"
+
+
+@pytest.mark.parametrize(
+    "place,text,expected",
+    [
+        ("station three", "Go to station  three, please", True),
+        ("station three", "go to Station-Three", True),
+        ("far end of the hall", "visit the far end of hall", True),
+        ("printer", "visit the printers", False),
+        ("printer", "visit the reprinter room", False),
+        ("station three", "go to station 3", False),
+        ("the", "go to the", True),
+    ],
+)
+def test_place_mentions_match_whole_words_ignoring_case_spacing_and_articles(place, text, expected):
+    from placecell.navigation import mentions_place
+
+    assert mentions_place(place, (text,)) is expected
+    assert mentions_place(place, ("unrelated", text)) is expected
+
+
 @pytest.mark.parametrize("arrival", ["matched", "uncertain", "not_matched"])
 def test_memory_goal_requires_fresh_verified_arrival_before_next_step(mission, hashing, arrival):
     m = mission

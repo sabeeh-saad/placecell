@@ -7,6 +7,7 @@
 - Honour `Retry-After` up to 60 s and fail fast beyond it, jitter backoff, map http.client failures to provider errors, and repeat server/transport errors only for idempotent embedding calls.
 - Support reasoning-model chat requests: new `chat_`/`mission_` `max_tokens`, `token_parameter` (`max_completion_tokens`) and `temperature` (negative omits it) parameters; defaults unchanged.
 - Force the planner and reviewer decision tools, ignore text beside a valid call, and ask once more when a reply has no valid call before failing.
+- Dispatch a configured place in an agent-planned mission only when the user's instruction (or an earlier one in the planner's history window) names it; otherwise ask for clarification.
 - Keep only the user's words and structured outcomes in conversation context; vision-model arrival reasons, captions and provider error text no longer reach planner or reviewer prompts, including rows saved by earlier versions.
 - Keep scene-memory targets valid when the robot's own frames reinforce them during a trip; the goal pose still never follows later changes.
 - Never lose or refuse a stop while navigating: deeper command queue, stop/halt/cancel/abort with filler words on text and speech, and stale-target stops cancel the active trip with the mismatch reported.

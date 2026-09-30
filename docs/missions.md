@@ -41,6 +41,17 @@ This resolves a configured `home`; it is not an inventory or whitelist of object
 Unlisted object names and functional descriptions are grounded by the executor after review.
 The catalog cannot add visits, waive image checks, or turn an absent target into a success.
 
+Configured places skip visual verification, so the controller checks every mission leg that
+resolves to one, independently of both agents: the place name must appear in the current
+instruction or in an earlier instruction from the history window the planner received.
+Matching ignores case, punctuation, spacing and the articles "the", "a" and "an", and needs
+the whole words in order: `printer` does not match "printers", and `station three` does not
+match "station 3". Otherwise that leg ends with `clarification_required` and failure stage
+`identity`; completed earlier visits keep their outcome and nothing further is dispatched.
+A purpose description such as "where we started" therefore cannot select a configured place
+by itself; the user names it. Direct `go to <place>` commands are the user's own words and
+are not affected. Places have no aliases yet: the configured name is the only accepted form.
+
 ## Enable the ROS interface
 
 For the bundled Gazebo office, the [reference deployment guide](reference-deployment.md)

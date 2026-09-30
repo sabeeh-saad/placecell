@@ -65,6 +65,7 @@ The timeline includes:
 - The bounded, redacted instruction and whether admission succeeded.
 - The proposed destination sequence, reviewer verdict and short returned explanation.
   These are structured decisions, not hidden model reasoning or complete model prompts.
+  A leg refused because the user never named its configured place records `plan.place_ungrounded`.
 - Retrieved scene/object IDs, similarities, confidence where available, eligibility policy,
   eligible IDs, visual verdicts and the destination selected for dispatch.
 - Approach, lookup and arrival-verification spans, accepted/rejected arrival observation

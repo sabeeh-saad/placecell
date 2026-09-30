@@ -414,7 +414,11 @@ class ContractCheck:
         controller._mission_planner = MissionPlanner(
             OpenAICompatibleChat("fixture", transport=transport), PlanReviewAgent(ScriptedModel(reviewer=True))
         )
-        pub.publish(String(data=json.dumps({"schema_version": 1, "command": "instruction", "text": "Visit both"})))
+        pub.publish(
+            String(
+                data=json.dumps({"schema_version": 1, "command": "instruction", "text": "Visit printer then cupboard"})
+            )
+        )
         self.until(lambda: tasks)
         tasks.pop(0)()
         nav.sent[0][2](NavigationEvent("succeeded"))

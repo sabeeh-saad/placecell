@@ -127,7 +127,8 @@ wall time so a paused simulation does not leave a request pending indefinitely.
 
 An exact named place takes precedence over a semantic memory search. Names such as
 "kitchen" or "station three" need configured poses if camera evidence cannot identify
-them. A places file contains navigation poses measured in the current map, for example:
+them. Agent-planned missions dispatch a named place only when the user's instruction names
+it ([grounding rule](missions.md#agents-and-execution)). A places file contains navigation poses measured in the current map, for example:
 
 ```json
 {
