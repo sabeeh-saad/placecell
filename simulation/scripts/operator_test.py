@@ -389,13 +389,14 @@ class ContractCheck:
                 )
 
         valid = json.dumps({"decision": "ready", "destinations": ["printer", "cupboard"], "message": "Visit both"})
+        # Tool arguments that cannot be decoded, oversized ones included, are asked again once; refusals are not.
         cases = [
-            ("duplicate decision", '{"decision":"reject",' + valid[1:], None),
-            ("refused response", valid, "Provider refused"),
-            ("unsupported action", valid[:-1] + ',"action":"drive"}', None),
-            ("oversized response", "x" * 65537, None),
+            ("duplicate decision", '{"decision":"reject",' + valid[1:], None, 2),
+            ("refused response", valid, "Provider refused", 1),
+            ("unsupported action", valid[:-1] + ',"action":"drive"}', None, 2),
+            ("oversized response", "x" * 65537, None, 2),
         ]
-        for name, arguments, refusal in cases:
+        for name, arguments, refusal, calls in cases:
             transport = ReplyTransport(arguments, refusal)
             reviewer = ScriptedModel(reviewer=True)
             controller._mission_planner = MissionPlanner(
@@ -408,7 +409,7 @@ class ContractCheck:
             tasks.pop(0)()
             state = self.snapshot("model_contract_operator")
             assert state["status"]["state"] == "rejected" and state["status"]["message"] and not state["busy"]
-            assert transport.calls == 1 and reviewer.calls == 0 and not nav.sent
+            assert transport.calls == calls and reviewer.calls == 0 and not nav.sent
             self.checks.append(f"provider contract over ROS: {name} rejects without motion")
         transport = ReplyTransport(valid)
         controller._mission_planner = MissionPlanner(
