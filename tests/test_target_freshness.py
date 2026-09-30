@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from placecell import NavigationEvent, Observation, Pose
+from placecell import NavigationEvent, Observation, Pose, Reinforcer
 from placecell.errors import ValidationError
 from placecell.operator import navigation_data
 from placecell.verification import SceneVerdict
@@ -97,6 +97,76 @@ def test_deleted_scene_target_cannot_be_confirmed_at_arrival(mission, hashing):
     if m.tasks:
         m.tasks.pop(0)()
     assert m.events[-1].state == "destination_unverified" and not m.tasks
+
+
+def reinforce(m, hashing, x=1.3, yaw=0.2, **fields):
+    # The robot's own newer frame near the target, as ingestion merges it.
+    repeat = embedded(hashing, "printer", t=m.now[0], pose=Pose(x, 2.1, yaw, map_id="office"), **fields)
+    merged, was_merged = Reinforcer(m.store, remover=None).reinforce_or_insert(
+        replace(repeat, caption="a printer beside the desk")
+    )
+    assert was_merged
+    return merged
+
+
+@pytest.mark.parametrize("when", ["approach", "arrival_frame"])
+def test_own_reinforcement_of_scene_target_does_not_invalidate_arrival(mission, hashing, when):
+    m = mission
+    memory, obs = scene_arrival(m, hashing)
+    if when == "approach":
+        merged = reinforce(m, hashing)
+        m.commands.observe(obs)
+    else:
+        m.commands.observe(obs)
+        merged = reinforce(m, hashing, x=1.0, yaw=0.0)  # The forced arrival frame merges during verification.
+    assert merged.id == memory.id and merged.evidence != memory.evidence and merged.pose != memory.pose
+    m.tasks.pop(0)()
+    assert m.events[-1].state == "resolving" and m.events[-1].mission_step == 2
+    m.tasks.pop(0)()
+    assert m.nav.sent[0][1].pose == memory.pose and m.nav.sent[1][1].label == "cupboard"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "refined_caption",
+        "refined_vector",
+        "superseded",
+        "anchor",
+        "far_pose",
+        "turned",
+        "other_map",
+        "unlocalized",
+        "low_confidence",
+        "expired",
+    ],
+)
+def test_other_scene_target_changes_still_invalidate_arrival(mission, hashing, change):
+    m = mission
+    memory, obs = scene_arrival(m, hashing)
+    if change == "refined_caption":
+        m.store.upsert([replace(memory, caption="a blank wall")])
+    elif change == "refined_vector":
+        m.store.upsert([replace(memory, embedding=hashing.embed_text(["wall"])[0])])
+    elif change == "unlocalized":
+        reinforce(m, hashing, localization_checked=False)
+    else:
+        merged = reinforce(m, hashing)
+        edits = {
+            "superseded": {"superseded": True},
+            "anchor": {"anchor_position": (1.3, 2.1)},
+            "far_pose": {"pose": Pose(2.5, 2, map_id="office")},
+            "turned": {"pose": Pose(1.3, 2.1, 1.2, map_id="office")},
+            "other_map": {"pose": Pose(1.3, 2.1, map_id="warehouse")},
+            "low_confidence": {"confidence": 0.01},
+            "expired": {},
+        }[change]
+        m.store.upsert([replace(merged, **edits)])
+        if change == "expired":
+            m.resolver._clock = lambda: m.now[0] + 8 * 86400
+    m.commands.observe(obs)
+    assert not m.tasks and len(m.nav.sent) == 1
+    assert m.events[-1].state == "destination_unverified" and m.events[-1].failure_stage == "retrieval"
 
 
 @pytest.mark.parametrize(

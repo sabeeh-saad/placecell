@@ -11,6 +11,15 @@ planning and the final check immediately before submission to Nav2. A deleted, e
 missing or revised object invalidates an old choice. The operator must request the
 destination again; the controller cannot silently substitute a different target.
 
+A remembered scene is rechecked by memory id before dispatch and again at arrival. The
+robot's own frames routinely reinforce that memory during the trip and replace its
+retained view, so reinforcement alone does not invalidate it: the same id and scope,
+an unchanged anchor, more observations, a later view timestamp and a view pose within
+`same_place_radius_m` and 0.5 rad of the anchor are accepted. The Nav2 goal stays the
+originally resolved pose. A new caption or vector for the same view (refinement), any
+other edit, deletion, superseding, expiry, low confidence or a missing localization
+check still invalidates the destination.
+
 Once object retrieval finds plausible candidates, rejection by their current-view visual
 checks stops that lookup. An older scene cannot override those rejected object views.
 Scene retrieval remains available when object retrieval has no plausible candidate.

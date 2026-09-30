@@ -466,7 +466,16 @@ class DestinationResolver:
         return self._verifier.verify(target, image_url)
 
     def current(self, destination: Destination) -> bool:
-        """Recheck the source just before dispatch; later content changes must not silently change the goal."""
+        """Recheck the source before dispatch and at arrival; the goal pose never follows later changes.
+
+        A scene memory stays current while it keeps the same id, scope and fixed anchor and
+        either retains the selected view unchanged or has been reinforced with a newer
+        sighting: more observations, a later view timestamp and a view pose within
+        `same_place_radius_m` and 0.5 rad of the anchor. Its caption and vectors then describe
+        the newer view and are not compared. A new caption or vector for the same view
+        (refinement), any other edit, deletion, superseding, age, low confidence or a missing
+        localization check invalidates it.
+        """
         if not destination.pose.same_frame(self._origin):
             return False
         if destination.memory is None:
@@ -496,21 +505,39 @@ class DestinationResolver:
             )
         before = destination.memory
         current = self._store.get(before.id)
-        return (
-            current is not None
-            and self._scope.matches(current)
-            and current.pose == destination.pose
+        if current is None or current.embedding is None or before.embedding is None:
+            return False
+        same_view = (
+            current.pose == destination.pose
             and current.caption == before.caption
             and current.evidence == before.evidence
             and current.view_timestamp == before.view_timestamp
+            and current.same_embeddings(before)
+        )
+        return (
+            self._scope.matches(current)
+            and current.anchor_position == before.anchor_position
+            and current.anchor_yaw == before.anchor_yaw
+            and (same_view or self._reinforced(before, current))
             and current.view_timestamp is not None
             and 0 <= self._clock() - current.view_timestamp <= self._policy.max_age_s
             and current.localization_checked
-            and current.embedding is not None
-            and before.embedding is not None
-            and current.same_embeddings(before)
             and 0 <= self._clock() - current.last_seen <= self._policy.max_age_s
             and self._recall.confidence(current) >= self._policy.min_confidence
+        )
+
+    def _reinforced(self, before: Memory, current: Memory) -> bool:
+        """A later sighting replaced the retained view without leaving the anchored place."""
+        anchor, yaw = current.anchor_position, current.anchor_yaw
+        return (
+            anchor is not None
+            and yaw is not None
+            and before.view_timestamp is not None
+            and current.view_timestamp is not None
+            and current.observations > before.observations
+            and current.view_timestamp > before.view_timestamp
+            and math.hypot(current.pose.x - anchor[0], current.pose.y - anchor[1]) <= self._policy.same_place_radius_m
+            and abs((current.pose.yaw - yaw + math.pi) % (2 * math.pi) - math.pi) <= 0.5
         )
 
 

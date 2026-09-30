@@ -16,6 +16,7 @@ from placecell import (
     NavigationUpdate,
     Pose,
     Recall,
+    Reinforcer,
     load_named_places,
     parse_movement,
 )
@@ -207,6 +208,25 @@ def test_changed_destination_options_are_rejected(store, hashing, change):
     commands.handle("option one")
     tasks.pop()()
     assert not navigator.sent and events[-1].state == "not_found"
+
+
+def test_reinforcement_before_dispatch_keeps_the_resolved_goal(store, hashing):
+    memory = embedded(hashing, "printer", x=1)
+    store.upsert([memory])
+    commands, navigator, tasks, _events = make_commands(store, hashing)
+    publish = commands._publish_callback
+
+    def reinforced(update):
+        publish(update)
+        if update.state == "submitting":
+            repeat = embedded(hashing, "printer", t=2990, pose=Pose(1.4, 0.2, 0.1))
+            assert Reinforcer(store, remover=None).reinforce_or_insert(repeat)[1]
+
+    commands._publish_callback = reinforced
+    commands.handle("go to printer")
+    tasks.pop()()
+    assert navigator.sent[0][1].pose == memory.pose and store.get(memory.id).pose != memory.pose
+    assert commands._resolver.current(navigator.sent[0][1])
 
 
 def test_cancel_during_resolution_prevents_a_late_goal(store, hashing):
