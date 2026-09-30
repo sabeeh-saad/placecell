@@ -147,6 +147,27 @@ such as a local model server, still work. Provider redirects are never followed:
 response fails the request with its status and target, so no key reaches another host.
 Mission traces redact every configured key.
 
+## Model request options
+
+Chat and mission requests send `max_tokens` and `temperature: 0` by default. Reasoning
+models such as OpenAI's o-series and gpt-5 reject both: set the group's token parameter to
+`max_completion_tokens` and a negative temperature, which omits the field. The model is never
+guessed from its name. Reasoning tokens count against the budget, so raise it too:
+
+| Parameter | Default | Applies to |
+| --- | --- | --- |
+| `chat_max_tokens`, `mission_max_tokens` | 400, 2048 | chat and consolidation; planning and review |
+| `chat_token_parameter`, `mission_token_parameter` | `max_tokens` | or `max_completion_tokens` |
+| `chat_temperature`, `mission_temperature` | 0.0 | a negative value omits `temperature` |
+
+```bash
+placecell-ros2 --ros-args \
+  -p mission_model:=o4-mini \
+  -p mission_token_parameter:=max_completion_tokens \
+  -p mission_temperature:=-1.0 \
+  -p mission_max_tokens:=8192
+```
+
 ## Collection compatibility and evidence
 
 Time queries match actual sighting timestamps, not the interval between the first and last

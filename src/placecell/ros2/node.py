@@ -211,6 +211,16 @@ def _origin(url: str) -> tuple[str, str, int | None] | None:
     return (parts.scheme, parts.hostname, port) if parts.hostname else None
 
 
+def chat_options(parameters: Mapping[str, Any], group: str) -> dict[str, Any]:
+    """Request shape of a chat group. A negative `*_temperature` omits it, as reasoning models require."""
+    temperature = parameters[f"{group}_temperature"]
+    return {
+        "max_tokens": parameters[f"{group}_max_tokens"],
+        "token_parameter": parameters[f"{group}_token_parameter"],
+        "temperature": None if temperature < 0 else temperature,
+    }
+
+
 def build_mission_planner(parameters: dict[str, Any]) -> MissionPlanner | None:
     if not parameters["mission_enabled"]:
         return None
@@ -223,8 +233,8 @@ def build_mission_planner(parameters: dict[str, Any]) -> MissionPlanner | None:
     review_url, review_key = endpoint(parameters, "mission_review")
     options = {
         "timeout_s": parameters["mission_request_timeout_s"],
-        "max_tokens": 2048,
         "retry": RetryPolicy(attempts=1),
+        **chat_options(parameters, "mission"),
     }
     planner = OpenAICompatibleChat(model, base_url, api_key, **options)
     reviewer = OpenAICompatibleChat(parameters["mission_review_model"] or model, review_url, review_key, **options)
@@ -608,7 +618,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             if p["chat_model"]:
                 from placecell.providers import OpenAICompatibleChat
 
-                chat = OpenAICompatibleChat(p["chat_model"], *endpoint(p, "chat"))
+                chat = OpenAICompatibleChat(p["chat_model"], *endpoint(p, "chat"), **chat_options(p, "chat"))
                 self._agent = Agent(
                     self._recall, chat, frame_id=p["map_frame"], map_id=p["map_id"], clock=self._memory_time
                 )
@@ -965,6 +975,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "chat_base_url": "https://api.openai.com/v1",
                 "chat_api_key_env": "",
                 "chat_model": "",
+                "chat_max_tokens": 400,
+                "chat_token_parameter": "max_tokens",
+                "chat_temperature": 0.0,
                 "api_key_env": "PLACECELL_API_KEY",
                 "min_interval_s": 2.0,
                 "max_interval_s": 60.0,
@@ -1006,6 +1019,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "mission_review_base_url": "",
                 "mission_review_api_key_env": "",
                 "mission_request_timeout_s": 8.0,
+                "mission_max_tokens": 2048,
+                "mission_token_parameter": "max_tokens",
+                "mission_temperature": 0.0,
                 "mission_max_destinations": 8,
                 "mission_context_path": "~/.placecell/missions.sqlite3",
                 "mission_trace_path": "",

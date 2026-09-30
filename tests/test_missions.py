@@ -25,7 +25,7 @@ from placecell import (
 from placecell.errors import ProviderError, ValidationError
 from placecell.ros2.node import build_mission_planner, navigation_payload
 from placecell.verification import SceneVerdict
-from tests.conftest import embedded
+from tests.conftest import FakeTransport, embedded
 from tests.test_navigation import FakeNavigator
 
 
@@ -510,6 +510,9 @@ def test_ros_builder_requires_explicit_model_and_creates_separate_roles(monkeypa
             "api_key_env": "MISSION_TEST_KEY",
             "mission_max_destinations": 8,
             "mission_request_timeout_s": 8.0,
+            "mission_max_tokens": 2048,
+            "mission_token_parameter": "max_tokens",
+            "mission_temperature": 0.0,
         }
     )
     assert planner.plan("visit printer then cupboard").decision == "ready"
@@ -518,6 +521,21 @@ def test_ros_builder_requires_explicit_model_and_creates_separate_roles(monkeypa
         ("reviewer", "https://models.test/v1", "fake-key"),
     ]
     assert all(c[1]["retry"].attempts == 1 for c in calls)
+    assert all(c[1]["max_tokens"] == 2048 and c[1]["temperature"] == 0.0 for c in calls)
+
+
+def test_ros_chat_groups_can_use_the_reasoning_model_request_shape():
+    from placecell.providers import OpenAICompatibleChat
+    from placecell.ros2.node import chat_options
+
+    parameters = {"chat_max_tokens": 4096, "chat_token_parameter": "max_completion_tokens", "chat_temperature": -1.0}
+    options = chat_options(parameters, "chat")
+    assert options == {"max_tokens": 4096, "token_parameter": "max_completion_tokens", "temperature": None}
+    transport = FakeTransport([(200, {}, {"choices": [{"finish_reason": "stop", "message": {"content": "Hi."}}]})])
+    assert OpenAICompatibleChat("o4-mini", transport=transport, **options).complete([], []).content == "Hi."
+    payload = transport.requests[0]["payload"]
+    assert payload["max_completion_tokens"] == 4096 and not {"max_tokens", "temperature"} & payload.keys()
+    assert chat_options({**parameters, "chat_temperature": 0.2}, "chat")["temperature"] == 0.2
 
 
 def test_stop_does_not_wait_for_a_running_agent_thread(mission):

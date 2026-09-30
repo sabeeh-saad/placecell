@@ -7,7 +7,7 @@ import math
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
 from placecell.chat import ChatMessage, ChatModel, ChatReply, MalformedReplyError, ToolCall
 from placecell.errors import ValidationError
@@ -16,26 +16,40 @@ from placecell.providers._http import Endpoint, RetryPolicy, Transport
 
 
 class OpenAICompatibleChat(ChatModel):
+    """One chat completion per call, with optional function calling.
+
+    Reasoning models (OpenAI o-series, gpt-5) reject `max_tokens` and `temperature`: pass
+    `token_parameter="max_completion_tokens"` and `temperature=None`, which omits the field.
+    """
+
     def __init__(
         self,
         model: str,
         base_url: str = "https://api.openai.com/v1",
         api_key: str | None = None,
-        temperature: float = 0.0,
+        temperature: float | None = 0.0,
         max_tokens: int = 400,
         timeout_s: float = 60.0,
         transport: Transport | None = None,
         retry: RetryPolicy | None = None,
         sleep: Callable[[float], None] = time.sleep,
         extra_headers: Mapping[str, str] | None = None,
+        token_parameter: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",  # noqa: S107 - a field name
     ) -> None:
         if not model:
             raise ValidationError("model must not be empty")
-        if type(max_tokens) is not int or max_tokens < 1 or not math.isfinite(temperature) or temperature < 0:
+        if (
+            type(max_tokens) is not int
+            or max_tokens < 1
+            or (temperature is not None and (not math.isfinite(temperature) or temperature < 0))
+        ):
             raise ValidationError("max_tokens must be positive and temperature non-negative")
+        if token_parameter not in ("max_tokens", "max_completion_tokens"):
+            raise ValidationError("token_parameter must be max_tokens or max_completion_tokens")
         self._model = model
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._token_parameter = token_parameter
         self._endpoint = Endpoint.build(
             base_url, "/chat/completions", api_key, timeout_s, transport, retry, sleep, extra_headers
         )
@@ -47,12 +61,11 @@ class OpenAICompatibleChat(ChatModel):
     def complete(
         self, messages: Sequence[ChatMessage], tools: Sequence[dict[str, Any]], *, tool_choice: str | None = None
     ) -> ChatReply:
-        payload: dict[str, Any] = {
-            "model": self._model,
-            "temperature": self._temperature,
-            "max_tokens": self._max_tokens,
-            "messages": [_encode(m) for m in messages],
-        }
+        payload: dict[str, Any] = {"model": self._model}
+        if self._temperature is not None:
+            payload["temperature"] = self._temperature
+        payload[self._token_parameter] = self._max_tokens
+        payload["messages"] = [_encode(m) for m in messages]
         if tool_choice is not None and tool_choice not in {t.get("function", {}).get("name") for t in tools}:
             raise ValidationError("tool_choice must name one of the offered tools")
         if tools:

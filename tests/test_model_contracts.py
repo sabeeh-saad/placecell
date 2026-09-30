@@ -95,6 +95,16 @@ def test_chat_adapter_forces_a_named_tool_and_marks_undecodable_calls():
     assert not isinstance(error.value, MalformedReplyError)
 
 
+def test_chat_adapter_request_shape_defaults_and_validation():
+    model = chat(completion("{}"))
+    model.complete([], [])
+    payload = model._endpoint.transport.requests[0]["payload"]
+    assert payload["temperature"] == 0.0 and payload["max_tokens"] == 400 and "max_completion_tokens" not in payload
+    for options in ({"token_parameter": "max_output_tokens"}, {"temperature": -0.1}, {"temperature": float("nan")}):
+        with pytest.raises(ValidationError):
+            OpenAICompatibleChat("test", **options)
+
+
 def test_undecodable_tool_arguments_are_asked_again_once_through_the_adapter():
     valid = json.dumps({"decision": "ready", "destinations": ["printer"], "message": "One visit."})
     transport = FakeTransport([(200, {}, completion('{"decision":"ready",')), (200, {}, completion(valid))])
