@@ -145,6 +145,25 @@ def test_expected_labels_do_not_supply_model_outputs(dataset):
     assert score_trials(dataset, trials)["cases"][0]["plan"] == "failed"
 
 
+@pytest.mark.parametrize(
+    "chain,passed",
+    [
+        (["The  Printer", "a bookshelf"], True),
+        (["the the printer", "An Bookshelf"], True),
+        (["printer", "bookshelf"], True),
+        (["printer the", "bookshelf"], False),
+        (["the", "bookshelf"], False),
+        (["printers", "the bookshelf"], False),
+    ],
+)
+def test_destinations_match_without_case_spacing_or_leading_articles(dataset, trials, chain, passed):
+    row = next(row for row in trials["trials"] if row["case_id"] == "chain")
+    row["plan"]["destinations"] = chain
+    report = score_trials(dataset, trials)
+    assert report["plan"]["passed"] == 23 + passed
+    assert report["destination_matching"] == "casefold, collapse whitespace, ignore leading the/a/an"
+
+
 def test_order_and_repeats_are_scored_exactly(dataset, trials):
     rows = {row["case_id"]: row for row in trials["trials"]}
     rows["chain"]["plan"]["destinations"].reverse()
@@ -325,10 +344,11 @@ def test_configured_places_must_be_bounded_resolver_names(tmp_path, places):
         load_dataset(write_json(tmp_path, data))
 
 
-def test_labels_cannot_expect_a_configured_place_the_request_never_names(tmp_path):
+@pytest.mark.parametrize("alias", ["the Printer", "A  printer"])
+def test_labels_cannot_expect_a_configured_place_the_request_never_names(tmp_path, alias):
     data = json.loads(DATA_V2.read_text())
     case = next(case for case in data["cases"] if case["id"] == "dev-place-purpose-print")
-    case["expected"]["destinations"][0].append("the Printer")
+    case["expected"]["destinations"][0].append(alias)
     with pytest.raises(ValidationError, match="never names"):
         load_dataset(write_json(tmp_path, data))
     case["expected"]["destinations"][0].pop()

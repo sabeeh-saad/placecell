@@ -90,7 +90,9 @@ an explanation; they must not silently improve the published score.
 
 The first live development run completed two repetitions of all 24 cases. Each scored
 14/24 against the frozen draft aliases. Eight failures per repetition differed only by
-the leading article `the`, which the scorer does not normalize. Two decisions disagreed
+the leading article `the`, which the scorer did not normalize then. It now ignores leading
+articles and states that rule as `destination_matching` in reports and summaries; the
+Day 18 reports have no such field and keep their exact-match score. Two decisions disagreed
 with the labels: `hypothetical` returned `clarify` instead of `reject`, and
 `known-reference` returned `clarify` instead of the expected visit. These are review items,
 not 20 demonstrated navigation failures. Both decision disagreements withheld movement.

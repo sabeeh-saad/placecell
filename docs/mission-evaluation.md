@@ -55,8 +55,11 @@ fields are:
 - `decisions`: accepted planning decisions. A ready plan cannot be interchangeable with
   rejection. Unsupported requests may allow either clarification or rejection.
 - `destinations`: ordered lists of explicitly permitted textual aliases, one list per visit.
-  Repeated visits stay repeated. Matching ignores case and whitespace only; it is not an
-  LLM judge or a fuzzy semantic match. Unexpected phrasing needs independent label review.
+  Repeated visits stay repeated. Matching ignores case, extra whitespace and leading
+  articles (`the`, `a`, `an`), which the controller's place check ignores too; it is not
+  an LLM judge or a fuzzy semantic match. Unexpected phrasing needs independent label review.
+  Reports state this rule in `destination_matching`. Reports without that field compared
+  case and whitespace only, so `the printer` failed against `printer` there.
 - `outcomes`: permitted final execution outcomes, separate from the planning decision.
 - `target_ids`: physical target IDs in the permitted dispatch order. For a target that
   cannot be grounded, this can be empty even though the planned description is nonempty.
@@ -72,8 +75,9 @@ places. The version changed because dataset fields are checked strictly and this
 model input: an older evaluator refuses a schema 2 file instead of silently dropping its places.
 Declaring places does not relax the split check: identical instruction/context pairs still
 cannot cross splits, whatever places they list. The loader also rejects a ready label with
-an alias that the controller would refuse, a configured place that neither the instruction
-nor an earlier instruction in the context names ([named-place check](missions.md)).
+an alias that matches a configured place which neither the instruction nor an earlier
+instruction in the context names: the controller would refuse that plan
+([named-place check](missions.md)).
 
 Scenario assumptions and expected target IDs are evaluator information. Do not add them to
 the model input as a shortcut. They become visual labels only after an annotator checks the

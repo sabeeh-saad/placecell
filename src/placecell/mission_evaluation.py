@@ -24,6 +24,8 @@ DECISIONS = {"ready", "clarify", "reject"}
 OUTCOMES = {"succeeded", "clarify", "reject", "not_found", "canceled", "failed", "error", "timeout"}
 # Case fields that reach the planner and reviewer, by their payload names.
 MODEL_INPUTS = ("instruction", "recent_context", "configured_places")
+# Recorded in reports: earlier reports without it compared case and whitespace only.
+DESTINATION_MATCHING = "casefold, collapse whitespace, ignore leading the/a/an"
 
 
 def _object(value: Any, required: set[str], optional: Set[str] = frozenset()) -> dict[str, Any]:
@@ -95,10 +97,9 @@ def _place_key(text: str) -> str:
     return " ".join(text.casefold().split()).removeprefix("the ")
 
 
-def _unnamed_place(case: MissionCase, destinations: Sequence[str]) -> str | None:
-    """The first leg the controller would refuse: a configured place the user's words never name."""
-    # Like the controller: this instruction and the earlier instructions the planner was shown.
-    words = (
+def _user_words(case: MissionCase) -> tuple[str, ...]:
+    """What the controller searches for a configured place: this and earlier instructions the planner saw."""
+    return (
         case.instruction,
         *(
             event["data"]["text"]
@@ -108,6 +109,11 @@ def _unnamed_place(case: MissionCase, destinations: Sequence[str]) -> str | None
             and isinstance(event["data"].get("text"), str)
         ),
     )
+
+
+def _unnamed_place(case: MissionCase, destinations: Sequence[str]) -> str | None:
+    """The first leg the controller would refuse: a configured place the user's words never name."""
+    words = _user_words(case)
     keys = (_place_key(destination) for destination in destinations)
     return next((key for key in keys if key in case.configured_places and not mentions_place(key, words)), None)
 
@@ -213,7 +219,10 @@ def load_dataset(path: str | Path) -> MissionDataset:
             expected["visual_required"],
             places,
         )
-        if any(_unnamed_place(case, aliases) for aliases in destinations):
+        # No plan that matches a label may be one the controller refuses.
+        words = _user_words(case)
+        unnamed = {_normalize(name) for name in places if not mentions_place(name, words)}
+        if any(_normalize(alias) in unnamed for aliases in destinations for alias in aliases):
             raise ValidationError("labels cannot expect a configured place that the request never names")
         cases.append(case)
     return MissionDataset(_text(data["id"]), digest, data["label_status"], groups, tuple(cases))
@@ -229,7 +238,11 @@ def _selected(dataset: MissionDataset, split: str) -> tuple[MissionCase, ...]:
 
 
 def _normalize(text: str) -> str:
-    return " ".join(text.casefold().split())
+    words = text.casefold().split()
+    # Articles are not part of the destination, as in the controller's place check; one word always stays.
+    while len(words) > 1 and words[0] in {"the", "a", "an"}:
+        words.pop(0)
+    return " ".join(words)
 
 
 def _plan_result(plan: Any) -> dict[str, Any]:
@@ -404,6 +417,7 @@ def score_trials(dataset: MissionDataset, document: Any, *, split: str = "develo
         "runner": document["runner"],
         "run_id": document["run_id"],
         "configuration": document["configuration"],
+        "destination_matching": DESTINATION_MATCHING,
         "claim": "Scripted software check; not model accuracy"
         if document["runner"] == "scripted"
         else "Imported runner outcomes; inspect evidence and labels before making quality claims",

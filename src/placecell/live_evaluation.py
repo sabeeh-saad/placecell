@@ -14,7 +14,14 @@ from typing import Any
 
 from placecell.errors import ValidationError
 from placecell.evaluation_budget import EvaluationBudget, EvaluationStoppedError
-from placecell.mission_evaluation import MODEL_INPUTS, MissionDataset, _selected, load_dataset, score_trials
+from placecell.mission_evaluation import (
+    DESTINATION_MATCHING,
+    MODEL_INPUTS,
+    MissionDataset,
+    _selected,
+    load_dataset,
+    score_trials,
+)
 from placecell.missions import MissionPlanner, PlanReviewAgent
 from placecell.providers._http import RetryPolicy
 from placecell.providers.chat import OpenAICompatibleChat
@@ -133,6 +140,7 @@ def run_planning(
         **admission,
         "repetitions": repeats,
         "configuration": configuration,
+        "destination_matching": DESTINATION_MATCHING,
         "plan": totals,
         "unique_cases": len(cases),
         "attempted_trials": sum(row["plan_status"] != "missing" for r in reports for row in r["cases"]),

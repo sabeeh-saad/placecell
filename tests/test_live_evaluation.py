@@ -239,6 +239,7 @@ def test_live_runner_repeats_real_planner_and_review_without_label_leak(tmp_path
     result = run_planning(d, planner(b), b, tmp_path, split="development", repeats=2, configuration={})
     assert result["plan"] == {"eligible": 2, "assessed": 2, "passed": 0, "failed": 2}
     assert result["completed"] and not result["all_plans_match_labels"]
+    assert result["destination_matching"] == "casefold, collapse whitespace, ignore leading the/a/an"
     assert len(t.requests) == 4 and result["budget"]["known_cost_usd"] == 0.004
     assert "SECRET_" not in json.dumps(t.requests)
     assert [r["stage"] for r in b.records] == ["planner", "reviewer"] * 2
