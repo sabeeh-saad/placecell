@@ -11,7 +11,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 
 from placecell.depth import DepthSnapshot
-from placecell.errors import ModelMismatchError, ValidationError
+from placecell.errors import ModelMismatchError, PlacecellError, ValidationError
 from placecell.lifecycle import EvidenceRemover, Reinforcer, remove_local_file, remove_unreferenced
 from placecell.memory import Evidence, Memory, Pose, memory_id
 from placecell.objects import ObjectTracker
@@ -107,6 +107,12 @@ class IngestReport:
     unsupported_ids: tuple[str, ...] = field(default=())
     contradicted: int = 0
     """Memories superseded in this run because repeated visits no longer saw them."""
+    object_errors: tuple[str, ...] = field(default=())
+    """Failed object scans, one per observation. Their scene memories were still stored."""
+    objects_skipped_ambiguous: int = 0
+    """Object detections not stored because more than one known object fits them."""
+    objects_skipped_capacity: int = 0
+    """New objects not stored because the object limit was reached."""
 
 
 class Ingester:
@@ -152,8 +158,9 @@ class Ingester:
         return self._reinforcer.find_observation(identity) is not None
 
     def ingest(self, observations: Iterable[Observation], *, preselected: bool = False) -> IngestReport:
-        received = accepted = inserted = merged = contradicted = 0
+        received = accepted = inserted = merged = contradicted = skipped_ambiguous = skipped_capacity = 0
         unsupported: list[str] = []
+        object_errors: list[str] = []
         batch: list[Observation] = []
         discarded: list[Observation] = []
         checkpoint = self._segmenter.checkpoint()
@@ -164,7 +171,7 @@ class Ingester:
             discarded.clear()
 
         def flush() -> None:
-            nonlocal inserted, merged, contradicted, checkpoint
+            nonlocal inserted, merged, contradicted, checkpoint, skipped_ambiguous, skipped_capacity
             if not batch:
                 return
             pending = []
@@ -180,7 +187,13 @@ class Ingester:
             unsupported.extend(m.id for m in rejected)
             observations_by_id = {memory_id(o.robot_id, o.camera_id, o.timestamp): o for o in pending}
             for m in memories:
-                prepared = self._objects.prepare(observations_by_id[m.id]) if self._objects is not None else None
+                prepared = None
+                if self._objects is not None:
+                    try:
+                        prepared = self._objects.prepare(observations_by_id[m.id])
+                    except PlacecellError as e:
+                        # Objects are optional evidence; their failure must not cost the scene memory.
+                        object_errors.append(f"{type(e).__name__}: {e}")
                 with self._store.transaction():
                     if self._reinforcer.find_observation(m.id) is not None:
                         merged += 1
@@ -192,7 +205,14 @@ class Ingester:
                     if self._observer is not None:
                         contradicted += self._observer.observe(m, stored.id).superseded
                     if self._objects is not None and prepared is not None:
-                        self._objects.commit(prepared)
+                        try:
+                            self._objects.commit(prepared)
+                        except ValidationError as e:
+                            # Its own savepoint rolled back, e.g. after a concurrent object change.
+                            object_errors.append(f"{type(e).__name__}: {e}")
+                        else:
+                            skipped_ambiguous += prepared.skipped_ambiguous
+                            skipped_capacity += prepared.skipped_capacity
             self._discard_evidence(m.evidence for m in rejected if m.evidence is not None)
             batch.clear()
             checkpoint = self._segmenter.checkpoint()
@@ -216,7 +236,18 @@ class Ingester:
             self._segmenter.restore(checkpoint)
             discard_rejected()
             raise
-        return IngestReport(received, accepted, inserted, merged, len(unsupported), tuple(unsupported), contradicted)
+        return IngestReport(
+            received,
+            accepted,
+            inserted,
+            merged,
+            len(unsupported),
+            tuple(unsupported),
+            contradicted,
+            object_errors=tuple(object_errors),
+            objects_skipped_ambiguous=skipped_ambiguous,
+            objects_skipped_capacity=skipped_capacity,
+        )
 
     def discard(self, observations: Iterable[Observation]) -> None:
         """Release generated images from dropped observations, preserving any stored references."""

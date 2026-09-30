@@ -34,6 +34,13 @@ bounded pages of SQLite vectors without loading all crop images into memory.
 Collections upgrade to schema 9, so older clients reject them instead of deleting shared
 keyframes without accounting for object references. Back up the collection before upgrading.
 
+Object tracking never costs the scene memory. If detection, cropping or embedding fails
+(for example, the vision provider is unavailable), or the object update is rejected
+because object memory changed during detection, only the object part is dropped. The
+scene memory is stored, the error is listed in `IngestReport.object_errors`, and the ROS
+node logs a warning and completes the job. The failed scan is not recorded, so the next
+frame scans again.
+
 Defaults allow 1,000 objects, four recent views and 32 change events per object. The ROS
 curator removes objects not seen for 30 days. Routine detection runs at most once every
 15 seconds per robot/camera/map, independently of scene sampling. An arrival capture
@@ -43,8 +50,9 @@ remain blocked, and all depth and identity checks still apply. Stationary scene 
 controls when a new frame is available, normally every 60 seconds. Crop embeddings are
 batched. At most four visual absence checks run per scan. These limits bound stored data
 and provider work, but API latency and cost must be measured on your camera recordings.
-At capacity, ingestion reports an error and retains the failed job; prune old objects or
-raise the limit before retrying. Failed jobs also occupy the bounded ingestion queue.
+At capacity, known objects keep updating but new objects are not stored.
+`IngestReport.objects_skipped_capacity` counts them and the ROS node logs a warning;
+prune old objects or raise the limit to admit them again.
 
 ## Identity and changes
 

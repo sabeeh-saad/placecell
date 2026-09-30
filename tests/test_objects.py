@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw
 
 from placecell import CollectionInfo, Evidence, EvidenceKind, Ingester, Observation, Pose
 from placecell.depth import Box, DepthSnapshot
-from placecell.errors import ValidationError
+from placecell.errors import ProviderError, ValidationError
 from placecell.navigation import DestinationResolver, parse_movement
 from placecell.object_types import Detection
 from placecell.objects import ObjectPolicy, ObjectRecall, ObjectTracker
@@ -253,13 +253,14 @@ def test_two_identical_instances_remain_separate(setup, tmp_path):
 
 
 def test_association_ties_geometry_cannot_break_are_skipped_without_new_records(setup, tmp_path):
-    store, _, detector, tracker = setup
+    store, embedder, detector, tracker = setup
     first = ingest(tracker, observation(tmp_path, depth=False))[0]
     boxes = (Box(0.44, 0.45, 0.54, 0.55), Box(0.46, 0.45, 0.56, 0.55))
     detector.detections = [Detection("printer", "red printer", box) for box in boxes]
-    prepared = tracker.prepare(observation(tmp_path, 2000, boxes, ("red", "red"), depth=False))
-    tracker.commit(prepared)
-    assert prepared.skipped_ambiguous == 2 and prepared.updates == ()
+    report = Ingester(embedder, store, objects=tracker).ingest(
+        [observation(tmp_path, 2000, boxes, ("red", "red"), depth=False)], preselected=True
+    )
+    assert report.objects_skipped_ambiguous == 2
     assert store.objects.records(**SCOPE) == [first]
     assert [e.kind for e in store.objects.history(first.id)] == ["created"]
 
@@ -345,15 +346,87 @@ def test_depth_is_durable_with_queued_observation(setup, tmp_path):
     np.testing.assert_array_equal(queued.depth.array(), obs.depth.array())
 
 
-def test_capacity_and_retention(setup, tmp_path):
+def test_capacity_skips_new_objects_while_known_objects_keep_updating(setup, tmp_path):
     store, embedder, detector, _ = setup
-    tracker = ObjectTracker(store, embedder, detector, ObjectPolicy(max_objects=1))
-    obj = ingest(tracker, observation(tmp_path))[0]
-    detector.detections = [Detection("cabinet", "blue cabinet", CENTER)]
-    with pytest.raises(ValidationError, match="capacity"):
-        tracker.prepare(observation(tmp_path, 2000, colors=("blue",)))
-    assert store.objects.get(obj.id) == obj
-    assert store.objects.prune(1500) == 1
+    ingester = Ingester(embedder, store, objects=ObjectTracker(store, embedder, detector, ObjectPolicy(max_objects=1)))
+    ingester.ingest([observation(tmp_path)], preselected=True)
+    obj = store.objects.records(**SCOPE)[0]
+    detector.detections = [Detection("printer", "red printer", CENTER), Detection("cabinet", "blue cabinet", RIGHT)]
+    report = ingester.ingest([observation(tmp_path, 2000, (CENTER, RIGHT), ("red", "blue"))], preselected=True)
+    assert report.objects_skipped_capacity == 1 and report.object_errors == ()
+    assert report.inserted == 1 and store.count() == 2
+    assert store.objects.records(**SCOPE) == [store.objects.get(obj.id)]
+    assert store.objects.get(obj.id).last_seen == 2000
+    assert store.objects.prune(2500) == 1
+
+
+@pytest.mark.parametrize("failure", ["provider", "validation", "conflict"])
+def test_object_failure_keeps_scene_memory_and_next_frame_rescans(setup, tmp_path, monkeypatch, failure):
+    store, embedder, detector, tracker = setup
+    ingester = Ingester(embedder, store, objects=tracker)
+    if failure == "provider":
+
+        def detect(_):
+            raise ProviderError("vision model unavailable")
+
+        monkeypatch.setattr(detector, "detect", detect)
+    elif failure == "validation":
+        monkeypatch.setattr(detector, "detections", detector.detections * 17)
+    else:
+        prepare = tracker.prepare
+
+        def conflicting(obs):
+            prepared = prepare(obs)
+            store.objects.record_scan("another scope", obs.timestamp)
+            return prepared
+
+        monkeypatch.setattr(tracker, "prepare", conflicting)
+    report = ingester.ingest([observation(tmp_path)], preselected=True)
+    assert (report.inserted, store.count(), store.objects.count()) == (1, 1, 0)
+    assert len(report.object_errors) == 1
+    assert report.object_errors[0].startswith("ProviderError" if failure == "provider" else "ValidationError")
+    monkeypatch.undo()
+    assert ingester.ingest([observation(tmp_path, 1001)], preselected=True).object_errors == ()
+    assert store.objects.count() == 1
+
+
+def test_worker_logs_object_failures_and_capacity_and_completes_the_jobs(setup, tmp_path):
+    import threading
+
+    from placecell.ros2.node import IngestWorker
+    from tests.test_ros2_bridge import _Log
+
+    store, embedder, detector, _ = setup
+    ingester = Ingester(embedder, store, objects=ObjectTracker(store, embedder, detector, ObjectPolicy(max_objects=1)))
+    ingester.ingest([observation(tmp_path)], preselected=True)
+    results = [[Detection("printer", "red printer", CENTER), Detection("cabinet", "blue cabinet", RIGHT)]]
+
+    def detect(_):
+        if not results:
+            raise ProviderError("vision model unavailable")
+        return results.pop()
+
+    detector.detect = detect
+    done = threading.Event()
+
+    class Log(_Log):
+        def info(self, msg):
+            super().info(msg)
+            done.set()
+
+    log = Log()
+    worker = IngestWorker(ingester, None, 2, 4, log)
+    for timestamp in (2000, 3000):
+        worker.submit(observation(tmp_path, timestamp, (CENTER, RIGHT), ("red", "blue")))
+    worker.start()
+    try:
+        assert done.wait(5)
+    finally:
+        assert worker.stop()
+    assert log.lines[0].startswith("I ingested 2/2")
+    assert store.jobs.stats()["queued"] == 0 and not store.jobs.failed()
+    assert any(line.startswith("W object tracking failed for 1 observations") for line in log.lines)
+    assert any(line.startswith("W object capacity reached, 1 new objects") for line in log.lines)
 
 
 class Matched:

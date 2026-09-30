@@ -93,6 +93,8 @@ class PreparedObjects:
     scan_key: str = ""
     skipped_ambiguous: int = 0
     """Detections left unassigned because appearance and geometry fit more than one record."""
+    skipped_capacity: int = 0
+    """New objects not stored because max_objects was reached."""
 
 
 class ObjectTracker:
@@ -257,6 +259,7 @@ class ObjectTracker:
         assignments.update(moved)
         assigned_ids = set(assignments.values())
         updates: list[tuple[ObjectRecord, ObjectView | None, str]] = []
+        over_capacity = 0
         for i, view in enumerate(fresh):
             label = view.memory.caption.split(":", 1)[0]
             assigned_identity = assignments.get(i)
@@ -265,7 +268,9 @@ class ObjectTracker:
                     # Neither merge nor duplicate: a later scan can still resolve it.
                     continue
                 if count >= p.max_objects:
-                    raise ValidationError("object capacity reached; prune old objects or raise max_objects")
+                    # Known objects keep updating; new ones wait for pruning or a higher limit.
+                    over_capacity += 1
+                    continue
                 identity = view.object_id
                 record = ObjectRecord(
                     identity,
@@ -324,6 +329,7 @@ class ObjectTracker:
             observation.timestamp,
             scan_key,
             skipped_ambiguous=len(skipped),
+            skipped_capacity=over_capacity,
         )
 
     def _assign(

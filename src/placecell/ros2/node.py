@@ -318,7 +318,22 @@ class IngestWorker:
                 self._log.info(
                     f"ingested {report.accepted}/{report.received}: {report.inserted} new, {report.merged} reinforced"
                     + (f", {report.unsupported} unsupported" if report.unsupported else "")
+                    + (
+                        f", {report.objects_skipped_ambiguous} ambiguous object detections skipped"
+                        if report.objects_skipped_ambiguous
+                        else ""
+                    )
                 )
+                if report.object_errors:
+                    self._log.warning(
+                        f"object tracking failed for {len(report.object_errors)} observations, "
+                        f"scene memories kept: {report.object_errors[-1]}"
+                    )
+                if report.objects_skipped_capacity:
+                    self._log.warning(
+                        f"object capacity reached, {report.objects_skipped_capacity} new objects not stored; "
+                        "prune old objects or raise object_max_records"
+                    )
             try:
                 self._ingester.discard([])  # drain cleanup intents after job ownership is released
             except OSError as e:
