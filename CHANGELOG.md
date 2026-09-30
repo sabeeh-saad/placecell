@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add the draft `mission-baseline-v2` dataset: the 24 v1 cases plus 40 development and 40 held-out cases for over-limit routes, corrections, configured-place naming, poisoned history and multilingual or noisy requests. Held-out labels stay draft until reviewed.
 - State the configured-place naming rule in the planner and reviewer prompts, so purpose descriptions go to memory lookup and missing names are clarified before dispatch.
 - Record OpenRouter's `usage.cost` and the model of native Gemini requests in traces; reject repeated or missing indices and empty vectors from OpenAI-compatible embeddings, including the dimension probe.
 - Request strict JSON-schema verdicts from the verifier, accept exactly one surrounding code fence, and raise caption/verification budgets for thinking models (`caption_max_tokens` 1024, `verification_max_tokens` 2048, `verification_structured_output`).

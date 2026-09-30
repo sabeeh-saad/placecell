@@ -13,6 +13,8 @@ from placecell.mission_evaluation import load_dataset, main, run_scripted, score
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "evaluation/missions/baseline-v1.json"
 REPLIES = ROOT / "evaluation/missions/scripted-replies-v1.json"
+DATA_V2 = ROOT / "evaluation/missions/baseline-v2.json"
+REPLIES_V2 = ROOT / "evaluation/missions/scripted-replies-v2.json"
 
 
 @pytest.fixture
@@ -59,6 +61,22 @@ def test_offline_baseline_is_not_model_or_execution_accuracy(dataset, trials):
     assert "not model accuracy" in report["claim"]
     assert report["plan_latency"]["count"] == 24
     assert report["execution_latency"]["count"] == 0
+
+
+def test_baseline_v2_keeps_v1_cases_and_adds_draft_held_out_cases():
+    v1, v2 = json.loads(DATA.read_text()), json.loads(DATA_V2.read_text())
+    assert v2["cases"][: len(v1["cases"])] == v1["cases"] and v2["groups"][:2] == v1["groups"]
+    dataset = load_dataset(DATA_V2)
+    splits = [dataset.groups[case.group]["split"] for case in dataset.cases]
+    assert dataset.label_status == "draft"
+    assert (splits.count("development"), splits.count("held_out")) == (64, 40)
+
+
+def test_baseline_v2_scripted_replies_cover_development_only():
+    dataset = load_dataset(DATA_V2)
+    report = score_trials(dataset, run_scripted(dataset, json.loads(REPLIES_V2.read_text()), run_id="v2"))
+    assert report["plan"]["passed"] == report["plan"]["eligible"] == 64
+    assert report["execution"]["unassessed"] == 64
 
 
 def test_expected_labels_do_not_supply_model_outputs(dataset):

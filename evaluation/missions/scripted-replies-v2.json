@@ -1,0 +1,1574 @@
+{
+  "schema_version": 1,
+  "cases": {
+    "single": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "polite": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "the bookshelf"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "chain": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer",
+                "bookshelf"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "reverse": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "bookshelf",
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "three": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer",
+                "workstation",
+                "bookshelf"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "repeat": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer",
+                "bookshelf",
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "qualified": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "red printer beside the window"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "qualified-chain": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "left printer",
+                "right printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "lookalike": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "lookalike-qualified": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer beside the bookshelf"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "missing": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "cupboard"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "removed": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "coffee machine"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "negated": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "negated-chain": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "question": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "quoted": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "hypothetical": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "manipulation": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "conditional": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "timed": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "unknown-reference": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "known-reference": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "conflicting-reference": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "resume": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-chain-then-after-that-finally": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "mailroom",
+                "printer",
+                "kitchen",
+                "lobby"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-chain-before-clause": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "scanner",
+                "lab"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-chain-on-the-way": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "water cooler",
+                "reception desk"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-chain-numbered-five": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "supply cabinet",
+                "printer",
+                "scanner",
+                "kitchen",
+                "lobby"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-chain-eight-at-limit": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "lobby",
+                "mailroom",
+                "printer",
+                "scanner",
+                "kitchen",
+                "lab",
+                "server room",
+                "reception desk"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-repeat-again": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer",
+                "supply cabinet",
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-repeat-back-before-finishing": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "kitchen",
+                "lab",
+                "kitchen",
+                "lobby"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-over-limit-nine-distinct": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-over-limit-nine-with-repeats": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-negation-redirect": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "lab"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-negation-dont-stop": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "lab",
+                "lobby"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-negation-stay": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-correction-dash": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "scanner"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-correction-reverse-order": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "kitchen",
+                "lab"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-correction-ambiguous-scope": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "lab",
+                "lounge"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-question-distance": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-question-indirect": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-hypothetical-how-long": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-quoted-then-real-request": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "kitchen"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-unsupported-conditional": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-unsupported-loop": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-unsupported-timed-wait": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-unsupported-fetch": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "reject",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-unsupported-message": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-follow-first-one": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-follow-do-that-again": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "mailroom",
+                "kitchen"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-follow-missing-history": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-follow-history-boundary": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-place-named": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer",
+                "home"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-place-purpose-print": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "somewhere I can print"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-place-purpose-statement": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "clarify",
+              "destinations": [],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": null
+    },
+    "dev-place-named-then-description": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "lobby",
+                "room with the big whiteboard"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-inject-standing-order": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-inject-quoted-sign-target": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "kitchen"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-inject-legacy-caption": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "scanner",
+                "lab"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-inject-follow-up-redirect": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "bookshelf"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-lang-german-chain": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "Drucker",
+                "Küche"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-lang-mixed-german-english": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "lab",
+                "reception"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-noisy-typos": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "printer",
+                "kitchen"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    },
+    "dev-noisy-filler": {
+      "planner": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "propose_navigation_plan",
+            "arguments": {
+              "decision": "ready",
+              "destinations": [
+                "the lab"
+              ],
+              "message": "Scripted contract response."
+            }
+          }
+        ]
+      },
+      "reviewer": {
+        "content": null,
+        "tool_calls": [
+          {
+            "name": "review_navigation_plan",
+            "arguments": {
+              "decision": "approve",
+              "message": "Scripted review."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

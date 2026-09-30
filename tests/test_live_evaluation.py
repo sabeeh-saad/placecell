@@ -16,6 +16,7 @@ from placecell.missions import MissionPlanner, PlanReviewAgent
 from tests.conftest import FakeTransport
 
 DATA = Path(__file__).resolve().parents[1] / "evaluation/missions/baseline-v1.json"
+DATA_V2 = DATA.with_name("baseline-v2.json")
 PAYLOAD = {"model": "test", "max_tokens": 100, "messages": [{"role": "user", "content": "go to printer"}]}
 
 
@@ -266,6 +267,14 @@ def test_held_out_never_falls_back_to_draft_development():
     with pytest.raises(ValidationError, match="human-reviewed"):
         preflight(replace(d, groups=groups), "held_out")
     assert preflight(replace(d, groups=groups, label_status="human_reviewed"), "held_out")["cases"] == 24
+
+
+def test_draft_held_out_cases_are_refused_only_for_their_labels():
+    d = load_dataset(DATA_V2)
+    assert preflight(d, "development")["cases"] == 64
+    with pytest.raises(ValidationError, match="human-reviewed"):
+        preflight(d, "held_out")
+    assert preflight(replace(d, label_status="human_reviewed"), "held_out")["cases"] == 40
 
 
 def test_private_key_and_cli_preflight_need_no_model_calls(tmp_path):

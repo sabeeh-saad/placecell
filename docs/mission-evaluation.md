@@ -82,6 +82,15 @@ layouts/sessions, register their groups, and freeze the split before tuning. The
 [object-label format](object-evaluation.md) remains the way to label boxes, visibility and
 physical instance continuity in saved RGB-D observations.
 
+`evaluation/missions/baseline-v2.json` keeps the 24 v1 cases unchanged and adds 40
+development and 40 held-out synthetic cases: routes up to and beyond the eight-destination
+limit, corrections, configured-place names versus purpose descriptions, poisoned history,
+German and mixed-language requests, typos and filler. `scripted-replies-v2.json` covers its
+64 development cases. All labels are still **draft and assistant-authored in one session**:
+the held-out split keeps those cases out of tuning but is not independent evidence, and the
+live preflight refuses it until real review. Configured places named in its scenarios are
+evaluator assumptions only; the dataset schema has no `configured_places` input.
+
 ## Import actual runner outcomes
 
 The live planning runner saves this versioned trial format directly. Other runners,
