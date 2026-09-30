@@ -62,6 +62,7 @@ from placecell.ros2.bridge import (
     pose_from_transform,
     stamp_to_seconds,
     update_localization,
+    update_odometry,
 )
 from placecell.ros2.depth import PendingImages, aligned_snapshot
 from placecell.ros2.navigation import Nav2Navigator, create_navigation_timers, create_navigator
@@ -657,6 +658,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     max_position_std_m=p["localization_max_position_std_m"],
                     max_yaw_std_rad=p["localization_max_yaw_std_rad"],
                     max_capture_future_s=p["sensor_max_future_s"],
+                    stationary_translation_m=p["localization_stationary_translation_m"],
+                    stationary_rotation_rad=p["localization_stationary_rotation_rad"],
+                    max_stationary_age_s=p["localization_max_stationary_age_s"] or math.inf,
                 ),
                 clock=self._memory_time,
             )
@@ -666,6 +670,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._tf_timeout = p["tf_timeout_s"]
             self._tf = Buffer()
             self._tf_listener = TransformListener(self._tf, self)
+            self._odom_frame = p["odom_frame"]
+            if self._odom_frame:
+                self.create_timer(0.2, self._on_odometry, clock=Clock(clock_type=ClockType.STEADY_TIME))
             self._depth_frames: deque[Any] = deque(maxlen=8)
             self._camera_infos: deque[Any] = deque(maxlen=8)
             self._depth_skew = p["object_depth_max_skew_s"]
@@ -926,6 +933,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "object_angular_error_rad": 0.05,
                 "map_frame": "map",
                 "base_frame": "base_footprint",
+                "odom_frame": "odom",
                 "map_id": "",
                 "localization_required": True,
                 "localization_topic": "/amcl_pose",
@@ -935,6 +943,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 "sensor_max_failures": 3,
                 "localization_max_position_std_m": 0.3,
                 "localization_max_yaw_std_rad": 0.35,
+                "localization_stationary_translation_m": 0.05,
+                "localization_stationary_rotation_rad": 0.05,
+                "localization_max_stationary_age_s": 0.0,
                 "db_path": "~/.placecell/db",
                 "collection": "default",
                 "keyframe_dir": "~/.placecell/keyframes",
@@ -1029,6 +1040,19 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
 
         def _on_localization(self, msg: Any) -> None:
             update_localization(self._localization, msg, self._map_id)
+
+        def _on_odometry(self) -> None:
+            from rclpy.time import Time
+
+            try:
+                transform = self._tf.lookup_transform(self._odom_frame, self._base_frame, Time())
+            except TransformException as e:
+                self.get_logger().warning(
+                    f"no odometry: idle localization expires after localization_max_age_s: {e}",
+                    throttle_duration_sec=60.0,
+                )
+                return
+            update_odometry(self._localization, transform)
 
         def _pose_at(self, sec: int, nanosec: int) -> Pose | None:
             from rclpy.duration import Duration

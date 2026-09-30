@@ -51,12 +51,29 @@ must also agree with the estimate within 0.5 m and 0.5 rad.
 
 The default maximum estimate age is five seconds, checked against both ROS time and
 monotonic receipt time. Configure `localization_max_age_s` for the localization publisher's
-actual update rate, including while stationary. AMCL can stop publishing new estimates
-when the robot is stationary; if its estimate ages out, captures and new goals wait for a
-fresh estimate and an active trip requests cancellation. Replaying an old estimate does
-not refresh its age. Alternative localization systems can provide the same message type.
-Memory-only recordings may explicitly set `localization_required:=false`; unchecked views
-remain ineligible for navigation. These checks cannot detect every localization failure,
+actual update rate while the robot moves. Time the robot is confirmed stationary does not
+count toward that age. Localizers that publish only after motion, such as stock AMCL with
+its `update_min_d`/`update_min_a` thresholds, therefore stay usable while the robot is
+idle, waits during Nav2 recovery, or verifies arrival. The Gazebo helper that requests
+AMCL no-motion updates is no longer required for this; it remains in the simulation.
+
+The node samples the `odom_frame` (default `odom`) to `base_frame` transform every 0.2 s.
+Time between two consecutive samples counts as stationary only when both stay within
+`localization_stationary_translation_m` (default 0.05 m) and
+`localization_stationary_rotation_rad` (default 0.05 rad) of where the robot stopped.
+Moving time is never credited, so an estimate expires after `localization_max_age_s` of
+cumulative motion without a new estimate, including stop-and-go motion. A trip that
+starts after a long rest has that long to receive one. Missing, stale or repeated
+odometry, or an empty `odom_frame`, earns no credit and restores the plain age limit.
+`localization_max_stationary_age_s` optionally bounds an estimate's total age; the
+default 0 leaves it unbounded, because a localizer that needs motion to publish would
+otherwise block an idle robot again.
+
+If an estimate ages out, captures and new goals wait for a fresh estimate and an active
+trip requests cancellation. Replaying an old estimate does not refresh its age.
+Alternative localization systems can provide the same message type. Memory-only
+recordings may explicitly set `localization_required:=false`; unchecked views remain
+ineligible for navigation. These checks cannot detect every localization failure,
 including an incorrectly confident estimate or a map changed without updating `map_id`.
 
 The action adapter uses asynchronous goal, feedback, result and cancellation interfaces
@@ -264,4 +281,6 @@ The main parameters are `navigation_enabled`, `nav2_action`, `places_file`,
 `navigation_lookup_timeout_s`, `navigation_response_timeout_s`, `navigation_timeout_s`,
 `navigation_arrival_timeout_s`, `navigation_arrival_max_attempts`, `verification_model`, `verification_base_url`,
 `verification_api_key_env`, `verification_request_timeout_s`, `localization_topic`, `localization_max_age_s`,
-`localization_max_position_std_m`, and `localization_max_yaw_std_rad`.
+`localization_max_position_std_m`, `localization_max_yaw_std_rad`, `odom_frame`,
+`localization_stationary_translation_m`, `localization_stationary_rotation_rad`, and
+`localization_max_stationary_age_s`.

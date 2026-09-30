@@ -16,7 +16,9 @@ observations; it never fabricates an object position or proves that an object is
 `sensor_max_age_s` defaults to **5 seconds** and is explicit in the reference profile.
 Both source timestamp age and monotonic receipt age must pass. This is a bounded freshness
 policy, not a measured hardware latency budget. Localization has its separate existing
-`localization_max_age_s` policy. A paused simulation clock cannot keep either input trusted.
+`localization_max_age_s` policy, which does not count odometry-confirmed stationary time
+(see the [navigation guide](navigation.md)). A paused simulation clock cannot keep either
+input trusted.
 Camera health is evaluated before ingestion sampling and worker-capacity checks, so a
 stationary robot's sampling interval does not look like camera loss.
 

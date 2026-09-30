@@ -86,6 +86,16 @@ def update_localization(gate: LocalizationGate, message: Any, map_id: str) -> bo
         return False
 
 
+def update_odometry(gate: LocalizationGate, message: Any) -> bool:
+    """Feed the latest odometry->base TransformStamped; malformed input earns no rest credit."""
+    try:
+        t, q = message.transform.translation, message.transform.rotation
+        pose = pose_from_transform(t.x, t.y, q.x, q.y, q.z, q.w, message.header.frame_id)
+        return gate.update_odometry(stamp_to_seconds(message.header.stamp.sec, message.header.stamp.nanosec), pose)
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return False
+
+
 class KeyframeWriter:
     """Writes keyframes as JPEG files and returns the evidence that points at them."""
 

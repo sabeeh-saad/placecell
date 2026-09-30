@@ -385,3 +385,29 @@ def test_new_instruction_can_use_recovered_localization_after_interruption(missi
     assert len(m.nav.sent) == 2
     m.nav.sent[1][2](NavigationEvent("succeeded"))
     assert m.events[-1].state == "succeeded"
+
+
+def test_idle_localizer_admits_commands_and_survives_stationary_waits(mission):
+    m = mission
+    mono = [0.0]
+    gate = LocalizationGate("map", "office", clock=lambda: m.now[0], monotonic=lambda: mono[0])
+    assert gate.update(m.now[0], Pose(0, 0, map_id="office"), covariance())
+    m.commands._localization_check = gate.ready
+    m.commands._localization_generation = lambda: gate.generation
+
+    def stand_still(seconds):
+        for _ in range(round(seconds * 2)):
+            m.now[0] += 0.5
+            mono[0] += 0.5
+            gate.update_odometry(m.now[0], Pose(0, 0, frame_id="odom"))
+            m.commands.poll()
+
+    stand_still(60)  # Stock AMCL publishes nothing while the robot stands still.
+    m.commands._mission_planner = None
+    m.commands.handle("go to printer")
+    m.tasks.pop(0)()
+    assert len(m.nav.sent) == 1
+    stand_still(30)  # e.g. a Nav2 wait behavior.
+    assert not m.nav.canceled and m.commands.busy
+    m.nav.sent[0][2](NavigationEvent("succeeded"))
+    assert m.events[-1].state == "succeeded"

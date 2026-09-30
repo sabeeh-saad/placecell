@@ -22,13 +22,19 @@ class LocalizationPolicy:
     max_pose_difference_m: float = 0.5
     max_heading_difference_rad: float = 0.5
     max_capture_future_s: float = 0.1
+    stationary_translation_m: float = 0.05
+    stationary_rotation_rad: float = 0.05
+    max_stationary_age_s: float = math.inf  # Total estimate age; unbounded by default.
 
     def __post_init__(self) -> None:
-        limits = {k: v for k, v in vars(self).items() if k != "max_capture_future_s"}
+        special = ("max_capture_future_s", "max_stationary_age_s")
+        limits = {k: v for k, v in vars(self).items() if k not in special}
         if any(not math.isfinite(v) or v <= 0 for v in limits.values()):
             raise ValidationError("localization limits must be finite and positive")
         if not math.isfinite(self.max_capture_future_s) or not 0 <= self.max_capture_future_s < self.max_age_s:
             raise ValidationError("capture future tolerance must be nonnegative and below the maximum age")
+        if not self.max_stationary_age_s >= self.max_age_s:
+            raise ValidationError("maximum stationary age must not be below the maximum age")
 
 
 class LocalizationGate:
@@ -36,6 +42,10 @@ class LocalizationGate:
 
     Invalid estimates revoke readiness immediately. Receipt age also uses monotonic
     time so a paused simulation or replayed message cannot keep a pose trusted.
+
+    Time the robot is confirmed stationary by odometry does not age an estimate, so
+    localizers that publish only after motion (e.g. AMCL) stay usable while idle.
+    Moving time, including after a long rest, still expires it at `max_age_s`.
     """
 
     def __init__(
@@ -55,6 +65,9 @@ class LocalizationGate:
         self._last_stamp = -math.inf
         self._last_clock = -math.inf
         self._generation = 0
+        self._odometry: tuple[float, float, Pose] | None = None
+        self._rest: Pose | None = None
+        self._credit = (0.0, 0.0)  # Confirmed stationary source/receipt time since the estimate.
 
     def _invalidate(self) -> None:
         if self._sample is not None:
@@ -66,6 +79,7 @@ class LocalizationGate:
         if not math.isfinite(now) or now < self._last_clock:
             self._invalidate()
             self._last_stamp = -math.inf
+            self._odometry = self._rest = None
         self._last_clock = now if math.isfinite(now) else math.inf
         return now
 
@@ -108,7 +122,45 @@ class LocalizationGate:
                 self._invalidate()
                 return False
             self._sample = timestamp, self._monotonic(), pose
+            self._credit = (0.0, 0.0)
             self._std = (float(np.sqrt(np.linalg.eigvalsh(matrix[:2, :2]).max())), math.sqrt(matrix[2, 2]))
+            return True
+
+    def update_odometry(self, timestamp: float, pose: Pose) -> bool:
+        """Record the latest base pose in the odometry frame.
+
+        Only the interval between two consecutive samples that stay within the stationary
+        thresholds of where the robot stopped counts as rest. Motion, gaps longer than
+        the estimate's remaining age, and missing, repeated or stale odometry earn no
+        credit, so the estimate then expires as if no odometry were available.
+        """
+        with self._lock:
+            self._ready()
+            now, received = self._now(), self._monotonic()
+            previous, p = self._odometry, self._policy
+            if (
+                not math.isfinite(timestamp)
+                or (previous is not None and timestamp <= previous[0])
+                or not abs(now - timestamp) <= p.max_age_s
+            ):
+                return False
+            self._odometry = timestamp, received, pose
+            rest = self._rest
+            if (
+                rest is None
+                or not pose.same_frame(rest)
+                or pose.distance_to(rest) > p.stationary_translation_m
+                or pose.heading_difference(rest) > p.stationary_rotation_rad
+            ):
+                self._rest = pose
+                return True
+            if previous is not None and self._sample is not None:
+                stamp, estimated, _pose = self._sample
+                source, receipt = self._credit
+                self._credit = (
+                    source + max(0.0, timestamp - max(previous[0], stamp)),
+                    receipt + max(0.0, received - max(previous[1], estimated)),
+                )
             return True
 
     def invalidate(self) -> None:
@@ -126,7 +178,7 @@ class LocalizationGate:
                 return None
             if not -self._policy.max_capture_future_s <= self._clock() - timestamp <= self._policy.max_age_s:
                 return None
-            if abs(timestamp - self._sample[0]) > self._policy.max_age_s:
+            if self._sample[0] - timestamp > self._policy.max_age_s:
                 return None
             return self._std
 
@@ -135,8 +187,13 @@ class LocalizationGate:
         if self._sample is None:
             return False
         stamp, received, _pose = self._sample
+        age, receipt_age = now - stamp, self._monotonic() - received
+        p = self._policy
         ready = (
-            0 <= now - stamp <= self._policy.max_age_s and 0 <= self._monotonic() - received <= self._policy.max_age_s
+            0 <= age <= p.max_stationary_age_s
+            and receipt_age >= 0
+            and age - self._credit[0] <= p.max_age_s
+            and receipt_age - self._credit[1] <= p.max_age_s
         )
         if not ready:
             self._invalidate()
@@ -151,7 +208,7 @@ class LocalizationGate:
             return (
                 math.isfinite(timestamp)
                 and -p.max_capture_future_s <= self._clock() - timestamp <= p.max_age_s
-                and abs(timestamp - stamp) <= p.max_age_s
+                and stamp - timestamp <= p.max_age_s  # Later captures are covered by readiness.
                 and pose.same_frame(estimate)
                 and pose.distance_to(estimate) <= p.max_pose_difference_m
                 and pose.heading_difference(estimate) <= p.max_heading_difference_rad
