@@ -6,6 +6,23 @@ import rclpy
 from nav2_msgs.srv import ManageLifecycleNodes
 from rclpy.node import Node
 
+STARTUP_ATTEMPTS = 3
+
+
+def settle(node, seconds):
+    until = time.monotonic() + seconds
+    while time.monotonic() < until:
+        rclpy.spin_once(node, timeout_sec=0.1)
+
+
+def call(node, client, command, deadline):
+    future = client.call_async(ManageLifecycleNodes.Request(command=command))
+    while not future.done():
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Navigation lifecycle activation timed out")
+        rclpy.spin_once(node, timeout_sec=0.1)
+    return future.exception() is None and future.result().success
+
 
 def main():
     rclpy.init()
@@ -21,19 +38,17 @@ def main():
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Navigation lifecycle service discovery timed out")
         # A service request endpoint can appear before its independent reply endpoint.
-        settle_until = time.monotonic() + 1
-        while time.monotonic() < settle_until:
-            rclpy.spin_once(node, timeout_sec=0.1)
-        futures = [
-            client.call_async(ManageLifecycleNodes.Request(command=ManageLifecycleNodes.Request.STARTUP))
-            for client in clients
-        ]
-        while not all(future.done() for future in futures):
-            if time.monotonic() >= deadline:
-                raise TimeoutError("Navigation lifecycle activation timed out")
-            rclpy.spin_once(node, timeout_sec=0.1)
-        if any(future.exception() is not None or not future.result().success for future in futures):
-            raise RuntimeError("Navigation lifecycle manager rejected startup")
+        settle(node, 1)
+        for client in clients:
+            for attempt in range(1, STARTUP_ATTEMPTS + 1):
+                if call(node, client, ManageLifecycleNodes.Request.STARTUP, deadline):
+                    break
+                # Under load a managed node's services can lag its manager; reset and bring up again.
+                node.get_logger().warning(f"{client.srv_name} startup failed (attempt {attempt}); resetting")
+                call(node, client, ManageLifecycleNodes.Request.RESET, deadline)
+                settle(node, 2)
+            else:
+                raise RuntimeError("Navigation lifecycle manager rejected startup")
         node.get_logger().info("Localization and navigation lifecycle managers activated")
     finally:
         node.destroy_node()
