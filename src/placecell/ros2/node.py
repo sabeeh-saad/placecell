@@ -75,6 +75,7 @@ from placecell.ros2.components import chat_options as chat_options
 from placecell.ros2.components import embedding_api_key as embedding_api_key
 from placecell.ros2.components import endpoint as endpoint
 from placecell.ros2.components import shared_api_key as shared_api_key
+from placecell.ros2.config import declare
 from placecell.ros2.depth import PendingImages, aligned_snapshot
 from placecell.ros2.navigation import Nav2Navigator, create_navigation_timers, create_navigator
 from placecell.ros2.operator import OperatorInterface
@@ -103,45 +104,48 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
     class PlacecellNode(Node):
         def __init__(self) -> None:
             super().__init__("placecell")
-            p = self._params()
+            config = declare(self)
+            p = config.parameters()
             # Acquire before any store, keyframe, context or trace writer is opened.
             self._storage_lease = StorageLease.for_parameters(p)
-            if p["navigation_enabled"] and (not p["map_id"].strip() or not p["localization_required"]):
+            if config.navigation.enabled and (
+                not config.localization.map_id.strip() or not config.localization.required
+            ):
                 raise ValidationError("Navigation requires a versioned map_id and localization_required:=true.")
             embedder = build_embedder(
-                p["embed_base_url"],
-                p["embed_model"],
+                config.embedding.base_url,
+                config.embedding.model,
                 embedding_api_key(p),
-                p["embed_dimension"],
-                backend=p["embed_backend"],
-                device=p["embed_device"],
-                revision=p["embed_revision"],
-                local_files_only=p["embed_local_files_only"],
-                batch_size=p["embed_batch_size"],
-                cache_folder=p["embed_cache_folder"],
+                config.embedding.dimension,
+                backend=config.embedding.backend,
+                device=config.embedding.device,
+                revision=config.embedding.revision,
+                local_files_only=config.embedding.local_files_only,
+                batch_size=config.embedding.batch_size,
+                cache_folder=config.embedding.cache_folder,
             )
             store = build_store(
-                p["db_path"],
-                p["collection"],
+                config.storage.db_path,
+                config.storage.collection,
                 embedder,
                 limits=StoreLimits(
-                    p["memory_max_records"],
-                    p["memory_max_sightings"],
-                    p["refine_max_pending"],
-                    p["cleanup_max_pending"],
-                    p["memory_evict_at_capacity"],
+                    config.storage.memory_max_records,
+                    config.storage.memory_max_sightings,
+                    config.storage.refine_max_pending,
+                    config.storage.cleanup_max_pending,
+                    config.storage.memory_evict_at_capacity,
                 ),
             )
             captioner: Captioner | None = None
             caption_url, caption_key = endpoint(p, "caption")
-            if p["caption_model"]:
+            if config.caption.model:
                 from placecell.providers import OpenAICompatibleCaptioner
 
                 captioner = OpenAICompatibleCaptioner(
-                    p["caption_model"],
+                    config.caption.model,
                     caption_url,
                     caption_key,
-                    max_tokens=p["caption_max_tokens"],
+                    max_tokens=config.caption.max_tokens,
                     retry=RetryPolicy(attempts=1),
                 )
             if captioner is None and not embedder.capabilities.image:
@@ -149,52 +153,63 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     "no caption_model and the embedder takes text only: frames cannot be stored. "
                     "Set caption_model, or use an embedding model that accepts images."
                 )
-            policy = SegmentationPolicy(p["min_interval_s"], p["min_travel_m"], p["min_turn_rad"], p["max_interval_s"])
+            policy = SegmentationPolicy(
+                config.ingest.min_interval_s,
+                config.ingest.min_travel_m,
+                config.ingest.min_turn_rad,
+                config.ingest.max_interval_s,
+            )
             segmenter = Segmenter(policy)
             self._admission = Segmenter(policy)
-            self._robot_id, self._camera_id = p["robot_id"], p["camera_id"]
+            self._robot_id, self._camera_id = config.camera.robot_id, config.camera.camera_id
             self._store = store
-            observer = Observer(store) if p["contradiction"] else None
+            observer = Observer(store) if config.ingest.contradiction else None
             self._object_policy = ObjectPolicy(
-                max_objects=p["object_max_records"],
-                max_views=p["object_max_views"],
-                retention_s=p["object_retention_s"],
-                min_interval_s=p["object_min_interval_s"],
-                require_position=bool(p["depth_topic"]),
+                max_objects=config.objects.max_records,
+                max_views=config.objects.max_views,
+                retention_s=config.objects.retention_s,
+                min_interval_s=config.objects.min_interval_s,
+                require_position=bool(config.camera.depth_topic),
             )
             self._object_recall: ObjectRecall | None = None
             tracker = None
-            if p["object_backend"] not in {"gemini", "chat"}:
+            if config.objects.backend not in {"gemini", "chat"}:
                 raise ValidationError("object_backend must be gemini or chat")
-            if p["objects_enabled"]:
+            if config.objects.enabled:
                 from placecell.providers.object_detection import ChatObjectDetector, GeminiObjectDetector
 
-                detector_type = ChatObjectDetector if p["object_backend"] == "chat" else GeminiObjectDetector
+                detector_type = ChatObjectDetector if config.objects.backend == "chat" else GeminiObjectDetector
                 detector = detector_type(
-                    p["object_model"],
-                    api_key=os.environ.get(p["object_api_key_env"], ""),
-                    base_url=p["object_base_url"],
+                    config.objects.model,
+                    api_key=os.environ.get(config.objects.api_key_env, ""),
+                    base_url=config.objects.base_url,
                     retry=RetryPolicy(attempts=1),
                 )
                 tracker = ObjectTracker(store, embedder, detector, self._object_policy)
                 self._object_recall = ObjectRecall(store, embedder, clock=self._memory_time)
             ingester = Ingester(
-                embedder, store, captioner, segmenter, batch_size=p["batch_size"], observer=observer, objects=tracker
+                embedder,
+                store,
+                captioner,
+                segmenter,
+                batch_size=config.ingest.batch_size,
+                observer=observer,
+                objects=tracker,
             )
             self._corrections = JsonlCorrectionLog(
-                Path(p["corrections_path"]).expanduser(),
-                max_records=p["correction_max_records"],
-                max_bytes=p["correction_max_bytes"],
+                Path(config.storage.corrections_path).expanduser(),
+                max_records=config.storage.correction_max_records,
+                max_bytes=config.storage.correction_max_bytes,
             )
             self._recall = Recall(store, embedder, corrections=self._corrections, clock=self._memory_time)
             self._agent: Agent | None = None
-            self._answer_min_similarity = float(p["answer_min_similarity"])
+            self._answer_min_similarity = float(config.questions.answer_min_similarity)
             if not 0 < self._answer_min_similarity <= 1:
                 raise ValidationError("answer_min_similarity must be within (0, 1]")
             self._consolidator: Consolidator | None = None
             self._refiner: MemoryRefiner | None = None
-            refinement_model = p["refine_model"] or p["caption_model"]
-            if p["refine_interval_s"] > 0 and refinement_model:
+            refinement_model = config.maintenance.refine_model or config.caption.model
+            if config.maintenance.refine_interval_s > 0 and refinement_model:
                 from placecell.providers import OpenAICompatibleCaptioner
 
                 reviewer = OpenAICompatibleCaptioner(
@@ -202,63 +217,69 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     caption_url,
                     caption_key,
                     prompt=REFINEMENT_PROMPT,
-                    max_tokens=p["caption_max_tokens"],
+                    max_tokens=config.caption.max_tokens,
                     detail="high",
                 )
                 self._refiner = MemoryRefiner(
                     store,
                     embedder,
                     reviewer,
-                    RefinementPolicy(max_memories=p["refine_batch_size"]),
+                    RefinementPolicy(max_memories=config.maintenance.refine_batch_size),
                     producer=refinement_model,
                 )
-            if p["chat_model"]:
+            if config.chat.model:
                 from placecell.providers import OpenAICompatibleChat
 
-                chat = OpenAICompatibleChat(p["chat_model"], *endpoint(p, "chat"), **chat_options(p, "chat"))
+                chat = OpenAICompatibleChat(config.chat.model, *endpoint(p, "chat"), **chat_options(p, "chat"))
                 self._agent = Agent(
                     self._recall,
                     chat,
-                    frame_id=p["map_frame"],
-                    map_id=p["map_id"],
+                    frame_id=config.localization.map_frame,
+                    map_id=config.localization.map_id,
                     clock=self._memory_time,
-                    max_tool_calls=p["chat_max_tool_calls"],
-                    max_context_chars=p["chat_max_context_chars"],
+                    max_tool_calls=config.chat.max_tool_calls,
+                    max_context_chars=config.chat.max_context_chars,
                 )
-                if p["consolidate_interval_s"] > 0:
+                if config.maintenance.consolidate_interval_s > 0:
                     self._consolidator = Consolidator(store, embedder, ChatSummarizer(chat))
             self._worker = IngestWorker(
                 ingester,
                 None,
-                p["batch_size"],
-                p["max_queue"],
+                config.ingest.batch_size,
+                config.ingest.max_queue,
                 self.get_logger(),
-                max_attempts=p["ingest_attempts"],
-                retry_delay_s=p["ingest_retry_delay_s"],
+                max_attempts=config.ingest.attempts,
+                retry_delay_s=config.ingest.retry_delay_s,
             )
-            self._questions = BoundedTasks(p["question_workers"], p["question_queue"], self.get_logger())
+            self._questions = BoundedTasks(config.questions.workers, config.questions.queue, self.get_logger())
             self._maintenance = BoundedTasks(1, 1, self.get_logger())
             # A separate worker, so frequent index syncs never crowd out hourly maintenance.
             self._indexing = BoundedTasks(1, 1, self.get_logger())
             self._curator = Curator(
                 store,
-                RetentionPolicy(max_idle_s=p["memory_max_idle_s"], history_age_s=p["memory_history_age_s"]),
+                RetentionPolicy(
+                    max_idle_s=config.storage.memory_max_idle_s, history_age_s=config.storage.memory_history_age_s
+                ),
                 corrections=self._corrections,
                 remover=remove_local_file,
                 clock=self._memory_time,
             )
-            writer = KeyframeWriter(Path(p["keyframe_dir"]).expanduser())
+            writer = KeyframeWriter(Path(config.storage.keyframe_dir).expanduser())
             writer.recover_pending(store)
             store.drain_cleanup(remove_local_file)
             self._writer = writer
-            self._builder = ObservationBuilder(p["robot_id"], p["camera_id"], writer)
-            self._recording = RecordingWriter(p["recording_dir"]) if p["recording_dir"] else None
-            self._map_frame, self._base_frame, self._map_id = p["map_frame"], p["base_frame"], p["map_id"]
-            self._localization_required = p["localization_required"]
+            self._builder = ObservationBuilder(config.camera.robot_id, config.camera.camera_id, writer)
+            self._recording = RecordingWriter(config.camera.recording_dir) if config.camera.recording_dir else None
+            self._map_frame, self._base_frame, self._map_id = (
+                config.localization.map_frame,
+                config.localization.base_frame,
+                config.localization.map_id,
+            )
+            self._localization_required = config.localization.required
             self._sensors = SensorHealth(
-                p["sensor_max_age_s"],
-                max_future_s=p["sensor_max_future_s"],
-                max_failures=p["sensor_max_failures"],
+                config.sensors.max_age_s,
+                max_future_s=config.sensors.max_future_s,
+                max_failures=config.sensors.max_failures,
                 clock=self._memory_time,
             )
             self._clock_jump = self.get_clock().create_jump_callback(
@@ -269,59 +290,61 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 self._map_frame,
                 self._map_id,
                 LocalizationPolicy(
-                    max_age_s=p["localization_max_age_s"],
-                    max_position_std_m=p["localization_max_position_std_m"],
-                    max_yaw_std_rad=p["localization_max_yaw_std_rad"],
-                    max_capture_future_s=p["sensor_max_future_s"],
-                    stationary_translation_m=p["localization_stationary_translation_m"],
-                    stationary_rotation_rad=p["localization_stationary_rotation_rad"],
-                    max_stationary_age_s=p["localization_max_stationary_age_s"] or math.inf,
+                    max_age_s=config.localization.max_age_s,
+                    max_position_std_m=config.localization.max_position_std_m,
+                    max_yaw_std_rad=config.localization.max_yaw_std_rad,
+                    max_capture_future_s=config.sensors.max_future_s,
+                    stationary_translation_m=config.localization.stationary_translation_m,
+                    stationary_rotation_rad=config.localization.stationary_rotation_rad,
+                    max_stationary_age_s=config.localization.max_stationary_age_s or math.inf,
                 ),
                 clock=self._memory_time,
             )
             self.create_subscription(
-                PoseWithCovarianceStamped, p["localization_topic"], self._on_localization, qos_profile_sensor_data
+                PoseWithCovarianceStamped, config.localization.topic, self._on_localization, qos_profile_sensor_data
             )
-            self._tf_timeout = p["tf_timeout_s"]
+            self._tf_timeout = config.localization.tf_timeout_s
             self._tf = Buffer()
             self._tf_listener = TransformListener(self._tf, self)
-            self._odom_frame = p["odom_frame"]
+            self._odom_frame = config.localization.odom_frame
             if self._odom_frame:
                 self.create_timer(0.2, self._on_odometry, clock=Clock(clock_type=ClockType.STEADY_TIME))
             self._depth_frames: deque[Any] = deque(maxlen=8)
             self._camera_infos: deque[Any] = deque(maxlen=8)
-            self._depth_skew = p["object_depth_max_skew_s"]
-            self._depth_error = p["object_position_error_m"]
-            self._depth_angular_error = p["object_angular_error_rad"]
+            self._depth_skew = config.objects.depth_max_skew_s
+            self._depth_error = config.objects.position_error_m
+            self._depth_angular_error = config.objects.angular_error_rad
             self._pending_images = PendingImages(
                 self._depth_skew,
-                wait_s=p["rgbd_wait_s"],
-                max_age_s=p["sensor_max_age_s"],
-                max_message_bytes=p["camera_max_message_bytes"],
-                max_future_s=p["sensor_max_future_s"],
+                wait_s=config.camera.rgbd_wait_s,
+                max_age_s=config.sensors.max_age_s,
+                max_message_bytes=config.camera.max_message_bytes,
+                max_future_s=config.sensors.max_future_s,
             )
             image_qos = (
                 QoSProfile(depth=8, reliability=ReliabilityPolicy.RELIABLE)
-                if p["rgbd_reliable"]
+                if config.camera.rgbd_reliable
                 else qos_profile_sensor_data
             )
-            if p["objects_enabled"] and p["depth_topic"]:
+            if config.objects.enabled and config.camera.depth_topic:
                 self._depth_frames = self._pending_images.depth
                 self._camera_infos = self._pending_images.info
-                self.create_subscription(Image, p["depth_topic"], self._pending_images.add_depth, image_qos)
+                self.create_subscription(Image, config.camera.depth_topic, self._pending_images.add_depth, image_qos)
                 self.create_subscription(
                     CameraInfo,
-                    p["camera_info_topic"],
+                    config.camera.info_topic,
                     lambda msg: self._pending_images.add_depth(msg, calibration=True),
                     image_qos,
                 )
-            self._sync_images = p["objects_enabled"] and bool(p["depth_topic"])
+            self._sync_images = config.objects.enabled and bool(config.camera.depth_topic)
             self._clock_fault_reported = False
             self.create_timer(0.04, self._drain_image, clock=Clock(clock_type=ClockType.STEADY_TIME))
-            if p["compressed"]:
-                self.create_subscription(CompressedImage, p["image_topic"], self._receive_compressed, image_qos)
+            if config.camera.compressed:
+                self.create_subscription(
+                    CompressedImage, config.camera.image_topic, self._receive_compressed, image_qos
+                )
             else:
-                self.create_subscription(Image, p["image_topic"], self._receive_image, image_qos)
+                self.create_subscription(Image, config.camera.image_topic, self._receive_image, image_qos)
             self.create_subscription(String, "~/ask", self._on_ask, 10)
             self.create_subscription(String, "~/correct", self._on_correct, 10)
             self.create_subscription(String, "~/refine", self._on_refine, 10)
@@ -332,32 +355,34 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._mission_context: MissionContext | None = None
             self._mission_traces: TraceStore | None = None
             self._command_journal: CommandJournal | None = None
-            if p["navigation_enabled"]:
+            if config.navigation.enabled:
                 self._command_journal = CommandJournal(
-                    p["command_journal_path"] or ":memory:",
-                    CommandScope(p["robot_id"], p["map_id"], p["mission_conversation_id"]),
-                    retry_window_s=p["command_retry_window_s"],
-                    max_records=p["command_max_records"],
+                    config.navigation.command_journal_path or ":memory:",
+                    CommandScope(config.camera.robot_id, config.localization.map_id, config.mission.conversation_id),
+                    retry_window_s=config.navigation.command_retry_window_s,
+                    max_records=config.navigation.command_max_records,
                 )
                 self._mission_traces = build_trace_store(p)
-                if p["mission_enabled"]:
+                if config.mission.enabled:
                     self._mission_context = MissionContext(
-                        p["mission_context_path"] or ":memory:",
-                        scope=json.dumps([p["robot_id"], p["map_id"], p["mission_conversation_id"]]),
-                        max_events=p["mission_context_max_events"],
-                        max_bytes=p["mission_context_max_bytes"],
-                        retention_s=p["mission_context_retention_s"],
+                        config.mission.context_path or ":memory:",
+                        scope=json.dumps(
+                            [config.camera.robot_id, config.localization.map_id, config.mission.conversation_id]
+                        ),
+                        max_events=config.mission.context_max_events,
+                        max_bytes=config.mission.context_max_bytes,
+                        retention_s=config.mission.context_retention_s,
                         references_available=self._context_reference_available,
                     )
-                places = load_named_places(p["places_file"]) if p["places_file"] else {}
-                verification_model = p["verification_model"] or p["caption_model"]
+                places = load_named_places(config.navigation.places_file) if config.navigation.places_file else {}
+                verification_model = config.verification.model or config.caption.model
                 verifier = (
                     VisionVerifier(
                         verification_model,
                         *endpoint(p, "verification"),
-                        timeout_s=p["verification_request_timeout_s"],
-                        max_tokens=p["verification_max_tokens"],
-                        structured_output=p["verification_structured_output"],
+                        timeout_s=config.verification.request_timeout_s,
+                        max_tokens=config.verification.max_tokens,
+                        structured_output=config.verification.structured_output,
                     )
                     if verification_model
                     else None
@@ -365,28 +390,28 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 object_arrival = None
                 if tracker is not None:
                     arrival_detector = detector_type(
-                        p["object_arrival_model"] or p["object_model"],
-                        api_key=os.environ.get(p["object_api_key_env"], ""),
-                        base_url=p["object_base_url"],
-                        timeout_s=p["object_arrival_request_timeout_s"],
+                        config.object_arrival.model or config.objects.model,
+                        api_key=os.environ.get(config.objects.api_key_env, ""),
+                        base_url=config.objects.base_url,
+                        timeout_s=config.object_arrival.request_timeout_s,
                         retry=RetryPolicy(attempts=1),
                     )
                     object_arrival = ObjectArrivalVerifier(
                         ObjectTracker(store, embedder, arrival_detector, self._object_policy),
                         arrival_detector,
                         ObjectArrivalPolicy(
-                            max_observation_age_s=p["navigation_max_observation_age_s"],
-                            min_similarity=p["object_arrival_min_similarity"],
-                            moved_similarity=p["object_arrival_moved_similarity"],
-                            similarity_margin=p["object_arrival_similarity_margin"],
-                            max_uncertainty_m=p["object_arrival_max_uncertainty_m"],
-                            max_position_age_s=p["object_arrival_max_position_age_s"],
-                            max_move_m=p["object_arrival_max_move_m"],
+                            max_observation_age_s=config.navigation.max_observation_age_s,
+                            min_similarity=config.object_arrival.min_similarity,
+                            moved_similarity=config.object_arrival.moved_similarity,
+                            similarity_margin=config.object_arrival.similarity_margin,
+                            max_uncertainty_m=config.object_arrival.max_uncertainty_m,
+                            max_position_age_s=config.object_arrival.max_position_age_s,
+                            max_move_m=config.object_arrival.max_move_m,
                         ),
                         clock=self._memory_time,
                     )
                 approach = None
-                if p["approach_enabled"] or p["object_search_enabled"]:
+                if config.approach.enabled or config.object_search.enabled:
                     from placecell.ros2.approach import create_planning_environment
 
                     if self._object_recall is None:
@@ -403,51 +428,53 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                         frame_id=self._map_frame,
                         map_id=self._map_id,
                         base_frame=self._base_frame,
-                        costmap_topic=p["approach_costmap_topic"],
-                        footprint_topic=p["approach_footprint_topic"],
-                        action_name=p["approach_planner_action"],
-                        planner_id=p["approach_planner_id"],
-                        timeout_s=p["approach_request_timeout_s"],
+                        costmap_topic=config.approach.costmap_topic,
+                        footprint_topic=config.approach.footprint_topic,
+                        action_name=config.approach.planner_action,
+                        planner_id=config.approach.planner_id,
+                        timeout_s=config.approach.request_timeout_s,
                     )
                     approach = ApproachPlanner(
                         environment,
                         ApproachPolicy(
-                            clearance_m=p["approach_clearance_m"],
-                            max_uncertainty_m=p["approach_max_uncertainty_m"],
-                            camera_yaw_offset_rad=p["approach_camera_yaw_offset_rad"],
-                            max_sensor_age_s=p["approach_max_sensor_age_s"],
-                            max_position_age_s=p["approach_max_position_age_s"],
-                            planning_timeout_s=p["approach_planning_timeout_s"],
+                            clearance_m=config.approach.clearance_m,
+                            max_uncertainty_m=config.approach.max_uncertainty_m,
+                            camera_yaw_offset_rad=config.approach.camera_yaw_offset_rad,
+                            max_sensor_age_s=config.approach.max_sensor_age_s,
+                            max_position_age_s=config.approach.max_position_age_s,
+                            planning_timeout_s=config.approach.planning_timeout_s,
                         ),
                         clock=self._memory_time,
                     )
                 resolver = DestinationResolver(
                     store,
                     self._recall,
-                    robot_id=p["robot_id"],
-                    camera_id=p["camera_id"],
-                    frame_id=p["map_frame"],
-                    map_id=p["map_id"],
+                    robot_id=config.camera.robot_id,
+                    camera_id=config.camera.camera_id,
+                    frame_id=config.localization.map_frame,
+                    map_id=config.localization.map_id,
                     clock=self._memory_time,
                     places=places,
                     verifier=verifier,
                     objects=self._object_recall,
-                    approach=approach if p["approach_enabled"] else None,
+                    approach=approach if config.approach.enabled else None,
                     object_arrival=object_arrival,
                     policy=NavigationPolicy(
-                        min_similarity=p["navigation_min_similarity"],
-                        min_confidence=p["navigation_min_confidence"],
-                        max_age_s=p["navigation_max_memory_age_s"],
+                        min_similarity=config.navigation.min_similarity,
+                        min_confidence=config.navigation.min_confidence,
+                        max_age_s=config.navigation.max_memory_age_s,
                     ),
                 )
                 self._navigator = create_navigator(
                     self,
-                    p["nav2_action"],
-                    p["navigation_response_timeout_s"],
-                    p["navigation_timeout_s"],
+                    config.navigation.nav2_action,
+                    config.navigation.response_timeout_s,
+                    config.navigation.timeout_s,
                     ownership=NavigationOwnership(
-                        p["navigation_ownership_path"],
-                        NavigationScope(self._robot_id, self._map_id, self.resolve_topic_name(p["nav2_action"])),
+                        config.navigation.ownership_path,
+                        NavigationScope(
+                            self._robot_id, self._map_id, self.resolve_topic_name(config.navigation.nav2_action)
+                        ),
                     ),
                 )
                 self._command_tasks = BoundedTasks(1, 1, self.get_logger())
@@ -457,7 +484,7 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     self._navigator,
                     self._submit_command,
                     self._publish_navigation,
-                    request_timeout_s=p["navigation_lookup_timeout_s"],
+                    request_timeout_s=config.navigation.lookup_timeout_s,
                     observation_clock=self._memory_time,
                     localization_ready=lambda: self._sensors.ready() and self._localization.ready(),
                     localization_generation=lambda: self._localization.generation,
@@ -465,9 +492,9 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     sensor_generation=lambda d: (
                         self._sensors.generation(depth=bool(d.object_id)) if d.source == "memory" else 0
                     ),
-                    arrival_timeout_s=p["navigation_arrival_timeout_s"],
-                    max_observation_age_s=p["navigation_max_observation_age_s"],
-                    arrival_max_attempts=p["navigation_arrival_max_attempts"],
+                    arrival_timeout_s=config.navigation.arrival_timeout_s,
+                    max_observation_age_s=config.navigation.max_observation_age_s,
+                    arrival_max_attempts=config.navigation.arrival_max_attempts,
                     mission_planner=build_mission_planner(p),
                     mission_context=self._mission_context,
                     trace_store=self._mission_traces,
@@ -475,198 +502,34 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                     search=ObjectSearch(
                         approach,
                         ObjectSearchPolicy(
-                            max_viewpoints=p["object_search_max_viewpoints"],
-                            timeout_s=p["object_search_timeout_s"],
-                            radius_m=p["object_search_radius_m"],
-                            max_path_m=p["object_search_max_path_m"],
+                            max_viewpoints=config.object_search.max_viewpoints,
+                            timeout_s=config.object_search.timeout_s,
+                            radius_m=config.object_search.radius_m,
+                            max_path_m=config.object_search.max_path_m,
                         ),
                     )
-                    if p["object_search_enabled"] and approach is not None
+                    if config.object_search.enabled and approach is not None
                     else None,
                 )
                 create_navigation_timers(self, self._navigator, self._commands)
             self._operator = OperatorInterface(self, self._commands, journal=self._command_journal)
-            if p["curator_interval_s"] > 0:
-                self.create_timer(p["curator_interval_s"], self._curate)
+            if config.maintenance.curator_interval_s > 0:
+                self.create_timer(config.maintenance.curator_interval_s, self._curate)
             if self._consolidator is not None:
-                self.create_timer(p["consolidate_interval_s"], self._consolidate)
+                self.create_timer(config.maintenance.consolidate_interval_s, self._consolidate)
             if self._refiner is not None:
-                self.create_timer(p["refine_interval_s"], self._refine)
+                self.create_timer(config.maintenance.refine_interval_s, self._refine)
             sync_index = getattr(self._store, "sync_index", None)
             if sync_index is not None:
                 self.create_timer(INDEX_SYNC_INTERVAL_S, lambda: self._indexing.submit(sync_index, key="sync"))
             self.create_timer(30.0, self._diagnostics)
             self._worker.start()
-            where = f"lancedb {p['db_path']}" if p["db_path"] else "memory"
+            where = f"lancedb {config.storage.db_path}" if config.storage.db_path else "memory"
             self.get_logger().info(
-                f"placecell up: robot {p['robot_id']}, camera {p['camera_id']}, model {embedder.model_name}, "
+                f"placecell up: robot {config.camera.robot_id}, camera {config.camera.camera_id}, "
+                f"model {embedder.model_name}, "
                 f"store {where}, agent {'on' if self._agent else 'off'}"
             )
-
-        def _params(self) -> dict[str, Any]:
-            defaults: dict[str, Any] = {
-                "robot_id": "robot",
-                "camera_id": "front",
-                "image_topic": "/camera/color/image_raw",
-                "recording_dir": "",
-                "compressed": False,
-                "objects_enabled": False,
-                "object_arrival_model": "",
-                "object_arrival_request_timeout_s": 8.0,
-                "object_arrival_min_similarity": 0.85,
-                "object_arrival_moved_similarity": 0.95,
-                "object_arrival_similarity_margin": 0.08,
-                "object_arrival_max_uncertainty_m": 0.35,
-                "object_arrival_max_position_age_s": 300.0,
-                "object_arrival_max_move_m": 3.0,
-                "object_search_enabled": False,
-                "object_search_max_viewpoints": 3,
-                "object_search_timeout_s": 60.0,
-                "object_search_radius_m": 1.5,
-                "object_search_max_path_m": 4.0,
-                "approach_enabled": False,
-                "approach_costmap_topic": "/global_costmap/costmap_raw",
-                "approach_footprint_topic": "/local_costmap/published_footprint",
-                "approach_planner_action": "/compute_path_to_pose",
-                "approach_planner_id": "",
-                "approach_request_timeout_s": 2.0,
-                "approach_planning_timeout_s": 8.0,
-                "approach_clearance_m": 0.5,
-                "approach_max_uncertainty_m": 0.35,
-                "approach_max_position_age_s": 300.0,
-                "approach_max_sensor_age_s": 2.0,
-                "approach_camera_yaw_offset_rad": 0.0,
-                "object_model": "",
-                "object_backend": "gemini",
-                "object_base_url": "https://generativelanguage.googleapis.com/v1beta",
-                "object_api_key_env": "GEMINI_API_KEY",
-                "object_max_records": 1000,
-                "object_max_views": 4,
-                "object_retention_s": 2592000.0,
-                "object_min_interval_s": 15.0,
-                "depth_topic": "/camera/aligned_depth_to_color/image_raw",
-                "camera_info_topic": "/camera/color/camera_info",
-                "object_depth_max_skew_s": 0.08,
-                "rgbd_wait_s": 0.3,
-                "rgbd_reliable": False,
-                "object_position_error_m": 0.1,
-                "object_angular_error_rad": 0.05,
-                "map_frame": "map",
-                "base_frame": "base_footprint",
-                "odom_frame": "odom",
-                "map_id": "",
-                "localization_required": True,
-                "localization_topic": "/amcl_pose",
-                "localization_max_age_s": 5.0,
-                "sensor_max_age_s": 5.0,
-                "sensor_max_future_s": 0.1,
-                "sensor_max_failures": 3,
-                "localization_max_position_std_m": 0.3,
-                "localization_max_yaw_std_rad": 0.35,
-                "localization_stationary_translation_m": 0.05,
-                "localization_stationary_rotation_rad": 0.05,
-                "localization_max_stationary_age_s": 0.0,
-                "db_path": "~/.placecell/db",
-                "collection": "default",
-                "keyframe_dir": "~/.placecell/keyframes",
-                "embed_base_url": "",
-                "embed_api_key_env": "",
-                "embed_model": "",
-                "embed_backend": "auto",
-                "embed_device": "cpu",
-                "embed_revision": "",
-                "embed_local_files_only": False,
-                "embed_batch_size": 16,
-                "embed_cache_folder": "",
-                "embed_dimension": 0,
-                "caption_base_url": "https://api.openai.com/v1",
-                "caption_api_key_env": "",
-                "caption_model": "",
-                "caption_max_tokens": 1024,
-                "chat_base_url": "https://api.openai.com/v1",
-                "chat_api_key_env": "",
-                "chat_model": "",
-                "chat_max_tokens": 400,
-                "chat_token_parameter": "max_tokens",
-                "chat_temperature": 0.0,
-                "chat_max_tool_calls": 16,
-                "answer_min_similarity": 0.5,
-                "chat_max_context_chars": 40000,
-                "api_key_env": "PLACECELL_API_KEY",
-                "min_interval_s": 2.0,
-                "max_interval_s": 60.0,
-                "ingest_attempts": 5,
-                "ingest_retry_delay_s": 1.0,
-                "camera_max_message_bytes": 8 * 1024 * 1024,
-                "question_workers": 2,
-                "question_queue": 8,
-                "min_travel_m": 0.3,
-                "min_turn_rad": 0.35,
-                "batch_size": 8,
-                "max_queue": 64,
-                "memory_max_records": 10000,
-                "memory_max_sightings": 1024,
-                "memory_evict_at_capacity": True,
-                "memory_max_idle_s": 7776000.0,
-                "memory_history_age_s": 7776000.0,
-                "refine_max_pending": 256,
-                "cleanup_max_pending": 2048,
-                "correction_max_records": 10000,
-                "correction_max_bytes": 4194304,
-                "mission_context_max_events": 1000,
-                "mission_context_max_bytes": 2097152,
-                "mission_context_retention_s": 2592000.0,
-                "tf_timeout_s": 0.2,
-                "curator_interval_s": 3600.0,
-                "contradiction": True,
-                "corrections_path": "~/.placecell/corrections.jsonl",
-                "consolidate_interval_s": 0.0,
-                "refine_interval_s": 3600.0,
-                "refine_batch_size": 8,
-                "refine_model": "",
-                "navigation_enabled": False,
-                "mission_enabled": False,
-                "mission_model": "",
-                "mission_base_url": "",
-                "mission_api_key_env": "",
-                "mission_review_model": "",
-                "mission_review_base_url": "",
-                "mission_review_api_key_env": "",
-                "mission_request_timeout_s": 8.0,
-                "mission_max_tokens": 2048,
-                "mission_token_parameter": "max_tokens",
-                "mission_temperature": 0.0,
-                "mission_max_destinations": 8,
-                "mission_context_path": "~/.placecell/missions.sqlite3",
-                "mission_trace_path": "",
-                "mission_trace_max_events": 10000,
-                "mission_trace_max_bytes": 16777216,
-                "mission_trace_queue_size": 256,
-                "mission_trace_instruction_text": "raw",
-                "mission_conversation_id": "default",
-                "command_journal_path": "~/.placecell/commands.sqlite3",
-                "command_retry_window_s": 86400.0,
-                "command_max_records": 10000,
-                "verification_model": "",
-                "verification_base_url": "",
-                "verification_api_key_env": "",
-                "verification_request_timeout_s": 8.0,
-                "verification_max_tokens": 2048,
-                "verification_structured_output": True,
-                "navigation_arrival_timeout_s": 30.0,
-                "navigation_max_observation_age_s": 5.0,
-                "navigation_arrival_max_attempts": 3,
-                "nav2_action": "navigate_to_pose",
-                "navigation_ownership_path": "~/.placecell/navigation.sqlite3",
-                "places_file": "",
-                "navigation_min_similarity": 0.5,
-                "navigation_min_confidence": 0.2,
-                "navigation_max_memory_age_s": 604800.0,
-                "navigation_response_timeout_s": 10.0,
-                "navigation_lookup_timeout_s": 30.0,
-                "navigation_timeout_s": 600.0,
-            }
-            return {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
 
         def _memory_time(self) -> float:
             return float(self.get_clock().now().nanoseconds) / 1e9
