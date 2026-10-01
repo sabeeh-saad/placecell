@@ -19,6 +19,7 @@ from placecell.errors import FailureStage, TargetValidationError, ValidationErro
 from placecell.memory import Memory, Pose
 from placecell.mission_context import MissionContext
 from placecell.missions import MissionPlanner
+from placecell.navigation_arrival import ArrivalCheck, ArrivalOutcome
 from placecell.navigation_mission import MissionSequencer
 from placecell.navigation_state import (
     ARRIVAL_PHASES,
@@ -1194,11 +1195,7 @@ class NavigationCommands:
                     )
                     return
                 self._set_phase(NavState.AWAITING_OBSERVATION)
-                self._trip.arrival_attempts = 0
-                self._trip.arrival_after = self._observation_clock()
-                self._trip.arrival_deadline = self._clock() + self._arrival_timeout
-                if self._trip.search_deadline is not None:
-                    self._trip.arrival_deadline = min(self._trip.arrival_deadline, self._trip.search_deadline)
+                self._arrival_check().arm(self._trip, self._arrival_timeout)
                 self._emit(
                     NavigationUpdate(
                         request_id,
@@ -1237,20 +1234,8 @@ class NavigationCommands:
             if request_id is None or self._state != NavState.AWAITING_OBSERVATION or destination is None:
                 return
             arrival_trace = self._trace_context
-            memory = destination.memory
-            if (
-                memory is None
-                or observation.robot_id != memory.robot_id
-                or observation.camera_id != memory.camera_id
-                or not observation.localization_checked
-                or (bool(destination.object_id) and observation.depth is None)
-                or not self._provenance_ready()
-                or not self._trip.arrival_after < observation.timestamp <= self._observation_clock()
-                or not 0 <= self._observation_clock() - observation.timestamp <= self._max_observation_age
-                or not observation.pose.same_frame(destination.pose)
-                or observation.pose.distance_to(destination.pose) > 0.35
-                or observation.pose.heading_difference(destination.pose) > 0.35
-            ):
+            check = self._arrival_check()
+            if not check.accepts(self._trip, destination, observation):
                 if arrival_trace:
                     arrival_trace.emit(
                         "arrival.observation_rejected",
@@ -1275,11 +1260,7 @@ class NavigationCommands:
                     failure_stage="retrieval",
                 )
                 return
-            self._trip.arrival_stamp = observation.timestamp
-            self._trip.arrival_attempts += 1
-            self._trip.image_deadline = (
-                self._clock() + self._max_observation_age - (self._observation_clock() - observation.timestamp)
-            )
+            check.take(self._trip, observation)
             self._set_phase(NavState.VERIFYING_ARRIVAL)
             self._emit(
                 NavigationUpdate(
@@ -1371,21 +1352,15 @@ class NavigationCommands:
             error_type=error_type,
         )
 
+    def _arrival_check(self) -> ArrivalCheck:
+        # Built per call so replaced clocks and limits apply at once.
+        return ArrivalCheck(self._clock, self._observation_clock, self._max_observation_age, self._provenance_ready)
+
     def _arrival_fresh(self) -> bool:
-        return (
-            self._trip.arrival_stamp is not None
-            and 0 <= self._observation_clock() - self._trip.arrival_stamp <= self._max_observation_age
-            and self._clock() <= self._trip.image_deadline
-        )
+        return self._arrival_check().fresh(self._trip)
 
     def _can_retry_arrival(self) -> bool:
-        return (
-            self._trip.destination is not None
-            and bool(self._trip.destination.object_id)
-            and self._trip.arrival_attempts < self._arrival_max_attempts
-            and self._clock() < self._trip.arrival_deadline
-            and self._provenance_ready()
-        )
+        return self._arrival_check().can_retry(self._trip, self._arrival_max_attempts)
 
     def _search_next(self, request_id: str, destination: Destination, verdict: ObjectArrivalVerdict) -> None:
         assert self._search is not None
@@ -1515,17 +1490,18 @@ class NavigationCommands:
         checked_generation: int | None = None,
         error_type: str = "",
     ) -> None:
+        outcome = ArrivalOutcome(matched, reason, object_result, failure_stage, error_type)
         with self._lock:
             if request_id != self._active:
                 return
-            if self._state == NavState.VERIFYING_ARRIVAL and not self._arrival_fresh():
-                if self._can_retry_arrival() and object_result not in FINAL_VERDICTS:
+            check = self._arrival_check()
+            if self._state == NavState.VERIFYING_ARRIVAL and not check.fresh(self._trip):
+                if check.can_retry(self._trip, self._arrival_max_attempts) and object_result not in FINAL_VERDICTS:
                     # The worker has returned. Discard its expired result before
                     # accepting a different capture; never overlap attempts or
                     # extend the original arrival deadline.
                     self._set_phase(NavState.AWAITING_OBSERVATION)
-                    self._trip.arrival_stamp = None
-                    self._trip.arrival_after = self._observation_clock()
+                    check.retry(self._trip)
                     self._emit(
                         NavigationUpdate(
                             request_id,
@@ -1536,52 +1512,37 @@ class NavigationCommands:
                         )
                     )
                     return
-                matched, reason, failure_stage = False, "The arrival image expired during verification.", "geometry"
-                error_type = ""
-                if object_result:
-                    object_result = "unavailable"
-            if matched and (not self._provenance_ready() or self._clock() >= self._trip.arrival_deadline):
-                matched = False
-                reason = "Arrival verification expired or localization became unavailable."
-                failure_stage = "geometry"
-                if object_result:
-                    object_result = "unavailable"
-            if matched and self._trip.destination is not None:
-                matched = self._resolver.arrival_available(self._trip.destination, checked_generation)
-                if not matched:
-                    object_result, reason = (
-                        "unavailable" if self._trip.destination.object_id else "",
-                        "The selected target reference became unavailable.",
-                    )
-                    failure_stage = "retrieval"
-            failure_stage = "" if matched else (failure_stage or "identity")
-            self._set_phase(NavState.SUCCEEDED if matched else NavState.DESTINATION_UNVERIFIED)
+                outcome = outcome.expired()
+            if outcome.matched and check.too_late(self._trip):
+                outcome = outcome.late()
+            if outcome.matched and self._trip.destination is not None:
+                outcome = outcome.checked(
+                    self._resolver.arrival_available(self._trip.destination, checked_generation),
+                    bool(self._trip.destination.object_id),
+                )
+            outcome = outcome.settled()
+            self._set_phase(NavState.SUCCEEDED if outcome.matched else NavState.DESTINATION_UNVERIFIED)
             if self._trace_context:
                 self._trace_context.emit(
                     "arrival.verdict",
-                    matched=matched,
-                    reason="" if error_type else reason,
-                    error_type=error_type,
-                    object_result=object_result,
-                    failure_stage=failure_stage,
+                    matched=outcome.matched,
+                    reason="" if outcome.error_type else outcome.reason,
+                    error_type=outcome.error_type,
+                    object_result=outcome.object_result,
+                    failure_stage=outcome.failure_stage,
                 )
-            if not matched and object_result == "ambiguous":
+            if not outcome.matched and outcome.object_result == "ambiguous":
                 self._set_phase(NavState.DESTINATION_AMBIGUOUS)
-            message = (
-                "Destination visible at the reached viewpoint. "
-                if matched
-                else "Reached the pose; destination unverified. "
-            ) + reason
             self._complete(
                 NavigationUpdate(
                     request_id,
                     self._state,
-                    message,
+                    outcome.message,
                     self._trip.destination,
-                    object_result=object_result,
+                    object_result=outcome.object_result,
                     search_attempt=self._trip.search_count,
-                    failure_stage=failure_stage,
-                    error_type="" if matched else error_type,
+                    failure_stage=outcome.failure_stage,
+                    error_type="" if outcome.matched else outcome.error_type,
                 )
             )
 
