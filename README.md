@@ -278,9 +278,12 @@ integrations, and documentation. Include relevant tests and the evidence support
 accuracy or performance claim. Use the [roadmap](docs/roadmap.md) to identify current priorities.
 
 The core lives in `src/placecell/`: `missions.py` and `mission_context.py` handle agent
-planning and conversation history; `navigation.py` owns execution; `objects.py`,
-`object_arrival.py`, and `object_search.py` handle instance memory and verification;
-`providers/`, `store/`, and `ros2/` supply the integration boundaries.
+planning and conversation history; `navigation.py` owns execution, with its phases,
+status, mission, arrival and local search parts in `navigation_state.py`,
+`navigation_status.py`, `navigation_mission.py`, `navigation_arrival.py` and
+`navigation_search.py`; `objects.py`, `object_arrival.py`, and `object_search.py` handle
+instance memory and verification; `providers/`, `store/`, and `ros2/` supply the
+integration boundaries.
 
 ## Acknowledgements
 

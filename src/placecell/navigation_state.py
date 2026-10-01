@@ -10,13 +10,14 @@ the current trip's details beside the phase.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
+from placecell.navigation_search import LocalSearch
+
 if TYPE_CHECKING:
-    from placecell.memory import Pose
     from placecell.navigation import Destination
 
 
@@ -178,10 +179,7 @@ class TripState:
     arrival_after: float = 0.0
     arrival_deadline: float = 0.0
     image_deadline: float = 0.0
-    search_deadline: float | None = None
-    search_anchor: Pose | None = None
-    search_visited: tuple[Pose, ...] = ()
-    search_count: int = 0
+    search: LocalSearch = field(default_factory=LocalSearch)
 
     def begin(self, request_id: str, now: float) -> None:
         """Start a request or mission step. Arrival fields are set again when its goal is reached."""
@@ -191,8 +189,6 @@ class TripState:
         self.interruption_reason = ""
         self.accepted_sensors = None
         self.arrival_stamp = None
-        self.search_deadline = None
-        self.search_anchor = None
-        self.search_visited = ()
-        self.search_count = self.leg = 0
+        self.search = LocalSearch()
+        self.leg = 0
         self.transport_id = request_id

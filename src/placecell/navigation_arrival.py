@@ -33,8 +33,8 @@ class ArrivalCheck:
         trip.arrival_attempts = 0
         trip.arrival_after = self.observation_clock()
         trip.arrival_deadline = self.clock() + timeout_s
-        if trip.search_deadline is not None:
-            trip.arrival_deadline = min(trip.arrival_deadline, trip.search_deadline)
+        if trip.search.deadline is not None:
+            trip.arrival_deadline = min(trip.arrival_deadline, trip.search.deadline)
 
     def accepts(self, trip: TripState, destination: Destination, observation: Observation) -> bool:
         """A localized capture from the remembered view's camera, taken after arrival, fresh and at the goal pose."""

@@ -33,7 +33,7 @@ def test_arming_waits_for_later_captures_and_never_outlives_the_search():
     trip = TripState(arrival_attempts=2)
     check().arm(trip, 30.0)
     assert (trip.arrival_attempts, trip.arrival_after, trip.arrival_deadline) == (0, 1000.0, 130.0)
-    trip.search_deadline = 110.0
+    trip.search.deadline = 110.0
     check().arm(trip, 30.0)
     assert trip.arrival_deadline == 110.0
 

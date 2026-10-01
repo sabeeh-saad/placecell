@@ -1130,8 +1130,7 @@ class NavigationCommands:
             self._set_phase(NavState.SUBMITTING)
             self._trip.accepted_sensors = self._sensor_generation(self._trip.destination)
             trace_event("destination.selected", destination=trace_destination(self._trip.destination))
-            self._trip.search_anchor = self._trip.destination.pose
-            self._trip.search_visited = (self._trip.destination.pose,)
+            self._trip.search.start(self._trip.destination.pose)
             self._emit(NavigationUpdate(request_id, "submitting", result.message, self._trip.destination))
             if not self._status.context_ok:
                 self._complete(NavigationUpdate(request_id, "unavailable", "Navigation stopped: context unavailable."))
@@ -1202,7 +1201,7 @@ class NavigationCommands:
                         self._state,
                         "Reached the pose. Waiting for a fresh view of the destination.",
                         self._trip.destination,
-                        search_attempt=self._trip.search_count,
+                        search_attempt=self._trip.search.count,
                     )
                 )
                 return
@@ -1215,7 +1214,7 @@ class NavigationCommands:
                 event.message,
                 self._trip.destination,
                 distance_remaining=event.distance_remaining,
-                search_attempt=self._trip.search_count,
+                search_attempt=self._trip.search.count,
             )
             if event.state in TRIP_OUTCOMES:
                 self._complete(update)
@@ -1268,7 +1267,7 @@ class NavigationCommands:
                     self._state,
                     "Checking a fresh view of the destination.",
                     destination,
-                    search_attempt=self._trip.search_count,
+                    search_attempt=self._trip.search.count,
                 )
             )
             if arrival_trace:
@@ -1376,9 +1375,9 @@ class NavigationCommands:
                     request_id, False, "Arrival verification expired or became unavailable.", "unavailable"
                 )
                 return
-            if self._trip.search_deadline is None:
-                self._trip.search_deadline = self._clock() + self._search.policy.timeout_s
-            if self._trip.search_count >= self._search.policy.max_viewpoints:
+            if self._trip.search.deadline is None:
+                self._trip.search.deadline = self._clock() + self._search.policy.timeout_s
+            if self._trip.search.count >= self._search.policy.max_viewpoints:
                 self._finish_arrival(
                     request_id,
                     False,
@@ -1397,7 +1396,7 @@ class NavigationCommands:
                     "Checking another nearby viewpoint.",
                     destination,
                     object_result=verdict.result,
-                    search_attempt=self._trip.search_count + 1,
+                    search_attempt=self._trip.search.count + 1,
                 )
             )
 
@@ -1406,23 +1405,13 @@ class NavigationCommands:
                 return (
                     request_id != self._active
                     or self._state != NavState.PLANNING_SEARCH
-                    or self._trip.search_deadline is None
-                    or self._clock() >= self._trip.search_deadline
+                    or self._trip.search.deadline is None
+                    or self._clock() >= self._trip.search.deadline
                     or not self._provenance_ready()
                 )
 
         try:
-            if not self._resolver.arrival_available(destination):
-                raise TargetValidationError("the selected object reference is unavailable", "retrieval")
-            assert destination.object_reference is not None and self._trip.search_anchor is not None
-            plan = self._search.next_view(
-                destination.object_reference, self._trip.search_anchor, self._trip.search_visited, canceled
-            )
-            if not self._resolver.arrival_available(destination):
-                raise TargetValidationError("the selected object changed", "retrieval")
-            if not self._search.valid(plan, canceled):
-                raise TargetValidationError("the search path changed", "geometry")
-            goal = replace(destination, pose=plan.pose, approach=plan)
+            goal = self._trip.search.next_goal(self._search, self._resolver, destination, canceled)
         except Exception as e:
             self._finish_arrival(
                 request_id,
@@ -1437,11 +1426,10 @@ class NavigationCommands:
             if canceled():
                 self._finish_arrival(request_id, False, "Local search canceled or expired.", verdict.result)
                 return
-            self._trip.search_count += 1
-            self._trip.search_visited += (goal.pose,)
+            attempt = self._trip.search.visit(goal)
             self._trip.destination = goal
             self._set_phase(NavState.SUBMITTING)
-            self._trip.transport_id = f"{request_id}/search/{self._trip.search_count}"
+            self._trip.transport_id = f"{request_id}/search/{attempt}"
             self._emit(
                 NavigationUpdate(
                     request_id,
@@ -1449,7 +1437,7 @@ class NavigationCommands:
                     "Navigating to a checked local search viewpoint.",
                     goal,
                     object_result=verdict.result,
-                    search_attempt=self._trip.search_count,
+                    search_attempt=self._trip.search.count,
                 )
             )
             if not self._status.context_ok:
@@ -1469,7 +1457,7 @@ class NavigationCommands:
                 return
             try:
                 trace_event(
-                    "search.destination_selected", destination=trace_destination(goal), attempt=self._trip.search_count
+                    "search.destination_selected", destination=trace_destination(goal), attempt=self._trip.search.count
                 )
                 self._navigator.send(
                     self._trip.transport_id,
@@ -1508,7 +1496,7 @@ class NavigationCommands:
                             self._state,
                             "The visual check expired. Waiting for a new capture within the arrival deadline.",
                             self._trip.destination,
-                            search_attempt=self._trip.search_count,
+                            search_attempt=self._trip.search.count,
                         )
                     )
                     return
@@ -1540,7 +1528,7 @@ class NavigationCommands:
                     outcome.message,
                     self._trip.destination,
                     object_result=outcome.object_result,
-                    search_attempt=self._trip.search_count,
+                    search_attempt=self._trip.search.count,
                     failure_stage=outcome.failure_stage,
                     error_type="" if outcome.matched else outcome.error_type,
                 )
@@ -1590,7 +1578,7 @@ class NavigationCommands:
             if not self._status.context_ok and not self._trip.canceling:
                 self.cancel("Context persistence became unavailable.")
                 return
-            if self._trip.search_deadline is not None and self._clock() >= self._trip.search_deadline:
+            if self._trip.search.deadline is not None and self._clock() >= self._trip.search.deadline:
                 if self._state in SEARCH_DEADLINE_PHASES:
                     self._finish_arrival(
                         self._active, False, "Local search time limit reached.", failure_stage="execution"
