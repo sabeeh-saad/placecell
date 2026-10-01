@@ -57,7 +57,10 @@ def navigation_transition_census() -> Iterator[None]:
 
     def record(self: NavigationCommands, name: str, value: Any) -> None:
         if name == "_state":
-            caller = Path(sys._getframe(1).f_code.co_filename).resolve()
+            frame = sys._getframe(1)
+            if frame.f_code.co_name == "_set_phase" and frame.f_back is not None:
+                frame = frame.f_back  # the writer is whoever changed the phase
+            caller = Path(frame.f_code.co_filename).resolve()
             writer = str(caller.relative_to(root)) if caller.is_relative_to(root) else caller.name
             with lock:
                 writers.setdefault((self.__dict__.get("_state"), value), set()).add(writer)
@@ -73,6 +76,27 @@ def navigation_transition_census() -> Iterator[None]:
             DATA / "navigation_transitions.json",
             [{"from": before, "to": after, "writers": sorted(files)} for (before, after), files in rows],
         )
+
+
+@pytest.fixture(autouse=True)
+def unexpected_phases(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[tuple[str, str]]]:
+    """Fail a test whose controller changes phase along a pair `TRANSITIONS` does not list.
+
+    Production only traces such a change as `phase.unexpected`. A test that makes one on
+    purpose clears this list.
+    """
+    from placecell.navigation import NavigationCommands
+
+    seen: list[tuple[str, str]] = []
+    report = NavigationCommands._unexpected_phase
+
+    def record(self: NavigationCommands, before: str, after: str) -> None:
+        seen.append((before, after))
+        report(self, before, after)
+
+    monkeypatch.setattr(NavigationCommands, "_unexpected_phase", record)
+    yield seen
+    assert not seen, f"phase changes outside navigation_state.TRANSITIONS: {seen}"
 
 
 class FakeMediaEmbedder:

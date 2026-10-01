@@ -85,6 +85,9 @@ The timeline includes:
   is sampled and may be coalesced. Acknowledgement is
   distinct from a terminal result. Shutdown's unrelated `idle` broadcast does not replace
   the recorded outcome of a completed mission.
+- A controller phase change that `navigation_state.TRANSITIONS` does not list records
+  `phase.unexpected` with `from_phase` and `to_phase`. The change still happens; tests and
+  the fault contracts fail on it.
 - Instrumented HTTP request durations, attempt counts, model name (from the request, or
   from the adapter for native Gemini requests), HTTP status, reported token usage and
   dollar cost when supplied.

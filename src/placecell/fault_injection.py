@@ -1014,6 +1014,11 @@ def run_faults(*, cases: Sequence[str] = (), repeat: int = 1) -> dict[str, Any]:
                             sum(handle.cancel_calls for handle in rig.client.handles),
                         )
                         rig.check(
+                            "phase changes listed in TRANSITIONS",
+                            [event["data"] for event in trace["events"] if event["stage"] == "phase.unexpected"],
+                            [],
+                        )
+                        rig.check(
                             "trace event loss",
                             sum(
                                 rig.traces.health()[key]
