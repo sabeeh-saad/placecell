@@ -61,7 +61,7 @@ def test_expired_attempt_retries_new_capture_without_extending_arrival_deadline(
     h.commands._arrival_max_attempts = 3
     h.start()
     h.arrive()
-    deadline = h.commands._arrival_deadline
+    deadline = h.commands._trip.arrival_deadline
 
     def slow():
         h.now += 6
@@ -72,7 +72,7 @@ def test_expired_attempt_retries_new_capture_without_extending_arrival_deadline(
     h.comparator.after = slow
     h.observe()
     assert h.commands.needs_observation
-    assert h.commands._arrival_deadline == deadline
+    assert h.commands._trip.arrival_deadline == deadline
     h.comparator.after = lambda: None
     h.observe()
     assert h.events[-1].state == "succeeded" and len(h.comparator.calls) == 2

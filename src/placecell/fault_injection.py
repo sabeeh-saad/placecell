@@ -566,7 +566,7 @@ def _target_fault(rig: _Rig, fault: str) -> None:
     rig.commands._arrival_timeout = 30
 
     def delete_selected() -> None:
-        destination = rig.commands._destination
+        destination = rig.commands._trip.destination
         assert destination is not None and destination.memory is not None
         rig.store.delete([destination.memory.id])
 
@@ -618,7 +618,7 @@ def _target_fault(rig: _Rig, fault: str) -> None:
     rig.drain()
     if fault == "target_post_arrival_stale_image":
         rig.checkpoint("old capture refused", "awaiting_observation", 1, True)
-        rig.commands._arrival_deadline = rig.elapsed
+        rig.commands._trip.arrival_deadline = rig.elapsed
         rig.commands.poll()
     if fault in {"target_post_arrival_stale_image", "target_queued_image_expired", "target_deleted_at_arrival"}:
         rig.check("no model call on unusable evidence", rig.verifier.calls, calls)

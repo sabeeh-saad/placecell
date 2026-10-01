@@ -3,14 +3,21 @@
 `NavigationCommands` keeps its phase as a plain string and publishes the same strings in
 status updates. Naming them once makes a misspelt phase an attribute error and gives each
 membership test a name that says what the group means. `TRANSITIONS` lists the phase
-changes the controller makes; one outside it is traced, never refused.
+changes the controller makes; one outside it is traced, never refused. `TripState` holds
+the current trip's details beside the phase.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from placecell.memory import Pose
+    from placecell.navigation import Destination
 
 
 class NavState(str, Enum):
@@ -149,3 +156,43 @@ may follow itself because `_complete` records the outcome that `_event` or `_fin
 has just set, and arrival records an unverified outcome before naming it ambiguous. Any
 settled phase starts the next command or mission step at `resolving`.
 """
+
+
+@dataclass(slots=True)
+class TripState:
+    """The current trip's details; `NavigationCommands` changes them only under its lock.
+
+    The controller keeps the owning request and the phase. A trip's transport ID outlives it
+    so that a later stop or choice expiry can name it.
+    """
+
+    destination: Destination | None = None
+    requested_at: float = 0.0
+    canceling: bool = False
+    interruption_reason: str = ""
+    accepted_sensors: object = None
+    transport_id: str = ""
+    leg: int = 0
+    arrival_attempts: int = 0
+    arrival_stamp: float | None = None
+    arrival_after: float = 0.0
+    arrival_deadline: float = 0.0
+    image_deadline: float = 0.0
+    search_deadline: float | None = None
+    search_anchor: Pose | None = None
+    search_visited: tuple[Pose, ...] = ()
+    search_count: int = 0
+
+    def begin(self, request_id: str, now: float) -> None:
+        """Start a request or mission step. Arrival fields are set again when its goal is reached."""
+        self.destination = None
+        self.requested_at = now
+        self.canceling = False
+        self.interruption_reason = ""
+        self.accepted_sensors = None
+        self.arrival_stamp = None
+        self.search_deadline = None
+        self.search_anchor = None
+        self.search_visited = ()
+        self.search_count = self.leg = 0
+        self.transport_id = request_id
