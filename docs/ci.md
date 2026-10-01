@@ -1,10 +1,12 @@
 # Continuous integration and installed-package checks
 
-Both workflows run for every pull request, every push to `main`, merge-queue groups and
-manual dispatch. There are no path filters: changes to planners, memory, controllers,
-providers, ROS adapters, evaluation data, packaging or newly added modules all reach the
-same gates. Documentation-only changes run them too. This trades some runner time for
-avoiding incomplete dependency lists and missing checks. GitHub's
+The `ci` and `simulation` workflows run for every pull request, every push to `main`,
+merge-queue groups and manual dispatch. The Gazebo run is on demand only; see the
+[end-to-end run](#gazebo-end-to-end-run-on-demand) below. There are no path filters:
+changes to planners, memory, controllers, providers, ROS adapters, evaluation data,
+packaging or newly added modules all reach the same gates. Documentation-only changes
+run them too. This trades some runner time for avoiding incomplete dependency lists and
+missing checks. GitHub's
 [workflow trigger reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#on)
 defines these events.
 
@@ -33,8 +35,9 @@ The separate Python 3.12 `execution` job runs `placecell-check-faults --repeat 1
 is retained even on failure. See the [execution checkpoint](execution-gate.md).
 
 The suite includes regression checks that prohibit workflow/job filters from silently
-excluding core changes, verify the supported Python matrix and ROS smoke gates, and
-ensure a failing package installation yields a failed result with diagnostics.
+excluding core changes, verify the supported Python matrix and the offline ROS gates,
+keep the Gazebo workflow dispatch-only and keyless by default, and ensure a failing
+package installation yields a failed result with diagnostics.
 
 ## Clean installation checks
 
@@ -73,9 +76,10 @@ The report records per-format success/failure. Installation logs, smoke logs, mi
 results, fault reports and trace exports are preserved. CI uploads the distributions and
 reports even when a check fails. A nonzero subprocess exit or timeout fails the job.
 
-## ROS and Gazebo checks
+## Offline ROS checks
 
-`.github/workflows/simulation.yml` builds the bundled Jazzy/Gazebo image and runs:
+`.github/workflows/simulation.yml` builds the bundled Jazzy/Gazebo image and runs only
+the ROS checks that need no Gazebo world:
 
 ```bash
 simulation/sim build
@@ -83,12 +87,13 @@ simulation/sim check-operator
 simulation/sim check-cancel
 simulation/sim check-sensors
 simulation/sim check-retention
-simulation/sim start
-simulation/sim check
-simulation/sim start-nav
-simulation/sim check-nav
-simulation/sim stop
+simulation/sim check-overload --samples 100
 ```
+
+Each check runs in a disposable container with networking disabled, so nothing is left
+running afterwards. Their reports under `simulation/artifacts/` are uploaded even after
+a failure. Gazebo itself is not started on pushes: the simulated office, Nav2 and the
+mission matrix take too long for every change and run [on demand](#gazebo-end-to-end-run-on-demand).
 
 `check-operator` runs in a disposable container with networking disabled, without needing
 the office to be running. It checks real ROS command/status topics, snapshot services,
@@ -120,22 +125,34 @@ then measures 100 cancellation requests under a synthetic slow observation callb
 It includes a successful two-goal control. See [ownership and measurement scope](cancellation-ownership.md).
 Every trial is retained under `simulation/artifacts/check-cancel-*`; failure is nonzero.
 
-`check` validates RGB/depth/lidar, advancing simulation time, PlaceCell RGB-D admission,
-simulated forward motion and turning, and stopping after command silence. `check-nav`
-starts from a fresh world with AMCL/Nav2 and checks localization and a planned route.
-The office is stopped and simulator logs/artifacts are collected through `always()`
-steps, including after test failures.
+`check-overload` runs camera ingestion, question admission and maintenance at their
+limits beside a controlled `NavigateToPose` server, then measures 100 cancellation
+trials against the 500 ms p99 target and a two-goal control. See
+[saturation and backpressure](overload.md); reports go to `simulation/artifacts/check-overload-*`.
 
-These checks exercise the container build and middleware/navigation wiring; the Python
-suite supplies detailed planner, memory, execution, trace and operator regressions. CI
-does not substitute scripted replies for a live-model qualification result.
+These checks exercise the container build and ROS middleware wiring; the Python suite
+supplies detailed planner, memory, execution, trace and operator regressions. CI does
+not substitute scripted replies for a live-model qualification result.
+
+## Gazebo end-to-end run on demand
+
+`.github/workflows/e2e.yml` has a single trigger, manual dispatch: open the **e2e**
+workflow under the repository's Actions tab and press **Run workflow**. It runs
+`simulation/sim e2e`, which repeats the offline checks above and then the Gazebo
+`check`, `check-nav` and `check-missions`, each in a fresh world. The job uploads
+`simulation/artifacts/` (including `e2e-*/summary.md`, also shown on the run page),
+always stops the simulator and has a 90-minute limit. See the
+[simulation guide](simulation.md#end-to-end-run-on-demand) for the steps and durations.
 
 ## Paid evaluation remains explicit
 
 Ordinary CI does not invoke `simulation/sim missions` or `simulation/sim check-pipeline`,
-and does not receive provider credentials. Those opt-in workflows retain their existing
-funded-key requirement and need an agreed model budget. Downloading software dependencies
-or images is distinct from making model-provider calls.
+and does not receive provider credentials. The `e2e` workflow is keyless by default. Its
+`live` input (off by default) adds `check-pipeline` and `check-live-mission` only when
+the `OPENROUTER_API_KEY` repository secret is set; the secret is passed to that step only
+for a live run, and an empty secret falls back to a keyless run with a warning. Those
+opt-in runs retain their existing funded-key requirement and need an agreed model budget.
+Downloading software dependencies or images is distinct from making model-provider calls.
 
 Local validation records identify which interpreter and image were exercised. The hosted
 GitHub matrix becomes evidence for a particular commit only after that commit is pushed

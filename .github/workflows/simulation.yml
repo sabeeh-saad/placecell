@@ -14,8 +14,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Offline ROS checks only; the Gazebo run is on demand in e2e.yml.
 jobs:
-  office:
+  offline-ros:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -32,24 +33,9 @@ jobs:
         run: simulation/sim check-retention
       - name: Validate bounded overload and cancellation during saturation
         run: simulation/sim check-overload --samples 100
-      - name: Start the office
-        run: simulation/sim start
-      - name: Validate sensors, movement and command timeout
-        run: simulation/sim check
-      - name: Start a fresh world with AMCL and Nav2
-        run: simulation/sim start-nav
-      - name: Validate localization and planned navigation
-        run: simulation/sim check-nav
-      - name: Collect simulator logs
-        if: always()
-        run: |
-          mkdir -p simulation/artifacts
-          docker compose -f simulation/compose.yaml logs --no-color > simulation/artifacts/simulator.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gazebo-office
+          name: ros-offline-checks
           path: simulation/artifacts/
-      - name: Stop the office
-        if: always()
-        run: simulation/sim stop
+          if-no-files-found: warn

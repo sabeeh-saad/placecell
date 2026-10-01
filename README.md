@@ -157,7 +157,9 @@ localization, and Nav2:
 
 These navigation checks require no model API key. The separate visual-memory pipeline
 test uses hosted models. See [simulation setup](docs/simulation.md) for prerequisites,
-provider configuration, and recording a run.
+provider configuration, and recording a run. `./simulation/sim e2e` runs every
+simulation check in one go, keyless, and writes a summary; see the
+[end-to-end run](docs/simulation.md#end-to-end-run-on-demand).
 
 ## ROS 2 interface
 
@@ -271,7 +273,8 @@ pytest --cov
 ```
 
 CI runs on Python 3.10, 3.11, and 3.12 with a 90% coverage requirement. It also checks clean
-wheel/source installations and the ROS/Gazebo path. See [CI checks](docs/ci.md) for offline
+wheel/source installations and the offline ROS checks; the full Gazebo run is started on
+demand. See [CI checks](docs/ci.md) for offline
 smoke tests, saved reports and local reproduction commands. Contributions are
 welcome in evaluation datasets, failure-case reproductions, model adapters, robot
 integrations, and documentation. Include relevant tests and the evidence supporting any

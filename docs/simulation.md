@@ -292,6 +292,56 @@ no ports. It does not mount robot devices, host credentials, the Docker socket o
 working tree. The GUI mode adds only display access. Applications that join this
 simulation should run inside its container or an explicitly configured simulation network.
 
+## End-to-end run on demand
+
+One command runs every simulation check in order, without an API key:
+
+```bash
+./simulation/sim e2e
+```
+
+1. `build`.
+2. The offline ROS checks, each in a disposable container with networking disabled:
+   `check-operator`, `check-cancel`, `check-sensors`, `check-retention` and
+   `check-overload --samples 100`.
+3. A fresh office (`start`) and the smoke test `check`.
+4. A fresh AMCL/Nav2 world (`start-nav`) and `check-nav`.
+5. Another fresh AMCL/Nav2 world and `check-missions`: the 11 mission and fault cases of
+   the [Gazebo checkpoint](gazebo-checkpoint.md) in the default office, with scripted
+   providers and provider HTTP blocked.
+
+Each `start-nav` waits until both Nav2 lifecycle managers report active, and recreates
+the world once if they do not within four minutes. A failed build stops the run.
+Otherwise every step runs; a check whose world failed to start is recorded as skipped,
+not failed. The simulator is always stopped at the end, also after Ctrl+C, and the
+command exits nonzero if any step failed. It replaces any simulator already running.
+
+With a cached image on a 16-core workstation, a keyless run takes about 13 minutes:
+roughly 4 for the offline checks (`check-overload` alone about 2), under 2 for the office
+and `check-nav` worlds, and about 7 for `check-missions`. The first build also downloads
+and installs ROS and Gazebo. Hosted runners have four CPUs and take longer.
+
+Results go to `simulation/artifacts/e2e-<UTC timestamp>/`. `summary.json` and
+`summary.md` list each step with its status (`passed`, `failed` or `skipped`), duration
+and artifact directory. Each step directory holds its console output (`output.log`),
+the check's own report directory and, for Gazebo checks, `simulator.log`.
+
+`./simulation/sim e2e --live` adds the paid checks `check-pipeline` and
+`check-live-mission`, each in a fresh AMCL/Nav2 world. It refuses before building
+anything unless `OPENROUTER_API_KEY` is set in the shell, as in the
+[live model test](#test-the-complete-pipeline). Without `--live` the key is removed
+from the run's environment, even if your shell has one. Both checks keep their own
+limits: `check-live-mission` stops making requests after 80 calls, 900 seconds or $1
+of provider-reported cost, and `check-pipeline` ends after its fixed waits and stops its
+PlaceCell process. Unknown or in-flight costs are not a hard dollar cap.
+
+On GitHub, open the repository's **Actions** tab, select the **e2e** workflow and press
+**Run workflow**. It never runs on pushes or pull requests. The `live` box is off by
+default; when ticked and the `OPENROUTER_API_KEY` repository secret is set, the run adds
+`--live`, otherwise it warns and runs keyless. The job has a 90-minute limit, shows
+`summary.md` on the run page, uploads `simulation/artifacts/` as `gazebo-e2e` and always
+stops the simulator.
+
 ## Development and regression checks
 
 World geometry is in `simulation/worlds/office.sdf`; the robot and both sensor definitions
@@ -305,9 +355,9 @@ Gazebo spawning and `robot_state_publisher`. Edit these files, rebuild and resta
 ./simulation/sim check
 ```
 
-The `simulation` GitHub workflow runs the sensor checks and a fresh AMCL/Nav2 route
-when simulator files or the depth interface change, and supports manual runs. It
-uploads camera images, reports and simulator logs for inspection. Hosted-provider
+On every pull request and push to `main`, the `simulation` GitHub workflow builds the
+image and runs only the offline ROS checks, which need no Gazebo world. The Gazebo
+checks run on demand with the [end-to-end run](#end-to-end-run-on-demand). Hosted-provider
 tests are opt-in and are not run by pull requests. Python tests still run separately in the
 existing CI workflow. Container dependency versions can change when rebuilding against
 updated package repositories; retain the tested image digest for an exact deployment.

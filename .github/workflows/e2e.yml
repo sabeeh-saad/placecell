@@ -1,0 +1,54 @@
+name: e2e
+
+# Full Gazebo run, started only from the Actions tab ("Run workflow").
+"on":
+  workflow_dispatch:
+    inputs:
+      live:
+        description: Also run the paid live-model checks (needs the OPENROUTER_API_KEY secret)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gazebo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run every simulation check
+        env:
+          LIVE: ${{ inputs.live }}
+          # The secret reaches this step only when the live input is set.
+          OPENROUTER_API_KEY: ${{ inputs.live && secrets.OPENROUTER_API_KEY || '' }}
+        run: |
+          if [[ "$LIVE" == true && -n "$OPENROUTER_API_KEY" ]]; then
+            simulation/sim e2e --live
+          else
+            if [[ "$LIVE" == true ]]; then
+              echo "::warning::live was requested but the OPENROUTER_API_KEY secret is empty; running the keyless checks only."
+            fi
+            unset OPENROUTER_API_KEY
+            simulation/sim e2e
+          fi
+      - name: Add the run summary
+        if: always()
+        run: |
+          for summary in simulation/artifacts/e2e-*/summary.md; do
+            if [[ -f "$summary" ]]; then cat "$summary" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gazebo-e2e
+          path: simulation/artifacts/
+          if-no-files-found: warn
+      - name: Stop the simulator
+        if: always()
+        run: simulation/sim stop
