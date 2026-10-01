@@ -19,6 +19,17 @@ from placecell.errors import FailureStage, TargetValidationError, ValidationErro
 from placecell.memory import Memory, Pose
 from placecell.mission_context import MissionContext
 from placecell.missions import MissionPlan, MissionPlanner
+from placecell.navigation_state import (
+    ARRIVAL_PHASES,
+    CANCEL_INTENT,
+    EXECUTION_FAILURES,
+    FINAL_VERDICTS,
+    LOOKUP_PHASES,
+    NO_GOAL_PHASES,
+    SEARCH_DEADLINE_PHASES,
+    SEARCHABLE_VERDICTS,
+    TRIP_OUTCOMES,
+)
 from placecell.object_arrival import ObjectArrivalVerdict, ObjectArrivalVerifier, ObjectReference
 from placecell.object_search import ObjectSearch
 from placecell.objects import ObjectRecall
@@ -789,15 +800,7 @@ class NavigationCommands:
         self._publish_callback(update)
 
     def _emit(self, update: NavigationUpdate, *, state_update: bool = True) -> None:
-        if not update.failure_stage and update.state in {
-            "failed",
-            "rejected",
-            "unavailable",
-            "uncertain",
-            "cancel_failed",
-            "canceled",
-            "canceling",
-        }:
+        if not update.failure_stage and update.state in EXECUTION_FAILURES:
             update = replace(update, failure_stage="execution")
         if self._mission_id:
             update = replace(
@@ -1271,12 +1274,12 @@ class NavigationCommands:
             if request_id != self._active or (leg is not None and leg != self._leg):
                 trace_event("callback.ignored", state=event.state, reason="request or search leg no longer active")
                 return
-            if self._state in {"awaiting_observation", "verifying_arrival"}:
+            if self._state in ARRIVAL_PHASES:
                 trace_event(
                     "callback.ignored", state=event.state, reason="arrival verification already owns completion"
                 )
                 return  # Late transport feedback cannot finish or restart visual verification.
-            if event.cancel_requested or event.state in {"canceling", "cancel_failed", "uncertain"}:
+            if event.cancel_requested or event.state in CANCEL_INTENT:
                 # Transport deadlines/errors can initiate cancellation independently.
                 # A late success must not resume the mission after that decision.
                 self._canceling = True
@@ -1318,7 +1321,7 @@ class NavigationCommands:
                 distance_remaining=event.distance_remaining,
                 search_attempt=self._search_count,
             )
-            if event.state in {"succeeded", "canceled", "failed", "rejected", "unavailable"}:
+            if event.state in TRIP_OUTCOMES:
                 self._complete(update)
             else:
                 self._emit(update)
@@ -1440,7 +1443,7 @@ class NavigationCommands:
                         )
 
                 object_verdict = self._resolver.verify_object_arrival(destination, observation, image, canceled)
-                if object_verdict.result in {"missing", "unobserved"} and self._search is not None and not canceled():
+                if object_verdict.result in SEARCHABLE_VERDICTS and self._search is not None and not canceled():
                     self._search_next(request_id, destination, object_verdict)
                     return
                 self._finish_arrival(
@@ -1614,7 +1617,7 @@ class NavigationCommands:
             if request_id != self._active:
                 return
             if self._state == "verifying_arrival" and not self._arrival_fresh():
-                if self._can_retry_arrival() and object_result not in {"ambiguous", "missing", "unobserved"}:
+                if self._can_retry_arrival() and object_result not in FINAL_VERDICTS:
                     # The worker has returned. Discard its expired result before
                     # accepting a different capture; never overlap attempts or
                     # extend the original arrival deadline.
@@ -1704,7 +1707,7 @@ class NavigationCommands:
                         )
                     )
                 return
-            if self._state in {"planning", "resolving"} and self._clock() - self._requested_at >= self._timeout:
+            if self._state in LOOKUP_PHASES and self._clock() - self._requested_at >= self._timeout:
                 if self._trace_context:
                     self._trace_context.emit("deadline.expired", phase=self._state, limit_s=self._timeout)
                 self._complete(
@@ -1721,7 +1724,7 @@ class NavigationCommands:
                 self.cancel("Context persistence became unavailable.")
                 return
             if self._search_deadline is not None and self._clock() >= self._search_deadline:
-                if self._state in {"planning_search", "awaiting_observation", "verifying_arrival"}:
+                if self._state in SEARCH_DEADLINE_PHASES:
                     self._finish_arrival(
                         self._active, False, "Local search time limit reached.", failure_stage="execution"
                     )
@@ -1736,7 +1739,7 @@ class NavigationCommands:
                     failure_stage="geometry",
                 )
                 return
-            if self._state in {"awaiting_observation", "verifying_arrival"}:
+            if self._state in ARRIVAL_PHASES:
                 if (
                     not ready
                     or self._clock() >= self._arrival_deadline
@@ -1776,7 +1779,7 @@ class NavigationCommands:
                     self._publish(NavigationUpdate("", "idle", "No navigation request is active."))
                 return
             request_id = self._active
-            if self._state in {"planning", "resolving", "planning_search", "awaiting_observation", "verifying_arrival"}:
+            if self._state in NO_GOAL_PHASES:
                 self._complete(NavigationUpdate(request_id, "canceled", "Destination lookup or verification canceled."))
                 return
             self._state = "canceling"
