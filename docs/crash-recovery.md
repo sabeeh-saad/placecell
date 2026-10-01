@@ -56,6 +56,12 @@ it does not stop the robot, reset Nav2 or infer safety from silence. Its exclusi
 prevents use against a running controller. `inspect` with the same arguments reads the
 journal while the controller is stopped. Do not delete the journal to clear a block.
 
+The Gazebo test harnesses (`check-missions`, `check-pipeline`, `check-live-mission`,
+`record-commands` and the product missions) give each run its own journal in its output
+directory and attest it before starting their node in a fresh world. They refuse to attest
+a journal that records an unresolved goal. The `missions` profile still needs the manual
+step above.
+
 If a server has forgotten a goal result, automatic recovery intentionally remains blocked.
 Use the supervised reset procedure. Do not restore an older journal while retaining a
 running action server. The [Day 16 backup/restore workflow](backup-restore.md) always

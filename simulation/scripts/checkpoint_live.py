@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import rclpy
 import yaml
-from pipeline_test import PipelineProbe, snapshot
+from pipeline_test import PipelineProbe, attest_fresh_ownership, snapshot
 from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import String
 
@@ -96,10 +96,12 @@ def main():
         mission_context_path=str(args.output / "missions.sqlite3"),
         mission_trace_path=str(args.output / "traces.sqlite3"),
         command_journal_path=str(args.output / "commands.sqlite3"),
+        navigation_ownership_path=str(args.output / "navigation.sqlite3"),
         places_file=str(places),
         recording_dir="",
         navigation_max_observation_age_s=args.capture_age,
     )
+    attest_fresh_ownership(params)
     config_path = args.output / "parameters.yaml"
     config_path.write_text(yaml.safe_dump(config))
     budget = RequestBudget(args.output)

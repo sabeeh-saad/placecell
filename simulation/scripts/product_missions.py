@@ -20,7 +20,7 @@ import rclpy
 import yaml
 from checkpoint_live import RequestBudget
 from PIL import Image
-from pipeline_test import PipelineProbe, snapshot
+from pipeline_test import PipelineProbe, attest_fresh_ownership, snapshot
 from product_scene import CASES, HOME, MAP_ID, PRODUCTS, score_mission
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.signals import SignalHandlerOptions
@@ -163,9 +163,11 @@ def main():
         mission_context_path=str(args.output / "missions.sqlite3"),
         mission_trace_path=str(args.output / "traces.sqlite3"),
         command_journal_path=str(args.output / "commands.sqlite3"),
+        navigation_ownership_path=str(args.output / "navigation.sqlite3"),
         places_file=str(places),
         recording_dir="",
     )
+    attest_fresh_ownership(params)
     parameters = args.output / "parameters.yaml"
     parameters.write_text(yaml.safe_dump(config))
     budget = Budget(args.output, args.max_requests, args.max_seconds, args.reported_cost_stop)

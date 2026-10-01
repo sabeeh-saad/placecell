@@ -23,7 +23,7 @@ import rclpy
 import yaml
 from checkpoint_fixtures import CaptionFixture, DetectorFixture, PixelFixture, PlanFixture, VisionFixture
 from geometry_msgs.msg import PoseWithCovarianceStamped
-from pipeline_test import PipelineProbe, snapshot
+from pipeline_test import PipelineProbe, attest_fresh_ownership, snapshot
 from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
@@ -209,6 +209,7 @@ def run_case(probe, world, case, output, *, isolate_arrival=False):
         mission_model="fixture",
         mission_context_path=str(output / "missions.sqlite3"),
         command_journal_path=str(output / "commands.sqlite3"),
+        navigation_ownership_path=str(output / "navigation.sqlite3"),
         mission_trace_path=str(output / "traces.sqlite3"),
         mission_conversation_id="checkpoint",
         navigation_lookup_timeout_s=30.0,
@@ -231,6 +232,7 @@ def run_case(probe, world, case, output, *, isolate_arrival=False):
         )
     )
     p["places_file"] = str(places)
+    attest_fresh_ownership(p)
     # Set this node's parameters without resetting the shared ROS/Gazebo clock.
     from rclpy.node import Node
     from rclpy.parameter import Parameter

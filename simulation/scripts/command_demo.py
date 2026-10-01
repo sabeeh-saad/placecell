@@ -11,7 +11,7 @@ from pathlib import Path
 
 import rclpy
 import yaml
-from pipeline_test import PipelineProbe
+from pipeline_test import PipelineProbe, attest_fresh_ownership
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
@@ -37,9 +37,11 @@ def main():
         "db_path": "",
         "keyframe_dir": str(output / "keyframes"),
         "corrections_path": str(output / "corrections.jsonl"),
+        "navigation_ownership_path": str(output / "navigation.sqlite3"),
         "refine_interval_s": 0.0,
         "curator_interval_s": 0.0,
     }
+    attest_fresh_ownership(params)
     config = output / "placecell.yaml"
     config.write_text(yaml.safe_dump({"placecell": {"ros__parameters": params}}))
     report = {"mode": "coordinate_commands", "passed": False, "commands": []}

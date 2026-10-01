@@ -26,7 +26,9 @@ from std_msgs.msg import String
 from tf2_ros import TransformException
 
 from placecell.localization import LocalizationGate
+from placecell.navigation_ownership import NavigationOwnership, NavigationScope
 from placecell.ros2.bridge import pose_from_transform, update_localization
+from placecell.ros2.config import DEFAULTS
 
 
 class PipelineProbe(Probe):
@@ -114,6 +116,25 @@ class PipelineProbe(Probe):
         return {"x": reached.x, "y": reached.y, "yaw": reached.yaw}
 
 
+def attest_fresh_ownership(params):
+    """Record clean Nav2 ownership in this run's new journal before its node starts.
+
+    A missing journal starts unknown and blocks navigation. Each harness gives its node a
+    journal in its own output directory, so no earlier goal can be recorded there.
+    """
+    value = {key: params.get(key, DEFAULTS[key]) for key in ("robot_id", "map_id", "nav2_action")}
+    action = "/" + value["nav2_action"].lstrip("/")
+    owner = NavigationOwnership(
+        params["navigation_ownership_path"], NavigationScope(value["robot_id"], value["map_id"], action)
+    )
+    try:
+        if owner.snapshot()["state"] == "pending":
+            raise RuntimeError("Navigation ownership records an unresolved goal; refusing to attest it clean")
+        owner.attest_clean("Fresh simulation run; its PlaceCell node has not started, so it owns no Nav2 goal")
+    finally:
+        owner.close()
+
+
 def snapshot(database):
     if not database.exists():
         return {"memories": [], "objects": []}
@@ -175,8 +196,10 @@ def main():
                     "keyframe_dir": str(output / "keyframes"),
                     "recording_dir": str(output / "recording"),
                     "corrections_path": str(output / "corrections.jsonl"),
+                    "navigation_ownership_path": str(output / "navigation.sqlite3"),
                 }
             )
+            attest_fresh_ownership(params)
             config_path = output / "placecell.yaml"
             config_path.write_text(yaml.safe_dump(config))
             process = subprocess.Popen(  # noqa: S603 - fixed executable/module and generated local config
