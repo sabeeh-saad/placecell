@@ -11,7 +11,6 @@ scheme, host and port of `chat_base_url`; see `endpoint`.
 from __future__ import annotations
 
 import functools
-import json
 import threading
 import time
 from collections import deque
@@ -20,9 +19,7 @@ from contextlib import ExitStack
 from typing import Any
 
 from placecell.command_identity import CommandJournal
-from placecell.corrections import correction_now
-from placecell.errors import PlacecellError, ValidationError
-from placecell.lifecycle import remove_local_file
+from placecell.errors import PlacecellError
 from placecell.maintenance import StorageLease
 from placecell.memory import Pose
 from placecell.mission_context import MissionContext
@@ -55,11 +52,11 @@ from placecell.ros2.components import embedding_api_key as embedding_api_key
 from placecell.ros2.components import endpoint as endpoint
 from placecell.ros2.components import shared_api_key as shared_api_key
 from placecell.ros2.config import declare
+from placecell.ros2.housekeeping import Housekeeping
 from placecell.ros2.navigation import Nav2Navigator, create_navigation_timers, create_navigator
 from placecell.ros2.operator import OperatorInterface
 from placecell.ros2.workers import BoundedTasks as BoundedTasks
 from placecell.ros2.workers import IngestWorker as IngestWorker
-from placecell.store.base import EVERYTHING
 from placecell.tracing import TraceStore
 
 INDEX_SYNC_INTERVAL_S = 2.0
@@ -93,7 +90,6 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._consolidator, self._refiner = parts.consolidator, parts.refiner
             self._worker, self._questions = parts.worker, parts.questions
             self._maintenance, self._indexing = parts.maintenance, parts.indexing
-            self._curator = parts.curator
             self._base_frame, self._map_id = config.localization.base_frame, config.localization.map_id
             self._sensors = parts.sensors
             self._clock_jump = self.get_clock().create_jump_callback(
@@ -174,6 +170,15 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
                 depth_frames=self._depth_frames,
                 camera_infos=self._camera_infos,
                 commands=self._commands,
+                clock=self._memory_time,
+                log=self.get_logger(),
+            )
+            self._housekeeping = Housekeeping(
+                parts,
+                pending=self._pending_images,
+                mission_context=self._mission_context,
+                mission_traces=self._mission_traces,
+                command_tasks=self._command_tasks,
                 clock=self._memory_time,
                 log=self.get_logger(),
             )
@@ -272,111 +277,34 @@ def create_node() -> Any:  # pragma: no cover - needs a ROS 2 environment
             self._answers.publish(String(data=payload))
 
         def _on_correct(self, msg: Any) -> None:
-            """JSON: {"memory_id": ..., "verdict": "right"|"wrong", "question": ..., "note": ...}."""
-            try:
-                data = json.loads(msg.data)
-                correction = correction_now(
-                    str(data["memory_id"]),
-                    str(data["verdict"]),
-                    str(data.get("question", "")),
-                    str(data.get("note", "")),
-                )
-                if self._store.get(correction.memory_id) is None:
-                    raise ValidationError("correction refers to an unavailable scene memory")
-                self._corrections.record(correction)
-                if correction.verdict == "wrong":
-                    accepted = self._store.refinements.request(correction.memory_id, "operator correction")
-                    if not accepted:
-                        self.get_logger().warning("Correction saved; recheck queue full or memory is ineligible.")
-            except (ValueError, KeyError, TypeError, OSError, PlacecellError) as e:
-                self.get_logger().warning(f"ignored correction: {e}")
-                return
+            self._housekeeping.on_correct(msg)
 
         def _on_refine(self, msg: Any) -> None:
-            """JSON: {"memory_id": ..., "action": "recheck"|"rollback"}."""
-            try:
-                data = json.loads(msg.data)
-                identity, action = str(data["memory_id"]), data.get("action", "recheck")
-                if action == "recheck":
-                    accepted = self._store.refinements.request(identity)
-                elif action == "rollback" and self._refiner is not None:
-                    accepted = self._refiner.rollback(identity)
-                else:
-                    raise ValidationError("unknown refinement action or refinement is disabled")
-                self.get_logger().info(f"refinement {action} for {identity}: {'accepted' if accepted else 'skipped'}")
-            except (ValueError, KeyError, TypeError, PlacecellError) as e:
-                self.get_logger().warning(f"ignored refinement request: {e}")
+            self._housekeeping.on_refine(msg)
 
         def _refine(self) -> None:
             self._maintenance.submit(self._run_refiner, key="refine")
 
         def _run_refiner(self) -> None:
-            if self._refiner is not None:
-                report = self._refiner.run()
-                if report.attempted:
-                    self.get_logger().info(f"memory refinement: {report}")
+            self._housekeeping.run_refiner()
 
         def _curate(self) -> None:
             self._maintenance.submit(self._run_curator, key="curate")
 
         def _context_reference_available(self, data: dict[str, Any]) -> bool:
-            if data.get("object_id"):
-                record = self._store.objects.get(data["object_id"])
-                return record is not None and record.status == "present"
-            if data.get("memory_id"):
-                memory = self._store.get(data["memory_id"])
-                return memory is not None and not memory.superseded
-            return True
+            return self._housekeeping.reference_available(data)
 
         def _run_curator(self) -> None:
-            self._store.drain_cleanup(remove_local_file)
-            before = self._memory_time() - self._object_policy.retention_s
-            for _ in range(128):
-                if not self._store.objects.prune(before, limit=1):
-                    break
-                self._store.drain_cleanup(remove_local_file)
-            report = self._curator.run()
-            self._corrections.prune(m.id for batch in self._store.iter_query(EVERYTHING) for m in batch)
-            if self._mission_context is not None:
-                self._mission_context.prune()
-            maintain = getattr(self._store, "maintain", None)
-            if maintain is not None:
-                maintain()
-            if report.removed or report.discredited or report.history_pruned:
-                self.get_logger().info(
-                    f"curator removed {report.removed} memories, discredited {report.discredited}, "
-                    f"pruned {report.history_pruned} sightings"
-                )
+            self._housekeeping.run_curator()
 
         def _consolidate(self) -> None:
             self._maintenance.submit(self._run_consolidator, key="consolidate")
 
         def _run_consolidator(self) -> None:
-            if self._consolidator is None:  # pragma: no cover - timer only exists with a consolidator
-                return
-            try:
-                report = self._consolidator.run()
-            except PlacecellError as e:
-                self.get_logger().error(f"consolidation failed: {e}")
-                return
-            if report.summaries:
-                self.get_logger().info(f"consolidated {report.folded} memories into {report.summaries} summaries")
+            self._housekeeping.run_consolidator()
 
         def _diagnostics(self) -> None:
-            stats = self._worker.health()
-            self.get_logger().info(
-                f"ingestion: {stats}, dropped={self._worker.dropped}, objects={self._store.objects.count()}"
-            )
-            self.get_logger().info(
-                f"queues: questions={self._questions.health()}, maintenance={self._maintenance.health()}, "
-                f"commands={self._command_tasks.health() if self._command_tasks is not None else None}, "
-                f"images={self._pending_images.health()}, sensors={self._sensors.health()}"
-            )
-            if self._mission_traces is not None:
-                health = self._mission_traces.health()
-                self.get_logger().info(f"mission traces: {health}")
-                if health["dropped_events"] or health["write_errors"] or not health["writer_alive"]:
-                    self.get_logger().warning("Mission trace capture is incomplete; inspect trace health counters.")
+            self._housekeeping.diagnostics()
 
         def destroy_node(self) -> bool:
             self._clock_jump.unregister()
