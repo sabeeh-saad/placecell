@@ -82,7 +82,7 @@ def main():
                 stamp = message.header.stamp.sec + message.header.stamp.nanosec / 1e9
                 return Pose(captures[0] * 10.0, 0, map_id="overload-v1"), stamp, None
 
-            node._capture = capture
+            node._frames.capture = capture
             node._answer = lambda _: blocked(ask_entered)
             node._run_refiner = lambda: blocked(maintenance_entered)
             check = Check(args.output, loaded_response_timeout_s=10.0)

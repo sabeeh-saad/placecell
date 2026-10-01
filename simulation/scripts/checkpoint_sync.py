@@ -44,7 +44,7 @@ def main():
         node = create_node()
     assert node._worker.stop()
     node._worker.has_capacity = lambda: False
-    original = node._depth_at
+    original = node._frames.depth_at
     report = {"valid_depth": 0, "missing_depth": 0, "failures": []}
 
     def observe(message, dimensions):
@@ -61,7 +61,7 @@ def main():
             )
         return value
 
-    node._depth_at = observe
+    node._frames.depth_at = observe
     executor = MultiThreadedExecutor(4)
     executor.add_node(node)
     deadline = time.monotonic() + args.seconds

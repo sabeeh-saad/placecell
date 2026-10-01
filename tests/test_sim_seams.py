@@ -1,9 +1,10 @@
 """What the simulation scripts patch, overwrite and read must still exist and still be used.
 
 The Gazebo scripts reach into production code: `patch("placecell...")`, attribute overwrites
-such as `node._capture = ...`, and reads of private node attributes. A patch on a name that
-nothing calls any more passes silently and then exercises real providers or real Nav2. Each
-seam found in simulation/scripts needs an entry below whose trigger proves it is still used.
+such as `node._frames.capture = ...`, and reads of private node attributes. A patch on a
+name that nothing calls any more passes silently and then exercises real providers or real
+Nav2. Each seam found in simulation/scripts needs an entry below whose trigger proves it is
+still used.
 """
 
 from __future__ import annotations
@@ -231,22 +232,22 @@ def frame(node):
     node.subscription("/camera/color/image_raw").callback(raw_image(T0))
 
 
-@overwrite("node._capture")
+@overwrite("node._frames.capture")
 def capture_is_replaceable(make_node, monkeypatch, tmp_path):
     node = make_node()
     calls = []
-    node._capture = lambda message, **kwargs: calls.append((message, kwargs))
+    node._frames.capture = lambda message, **kwargs: calls.append((message, kwargs))
     frame(node)
     assert len(calls) == 1
 
 
-@overwrite("node._depth_at")
+@overwrite("node._frames.depth_at")
 def depth_lookup_is_replaceable(make_node, monkeypatch, tmp_path):
     monkeypatch.setattr(IngestWorker, "start", lambda self: None)
     node = objects_node(make_node, monkeypatch, rgbd_wait_s=60.0)
     localized(node)
     calls = []
-    node._depth_at = lambda message, dimensions: calls.append(dimensions)
+    node._frames.depth_at = lambda message, dimensions: calls.append(dimensions)
     frame(node)
     node.subscription("/camera/aligned_depth_to_color/image_raw").callback(depth_image(T0))
     node.subscription("/camera/color/camera_info").callback(camera_info(T0))
@@ -415,7 +416,7 @@ def test_node_attributes_the_scripts_use_exist(make_node, monkeypatch, tmp_path)
         mission_trace_path=str(tmp_path / "traces.sqlite3"),
     )
     paths = node_paths()
-    assert "node._capture" in paths and "node._tf.can_transform" in paths
+    assert "node._frames.capture" in paths and "node._tf.can_transform" in paths
     missing = []
     for path in sorted(paths):
         value = node
