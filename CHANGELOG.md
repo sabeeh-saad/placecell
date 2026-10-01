@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Release the storage lease, stores, command journal, trace writer, mission context, Nav2 ownership and worker threads, in reverse order, when the ROS node fails to start, so a retry in the same process no longer fails with "Storage is in use". The original error is raised unchanged.
 - Match planned destinations to mission labels ignoring leading `the`/`a`/`an` as well as case and spacing, as the controller's place check does; reports and live summaries record the rule in `destination_matching`.
 - Add mission dataset schema 2 with optional per-case `configured_places`, passed to the planner and reviewer in scripted and live evaluation as the controller passes them; `mission-baseline-v2` declares them for its configured-place cases, labels cannot expect a place the request never names, and reports flag planned legs the named-place check would refuse. Schema 1 files are unchanged.
 - Add the draft `mission-baseline-v2` dataset: the 24 v1 cases plus 40 development and 40 held-out cases for over-limit routes, corrections, configured-place naming, poisoned history and multilingual or noisy requests. Held-out labels stay draft until reviewed.

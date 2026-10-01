@@ -562,13 +562,6 @@ def install(monkeypatch: pytest.MonkeyPatch) -> FakeRos:
 # Building the production node.
 
 
-def release(node: Any) -> None:
-    """Release, in reverse order, whatever a node that failed during construction had acquired."""
-    acquired = node.__dict__.get("_acquired")
-    if acquired is not None:
-        acquired.close()
-
-
 def hermetic_parameters(root: Path) -> dict[str, Any]:
     """Storage inside the test directory and an in-memory store."""
     return {
@@ -602,13 +595,10 @@ class NodeFactory:
         return node
 
     def close(self) -> None:
-        for node in self.ros.nodes:
-            if node.destroyed:
-                continue
-            if any(node is built for built in self.built):
+        # A node that failed during construction has already released what it acquired.
+        for node in self.built:
+            if not node.destroyed:
                 node.destroy_node()
-            else:
-                release(node)
 
 
 @pytest.fixture

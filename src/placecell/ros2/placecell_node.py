@@ -53,14 +53,26 @@ INDEX_SYNC_INTERVAL_S = 2.0
 class PlacecellNode(Node):
     def __init__(self) -> None:
         super().__init__("placecell")
+        # Construction registers the release of whatever it acquires. After a failure everything is
+        # released in reverse order, so a retry in this process can start; destroy_node does it otherwise.
+        acquired = ExitStack()
+        acquired.callback(super().destroy_node)
+        try:
+            self._construct(acquired)
+        except BaseException:
+            try:
+                acquired.close()
+            except Exception as e:
+                self.get_logger().error(f"releasing a failed start did not finish: {e}")
+            raise
+
+    def _construct(self, acquired: ExitStack) -> None:
         config = declare(self)
         p = config.parameters()
-        # The release of each lease, store and worker, registered as construction acquires it.
-        self._acquired = ExitStack()
         # Acquire before any store, keyframe, context or trace writer is opened.
         self._storage_lease = StorageLease.for_parameters(p)
-        self._acquired.callback(self._storage_lease.close)
-        parts = build_components(config, clock=self._memory_time, log=self.get_logger(), resources=self._acquired)
+        acquired.callback(self._storage_lease.close)
+        parts = build_components(config, clock=self._memory_time, log=self.get_logger(), resources=acquired)
         self._store, self._object_policy = parts.store, parts.object_policy
         self._corrections, self._recall = parts.corrections, parts.recall
         self._agent, self._answer_min_similarity = parts.agent, parts.answer_min_similarity
@@ -73,6 +85,7 @@ class PlacecellNode(Node):
             JumpThreshold(min_forward=None, min_backward=Duration(nanoseconds=-1), on_clock_change=True),
             pre_callback=self._sensors.clock_changed.set,
         )
+        acquired.callback(self._clock_jump.unregister)
         self._localization = build_localization(config, clock=self._memory_time)
         self.create_subscription(
             PoseWithCovarianceStamped, config.localization.topic, self._on_localization, qos_profile_sensor_data
@@ -130,7 +143,7 @@ class PlacecellNode(Node):
                 submit=self._submit_command,
                 publish=self._publish_navigation,
                 references_available=self._context_reference_available,
-                resources=self._acquired,
+                resources=acquired,
             )
             self._command_journal, self._mission_traces = navigation.journal, navigation.traces
             self._mission_context, self._navigator = navigation.context, navigation.navigator

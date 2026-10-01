@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
 
+from placecell.command_identity import CommandJournal
 from placecell.errors import ValidationError
 from placecell.maintenance import StorageLease
+from placecell.mission_context import MissionContext
 from placecell.navigation_ownership import NavigationOwnership, NavigationScope
-from placecell.ros2.node import IngestWorker
+from placecell.ros2.navigation import Nav2Navigator
+from placecell.ros2.node import BoundedTasks, IngestWorker
+from placecell.store import InMemoryStore
+from placecell.tracing import TraceStore
 from tests.conftest import FakeMediaEmbedder
-from tests.ros_fakes import hermetic_parameters, spy
+from tests.ros_fakes import JumpHandle, hermetic_parameters, spy
 from tests.ros_fakes import make_node as make_node
 from tests.ros_fakes import ros as ros
 
@@ -216,6 +222,43 @@ def test_invalid_configuration_is_refused_at_its_construction_step(make_node, tm
     assert "corrections.jsonl.maintenance.lock" in locks
     produced = {p.name for p in tmp_path.iterdir() if not p.name.endswith((".lock", "-wal", "-shm", ".jsonl"))}
     assert produced - {"home"} == created
+
+
+def test_failed_start_releases_what_it_acquired_in_reverse_order(make_node, ros, monkeypatch, tmp_path):
+    for owner, method, name in (
+        (StorageLease, "close", "lease.close"),
+        (InMemoryStore, "close", "store.close"),
+        (IngestWorker, "stop", "worker.stop"),
+        (BoundedTasks, "stop", "tasks.stop"),
+        (JumpHandle, "unregister", "jump.unregister"),
+        (CommandJournal, "close", "journal.close"),
+        (TraceStore, "close", "traces.close"),
+        (MissionContext, "close", "context.close"),
+        (Nav2Navigator, "close", "navigator.close"),
+    ):
+        monkeypatch.setattr(owner, method, spy(ros.calls, name, getattr(owner, method)))
+    threads = set(threading.enumerate())
+    # The mission planner is the last part built, after every journal, store, client and worker.
+    with pytest.raises(ValidationError) as failure:
+        make_node(navigation_enabled=True, mission_enabled=True, mission_trace_path=str(tmp_path / "traces.sqlite3"))
+    assert type(failure.value) is ValidationError  # re-raised as it was
+    assert str(failure.value) == "mission_enabled requires mission_model with tool calling"
+    assert ros.calls == [
+        "tasks.stop",
+        "navigator.close",
+        "context.close",
+        "traces.close",
+        "journal.close",
+        "jump.unregister",
+        *["tasks.stop"] * 3,
+        "worker.stop",
+        "store.close",
+        "lease.close",
+        "Node.destroy_node",
+    ]
+    assert set(threading.enumerate()) <= threads
+    # A retry in the same process gets the storage lease and the Nav2 ownership journal again.
+    assert navigation_node(make_node, tmp_path).destroy_node()
 
 
 def test_running_node_holds_the_storage_lease(make_node, tmp_path):
