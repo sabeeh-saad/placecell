@@ -22,7 +22,6 @@ from placecell.missions import MissionPlan, MissionPlanner
 from placecell.navigation_state import (
     ARRIVAL_PHASES,
     CANCEL_INTENT,
-    EXECUTION_FAILURES,
     FINAL_VERDICTS,
     LOOKUP_PHASES,
     NO_GOAL_PHASES,
@@ -33,6 +32,7 @@ from placecell.navigation_state import (
     NavState,
     TripState,
 )
+from placecell.navigation_status import StatusPublisher, trace_destination
 from placecell.object_arrival import ObjectArrivalVerdict, ObjectArrivalVerifier, ObjectReference
 from placecell.object_search import ObjectSearch
 from placecell.objects import ObjectRecall
@@ -156,20 +156,6 @@ class Resolution:
     choices: tuple[Destination, ...] = ()
     failure_stage: FailureStage = ""
     error_type: str = ""
-
-
-def _trace_destination(destination: Destination | None) -> dict[str, object] | None:
-    if destination is None:
-        return None
-    return {
-        "label": destination.label,
-        "target": destination.target,
-        "source": destination.source,
-        "pose": asdict(destination.pose),
-        "memory_id": destination.memory.id if destination.memory else None,
-        "object_id": destination.object_id,
-        "object_revision": destination.object_revision,
-    }
 
 
 _ARTICLES = frozenset({"the", "a", "an"})
@@ -699,20 +685,14 @@ class NavigationCommands:
         self._mission_step = 0
         self._mission_grounding: tuple[str, ...] = ()
         self._context = mission_context or (MissionContext() if mission_planner is not None else None)
-        self._context_ok = True
-        self._last_context_state: tuple[str, str] | None = None
-        self._instance_id = uuid.uuid4().hex
-        self._sequence = 0
+        instance_id = uuid.uuid4().hex
         self._admission_epoch = 0
-        self._snapshot_status = NavigationUpdate(
-            "", "idle", "No navigation request is active.", instance_id=self._instance_id
-        )
+        snapshot = NavigationUpdate("", "idle", "No navigation request is active.", instance_id=instance_id)
         self._startup_block_reason = startup_block_reason
         self._startup_reason = startup_block_reason()
         if self._startup_reason:
-            self._snapshot_status = replace(
-                self._snapshot_status, state="uncertain", message=self._startup_reason, failure_stage="execution"
-            )
+            snapshot = replace(snapshot, state="uncertain", message=self._startup_reason, failure_stage="execution")
+        self._status = StatusPublisher(instance_id, snapshot)
 
     def _refresh_startup(self) -> str:
         reason = self._startup_block_reason()
@@ -745,8 +725,8 @@ class NavigationCommands:
         with self._lock:
             remaining = max(0.0, self._timeout - (self._clock() - self._choices_at)) if self._choices else None
             return NavigationSnapshot(
-                self._snapshot_status,
-                self._sequence,
+                self._status.snapshot,
+                self._status.sequence,
                 self.busy,
                 self._closed,
                 self._active,
@@ -764,92 +744,29 @@ class NavigationCommands:
         self, update: NavigationUpdate, context: TraceContext | None = None, *, state_update: bool = False
     ) -> None:
         with self._lock:
-            self._sequence += 1
-            update = replace(update, instance_id=self._instance_id, sequence=self._sequence)
-            # A (str, Enum) member formats differently on Python 3.10 and 3.11+; publish plain strings.
-            assert type(update.state) is str, f"status state must be a plain str, not {type(update.state).__name__}"
-            if state_update:
-                self._snapshot_status = update
-            self._publish_ordered(update, context)
-
-    def _publish_ordered(self, update: NavigationUpdate, context: TraceContext | None) -> None:
-        context = context or current_trace()
-        if context is None and self._trace_context and update.request_id == self._trace_context.request_id:
-            context = self._trace_context
-        if context:
-            context.emit(
-                "status",
-                state=update.state,
-                # An exception's text can hold a provider response body; traces keep its type only.
-                message="" if update.error_type else update.message,
-                error_type=update.error_type,
-                destination=_trace_destination(update.destination),
-                choices=[_trace_destination(choice) for choice in update.choices],
-                distance_remaining=update.distance_remaining,
-                object_result=update.object_result,
-                search_attempt=update.search_attempt,
-                mission_destinations=update.mission_destinations,
-                failure_stage=update.failure_stage,
-            )
-        self._publish_callback(update)
+            update = self._status.number(update, state_update=state_update)
+            self._status.trace(update, context, self._trace_context)
+            self._publish_callback(update)
 
     def _emit(self, update: NavigationUpdate, *, state_update: bool = True) -> None:
-        if not update.failure_stage and update.state in EXECUTION_FAILURES:
-            update = replace(update, failure_stage="execution")
-        if self._mission_id:
-            update = replace(
-                update,
-                mission_id=self._mission_id,
-                mission_step=self._mission_step + 1 if self._mission else 0,
-                mission_destinations=self._mission.destinations if self._mission else (),
-            )
-        key = (update.request_id, update.state)
-        if self._context is not None and key != self._last_context_state:
-            destination = update.destination
-            try:
-                self._context.record(
-                    update.request_id,
-                    "status",
-                    # Structured outcome only: messages can quote model or provider text.
-                    {
-                        "state": update.state,
-                        "mission_id": update.mission_id,
-                        "step": update.mission_step,
-                        "destinations": update.mission_destinations,
-                        "target": destination.target if destination else "",
-                        "memory_id": destination.memory.id if destination and destination.memory else "",
-                        "object_id": destination.object_id if destination else "",
-                        "failure_stage": update.failure_stage,
-                        "object_result": update.object_result,
-                        "destination_source": destination.source if destination else "",
-                        "place": destination.label if destination and destination.source == "named_place" else "",
-                        "error_type": update.error_type,
-                    },
-                )
-                self._last_context_state = key
-            except Exception as e:
-                self._context_ok = False
-                update = replace(update, message=f"{update.message} Context persistence failed: {e}")
-        context = self._trace_context
-        active_trace = current_trace()
-        if active_trace and update.request_id == active_trace.request_id:
-            context = active_trace
-        self._publish(update, context, state_update=state_update)
+        update = self._status.attribute(
+            update,
+            self._mission_id,
+            self._mission_step + 1 if self._mission else 0,
+            self._mission.destinations if self._mission else (),
+        )
+        update = self._status.record(update, self._context)
+        self._publish(update, self._status.trace_for(update, self._trace_context), state_update=state_update)
 
     def _record_instruction(self, request_id: str, text: str, *, state_update: bool = False) -> bool:
-        if self._context is None:
+        error = self._status.record_instruction(self._context, request_id, text)
+        if error is None:
             return True
-        try:
-            self._context.record(request_id, "instruction", {"text": text})
-            self._context_ok = True
-            return True
-        except Exception as e:
-            self._context_ok = False
-            self._publish(
-                NavigationUpdate(request_id, "unavailable", f"Could not save the instruction context: {e}"),
-                state_update=state_update,
-            )
-            return False
+        self._publish(
+            NavigationUpdate(request_id, "unavailable", f"Could not save the instruction context: {error}"),
+            state_update=state_update,
+        )
+        return False
 
     def _clear_mission(self) -> None:
         self._mission, self._mission_id, self._mission_step = None, "", 0
@@ -902,7 +819,7 @@ class NavigationCommands:
             and self._mission_step + 1 < len(self._mission.destinations)
         ):
             self._emit(replace(update, state="step_succeeded"))
-            if not self._context_ok:
+            if not self._status.context_ok:
                 self._emit(NavigationUpdate(update.request_id, "unavailable", "Mission stopped: context unavailable."))
                 self._clear_mission()
                 return
@@ -953,7 +870,7 @@ class NavigationCommands:
             trace_instruction(text)
             if target_request_id or admission_epoch is not None:
                 with self._lock:
-                    if (target_request_id and self._snapshot_status.request_id != target_request_id) or (
+                    if (target_request_id and self._status.snapshot.request_id != target_request_id) or (
                         admission_epoch is not None and self._admission_epoch != admission_epoch
                     ):
                         if kind == "cancel" and (self._active is not None or self._mission is not None):
@@ -1234,11 +1151,11 @@ class NavigationCommands:
             self._trip.destination = result.choices[0]
             self._set_phase(NavState.SUBMITTING)
             self._trip.accepted_sensors = self._sensor_generation(self._trip.destination)
-            trace_event("destination.selected", destination=_trace_destination(self._trip.destination))
+            trace_event("destination.selected", destination=trace_destination(self._trip.destination))
             self._trip.search_anchor = self._trip.destination.pose
             self._trip.search_visited = (self._trip.destination.pose,)
             self._emit(NavigationUpdate(request_id, "submitting", result.message, self._trip.destination))
-            if not self._context_ok:
+            if not self._status.context_ok:
                 self._complete(NavigationUpdate(request_id, "unavailable", "Navigation stopped: context unavailable."))
                 return
             if not self._provenance_ready():
@@ -1369,7 +1286,7 @@ class NavigationCommands:
                         localization_ready=self._provenance_ready(),
                         after_timestamp=self._trip.arrival_after,
                         observation_clock=self._observation_clock(),
-                        destination=_trace_destination(destination),
+                        destination=trace_destination(destination),
                     )
                 return
             if not self._resolver.arrival_available(destination):
@@ -1583,7 +1500,7 @@ class NavigationCommands:
                     search_attempt=self._trip.search_count,
                 )
             )
-            if not self._context_ok:
+            if not self._status.context_ok:
                 self._finish_arrival(
                     request_id, False, "Local search stopped: context unavailable.", failure_stage="execution"
                 )
@@ -1600,7 +1517,7 @@ class NavigationCommands:
                 return
             try:
                 trace_event(
-                    "search.destination_selected", destination=_trace_destination(goal), attempt=self._trip.search_count
+                    "search.destination_selected", destination=trace_destination(goal), attempt=self._trip.search_count
                 )
                 self._navigator.send(
                     self._trip.transport_id,
@@ -1732,7 +1649,7 @@ class NavigationCommands:
                 )
                 return
             ready = self._provenance_ready()
-            if not self._context_ok and not self._trip.canceling:
+            if not self._status.context_ok and not self._trip.canceling:
                 self.cancel("Context persistence became unavailable.")
                 return
             if self._trip.search_deadline is not None and self._clock() >= self._trip.search_deadline:
@@ -1778,7 +1695,7 @@ class NavigationCommands:
                 self._trip.interruption_reason = reason
             self._admission_epoch += 1
             if self._refresh_startup():
-                self._publish(self._snapshot_status)
+                self._publish(self._status.snapshot)
                 return
             if self._trace_context and (self._active or self._mission):
                 self._trace_context.emit(
