@@ -78,7 +78,7 @@ module = ["cv2", "cv2.*", "lancedb", "lancedb.*", "pyarrow", "pyarrow.*", "rclpy
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "placecell.ros2.node"
+module = "placecell.ros2.placecell_node"
 disallow_subclassing_any = false  # rclpy.node.Node ships no stubs
 
 [tool.pytest.ini_options]

@@ -399,3 +399,14 @@ def test_stationary_odometry_extends_localization_while_idle(make_node):
 def test_without_an_odometry_frame_no_timer_polls_tf(make_node):
     node = make_node(odom_frame="")
     assert [t.period for t in node.timers].count(0.2) == 1  # the operator snapshot only
+
+
+def test_approach_planning_reads_the_pose_at_the_current_node_time(make_node, objects):
+    node = make_node(navigation_enabled=True, approach_enabled=True, **objects)
+    current_pose = node._commands._resolver._approach.environment.current_pose
+    assert current_pose() is None  # no transform yet
+    localize(node, 2.0, 1.0, 0.5)
+    pose = current_pose()
+    assert (pose.x, pose.y, pose.map_id) == (2.0, 1.0, "test-v1") and pose.yaw == pytest.approx(0.5)
+    lookup = node._tf.lookups[-1]
+    assert (lookup.target, lookup.source, lookup.time.nanoseconds) == ("map", "base_footprint", T0 * 10**9)

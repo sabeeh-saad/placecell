@@ -553,6 +553,8 @@ def install(monkeypatch: pytest.MonkeyPatch) -> FakeRos:
     ros = FakeRos()
     for name, module in _modules().items():
         monkeypatch.setitem(sys.modules, name, module)
+    # The node module binds the ROS classes it imports; load it again against these fakes.
+    sys.modules.pop("placecell.ros2.placecell_node", None)
     monkeypatch.setattr(FakeNode, "registry", ros)
     return ros
 
