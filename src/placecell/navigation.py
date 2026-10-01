@@ -18,7 +18,8 @@ from placecell.approach import ApproachPlan, ApproachPlanner
 from placecell.errors import FailureStage, TargetValidationError, ValidationError
 from placecell.memory import Memory, Pose
 from placecell.mission_context import MissionContext
-from placecell.missions import MissionPlan, MissionPlanner
+from placecell.missions import MissionPlanner
+from placecell.navigation_mission import MissionSequencer
 from placecell.navigation_state import (
     ARRIVAL_PHASES,
     CANCEL_INTENT,
@@ -680,10 +681,7 @@ class NavigationCommands:
         self._arrival_max_attempts = arrival_max_attempts
         self._search = search
         self._mission_planner = mission_planner
-        self._mission: MissionPlan | None = None
-        self._mission_id = ""
-        self._mission_step = 0
-        self._mission_grounding: tuple[str, ...] = ()
+        self._sequencer = MissionSequencer()
         self._context = mission_context or (MissionContext() if mission_planner is not None else None)
         instance_id = uuid.uuid4().hex
         self._admission_epoch = 0
@@ -718,7 +716,7 @@ class NavigationCommands:
     @property
     def busy(self) -> bool:
         with self._lock:
-            return self._active is not None or self._mission is not None or bool(self._startup_block_reason())
+            return self._active is not None or self._sequencer.active or bool(self._startup_block_reason())
 
     def snapshot(self) -> NavigationSnapshot:
         """Copy current state atomically without polling, dispatching or replaying commands."""
@@ -749,12 +747,7 @@ class NavigationCommands:
             self._publish_callback(update)
 
     def _emit(self, update: NavigationUpdate, *, state_update: bool = True) -> None:
-        update = self._status.attribute(
-            update,
-            self._mission_id,
-            self._mission_step + 1 if self._mission else 0,
-            self._mission.destinations if self._mission else (),
-        )
+        update = self._status.attribute(update, *self._sequencer.status_fields())
         update = self._status.record(update, self._context)
         self._publish(update, self._status.trace_for(update, self._trace_context), state_update=state_update)
 
@@ -769,8 +762,7 @@ class NavigationCommands:
         return False
 
     def _clear_mission(self) -> None:
-        self._mission, self._mission_id, self._mission_step = None, "", 0
-        self._mission_grounding = ()
+        self._sequencer.clear()
         self._accepted_localization = None
 
     def _provenance_ready(self, destination: Destination | None = None) -> bool:
@@ -806,27 +798,22 @@ class NavigationCommands:
             self._trace_context = replace(
                 self._trace_context,
                 request_id=request_id,
-                step=self._mission_step + 1 if self._mission or not self._mission_planner else 0,
+                step=self._sequencer.step + 1 if self._sequencer.active or not self._mission_planner else 0,
             )
 
     def _complete(self, update: NavigationUpdate) -> None:
         """Called under the controller lock, only after a terminal trip outcome."""
         self._active = None
-        if (
-            update.state == "succeeded"
-            and self._mission is not None
-            and not self._trip.canceling
-            and self._mission_step + 1 < len(self._mission.destinations)
-        ):
+        if update.state == "succeeded" and self._sequencer.has_next() and not self._trip.canceling:
             self._emit(replace(update, state="step_succeeded"))
             if not self._status.context_ok:
                 self._emit(NavigationUpdate(update.request_id, "unavailable", "Mission stopped: context unavailable."))
                 self._clear_mission()
                 return
-            self._mission_step += 1
+            destination = self._sequencer.advance()
             request_id = uuid.uuid4().hex
             self._reset_leg(request_id)
-            command = MovementCommand("go", self._mission.destinations[self._mission_step])
+            command = MovementCommand("go", destination)
             self._emit(NavigationUpdate(request_id, "resolving", "Looking up the next mission destination."))
             if not self._submit(lambda: self._resolve(request_id, command)):
                 self._active = None
@@ -873,9 +860,9 @@ class NavigationCommands:
                     if (target_request_id and self._status.snapshot.request_id != target_request_id) or (
                         admission_epoch is not None and self._admission_epoch != admission_epoch
                     ):
-                        if kind == "cancel" and (self._active is not None or self._mission is not None):
+                        if kind == "cancel" and (self._active is not None or self._sequencer.active):
                             # A stop is never refused while navigation is active; a foreign target is reported.
-                            foreign = target_request_id not in {"", self._active, self._mission_id}
+                            foreign = target_request_id not in {"", self._active, self._sequencer.id}
                             if foreign:
                                 trace_event("stop.target_mismatch", target_request_id=target_request_id)
                             self.cancel(
@@ -918,7 +905,7 @@ class NavigationCommands:
                     )
                 )
                 return
-            if self._mission is not None and (command is None or command.kind != "choose"):
+            if self._sequencer.active and (command is None or command.kind != "choose"):
                 self._emit(
                     NavigationUpdate(request_id, "busy", "Select a destination option or stop the mission first."),
                     state_update=False,
@@ -957,7 +944,7 @@ class NavigationCommands:
             self._reset_leg(request_id)
             if self._mission_planner is not None and chosen is None:
                 self._set_phase(NavState.PLANNING)
-                self._mission_id = request_id
+                self._sequencer.id = request_id
                 self._emit(NavigationUpdate(request_id, "planning", "Planning and reviewing the requested mission."))
                 submitted = self._submit(lambda: self._plan(request_id, text))
             else:
@@ -1016,17 +1003,7 @@ class NavigationCommands:
                     )
                 )
                 return
-            self._mission = plan
-            # The user's words that a configured place must appear in: this request and the
-            # earlier instructions the planner was shown.
-            self._mission_grounding = (
-                text,
-                *(
-                    event["data"]["text"]
-                    for event in context
-                    if event.get("kind") == "instruction" and isinstance(event.get("data", {}).get("text"), str)
-                ),
-            )
+            self._sequencer.start(plan, text, context)
             self._reset_leg(request_id)
             self._emit(NavigationUpdate(request_id, "planned", plan.message))
             self._emit(NavigationUpdate(request_id, "resolving", "Looking up the first mission destination."))
@@ -1132,12 +1109,12 @@ class NavigationCommands:
                 return
             place = result.choices[0]
             if (
-                self._mission is not None
+                self._sequencer.active
                 and place.source == "named_place"
-                and not mentions_place(place.label, self._mission_grounding)
+                and not mentions_place(place.label, self._sequencer.grounding)
             ):
                 # Named places skip visual checks, so a plan may only choose one the user named.
-                trace_event("plan.place_ungrounded", place=place.label, step=self._mission_step + 1)
+                trace_event("plan.place_ungrounded", place=place.label, step=self._sequencer.step + 1)
                 self._complete(
                     NavigationUpdate(
                         request_id,
@@ -1697,14 +1674,14 @@ class NavigationCommands:
             if self._refresh_startup():
                 self._publish(self._status.snapshot)
                 return
-            if self._trace_context and (self._active or self._mission):
+            if self._trace_context and (self._active or self._sequencer.active):
                 self._trace_context.emit(
                     "cancellation.requested", phase=self._state, transport_id=self._trip.transport_id
                 )
             had_choices = bool(self._choices)
             self._choices = ()
             if self._active is None:
-                if self._mission is not None or had_choices:
+                if self._sequencer.active or had_choices:
                     self._complete(NavigationUpdate(self._trip.transport_id, "canceled", "Mission canceled."))
                 else:
                     self._publish(NavigationUpdate("", "idle", "No navigation request is active."))
