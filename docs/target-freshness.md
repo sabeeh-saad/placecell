@@ -65,10 +65,17 @@ writes a sighting, absence claim or updated target location into memory.
 - Deletion, identity changes and target evidence newer than the arrival image invalidate
   that image's result. Scene references are also rechecked before accepting success.
 
-After object identity verification, a journal-generation token guards the final request
-check and controller completion. Any object-journal write during that interval causes a
-conservative refusal, including a write about an unrelated object. This avoids accepting
-a verdict across changing evidence but may increase refusals during continuous ingestion.
+After object identity verification, the match carries the evidence it relied on: the
+target record as checked, the selected crop and its fresh position, and the rival scores.
+The final request check and controller completion recheck only that evidence. Writes
+about other objects no longer refuse a verified arrival, nor does a consistent sighting of
+the target, such as background ingestion of the arrival frame itself, which made Gazebo
+arrivals fail intermittently under continuous ingestion. A deleted, recreated, relabelled
+or ambiguous target, target evidence newer than the arrival image, new absence evidence
+(other than at the old place a confirmed move found empty), a target position away from
+the matched one, or a saved object that could now be the matched object still refuses
+the arrival as `unavailable`/`retrieval`. See
+[arrival checks](object-arrival.md#results-and-memory-updates) for the exact rule.
 A new observation/attempt is required; there is no automatic repeated provider loop.
 Existing bounded local search still applies to eligible `missing`/`unobserved` outcomes.
 

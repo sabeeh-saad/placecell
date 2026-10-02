@@ -104,9 +104,20 @@ absence evidence. Ordinary camera ingestion continues independently, applying it
 association, replay and independent-visit rules. A single arrival `missing` verdict does
 not mark a persistent object missing. Confirmed movement updates memory when normal
 ingestion processes that observation and its association checks pass.
-Scan scheduling metadata does not invalidate a checked verdict. Changes to object
-evidence still do: identity alternatives and the evidence generation are checked again
-after both provider checks finish and before success is accepted.
+
+A match is checked again after both provider checks finish and once more when the
+controller accepts it. Only the evidence the match relied on counts: changes to other
+objects and scan scheduling do not withdraw it. The target may have gained a consistent
+sighting meanwhile, such as ingestion of the arrival frame itself, including a confirmed
+move to the matched position. At acceptance the match is withdrawn (`unavailable`, stage
+`retrieval`) if the target was deleted, recreated, relabelled or made ambiguous, has
+evidence newer than the arrival image, gained new absence evidence, or now has a position
+outside the nearby gate of the matched fresh position (any position change when the match
+had no fresh depth). After a confirmed move, absence recorded at the old place the arrival
+found empty agrees with the match. The match is also withdrawn if a saved object that
+could be the matched object (as in [which saved objects compete](#which-saved-objects-compete))
+now scores within the 0.08 margin. An `arrival.recheck` trace event records the outcome,
+its reason and whether the target record changed after the match.
 
 ## Optional nearby viewpoint search
 

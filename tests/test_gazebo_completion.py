@@ -17,7 +17,6 @@ def test_scan_schedule_does_not_invalidate_checked_object_evidence(tmp_path):
     h.arrive()
     journal = h.store.objects
     before = journal.generation
-    evidence = journal.evidence_generation
 
     def scanned(*_):
         journal.record_scan("another-scope", h.now)
@@ -25,7 +24,7 @@ def test_scan_schedule_does_not_invalidate_checked_object_evidence(tmp_path):
 
     h.resolver._verifier.verify = scanned
     h.observe()
-    assert journal.generation > before and journal.evidence_generation == evidence
+    assert journal.generation > before
     assert h.events[-1].state == "succeeded"
 
 

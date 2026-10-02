@@ -2,18 +2,19 @@
 
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from placecell import NavigationEvent, Observation, Pose, Reinforcer
-from placecell.errors import ValidationError
+from placecell.errors import TargetValidationError, ValidationError
 from placecell.operator import navigation_data
 from placecell.verification import SceneVerdict
 from tests.conftest import embedded
 from tests.test_missions import mission as mission
 from tests.test_missions import start
-from tests.test_object_arrival import setup_arrival
+from tests.test_object_arrival import add_lookalike, setup_arrival
 from tests.test_object_navigation import Harness
-from tests.test_objects import CENTER, RIGHT, Detection, observation
+from tests.test_objects import CENTER, RIGHT, Detection, ingest, observation
 
 
 def add_rival(verifier, reference, label="printer"):
@@ -318,3 +319,158 @@ def test_execution_failure_stage_is_exposed_in_operator_status(mission):
     m.nav.sent[0][2](NavigationEvent("failed", "Controlled navigation failure"))
     assert navigation_data(m.events[-1])["failure_stage"] == "execution"
     assert m.context.recent()[-1]["data"]["failure_stage"] == "execution"
+
+
+def after_verdict(h, change):
+    """Run `change(observation)` after the arrival verdict and before the controller accepts it."""
+    verify = h.resolver.verify_object_arrival
+
+    def verified(destination, observation, image, canceled):
+        verdict = verify(destination, observation, image, canceled)
+        change(observation)
+        return verdict
+
+    h.resolver.verify_object_arrival = verified
+
+
+def test_unrelated_object_writes_after_the_verdict_keep_the_arrival(tmp_path):
+    h = Harness(tmp_path, search=False)
+    h.start()
+    h.arrive()
+    view = h.store.objects.views(h.record.id)[0]
+    mug = replace(h.record, id="mug", label="mug", position=replace(h.record.position, y=4, surface_points=()))
+    blue = np.array([0, 0, 1], dtype=np.float32)
+    mug_view = replace(view, object_id="mug", memory=replace(view.memory, id="mug-view", embedding=blue))
+
+    def unrelated(_):
+        h.store.objects.save(mug, mug_view, event="created")
+        h.store.objects.save(replace(mug, revision=2, last_seen=h.now), mug_view)
+
+    after_verdict(h, unrelated)
+    h.observe()
+    assert h.events[-1].state == "succeeded" and h.events[-1].object_result == "matched"
+
+
+def test_the_arrival_frame_reobserving_the_target_after_the_verdict_keeps_the_arrival(tmp_path):
+    h = Harness(tmp_path, search=False)
+    h.start()
+    h.arrive()
+    # Arrival captures also go to ingestion, which may commit after the verdict.
+    after_verdict(h, lambda obs: ingest(h.arrival.tracker, replace(obs, refresh_objects=True)))
+    h.observe()
+    record = h.store.objects.get(h.record.id)
+    assert record.last_seen == h.now and record.revision == h.record.revision + 1
+    assert h.events[-1].state == "succeeded" and h.events[-1].object_result == "matched"
+
+
+@pytest.mark.parametrize(
+    "change", ["deleted", "newer", "absence", "moved_away", "ambiguous", "relabeled", "recreated", "rival"]
+)
+def test_target_changes_after_the_verdict_still_fail_closed(tmp_path, change):
+    h = Harness(tmp_path, search=False)
+    h.start()
+    h.arrive()
+    reference = h.nav.sent[0][1].object_reference
+
+    def changed(obs):
+        record = h.store.objects.get(h.record.id)
+        position = record.position
+        edits = {
+            "newer": {"last_seen": obs.timestamp + 1},
+            "absence": {"misses": 1, "last_miss": obs.timestamp},
+            "moved_away": {"last_seen": obs.timestamp, "position": replace(position, x=position.x + 2)},
+            "ambiguous": {"status": "ambiguous"},
+            "relabeled": {"label": "copier"},
+            "recreated": {"first_seen": obs.timestamp, "last_seen": obs.timestamp},
+        }
+        if change == "deleted":
+            h.store.objects.delete(record.id)
+        elif change == "rival":
+            add_rival(h.arrival, reference)
+        else:
+            h.store.objects.save(replace(record, revision=record.revision + 1, **edits[change]))
+
+    after_verdict(h, changed)
+    h.observe()
+    assert h.events[-1].state == "destination_unverified"
+    assert (h.events[-1].object_result, h.events[-1].failure_stage) == ("unavailable", "retrieval")
+
+
+def moved_verdict(tmp_path):
+    verifier, reference, detector, _, _ = setup_arrival(tmp_path)
+    detector.detections = [Detection("printer", "red printer", RIGHT)]
+    obs = observation(tmp_path, 1100, (RIGHT,))
+    verdict = verifier.verify(reference, obs)
+    assert verdict.result == "matched" and verdict.evidence.moved
+    return verifier, reference, detector, obs, verdict
+
+
+def test_ingestion_confirming_the_same_move_after_the_verdict_keeps_the_match(tmp_path):
+    verifier, reference, _, obs, verdict = moved_verdict(tmp_path)
+    moved = ingest(verifier.tracker, obs)[0]
+    assert moved.id == reference.record.id and moved.position.x > 0.6
+    assert [e.kind for e in verifier.tracker.store.objects.history(moved.id)] == ["created", "moved"]
+    assert verifier.holds(reference, verdict.evidence)
+
+
+def test_ingestion_recording_the_moved_target_separately_after_the_verdict_keeps_the_match(tmp_path):
+    verifier, reference, detector, obs, verdict = moved_verdict(tmp_path)
+    detector.absence = False  # Ingestion cannot confirm the old place empty, so it adds a record.
+    assert len(ingest(verifier.tracker, obs)) == 2
+    assert verifier.holds(reference, verdict.evidence)
+
+
+def test_absence_at_the_old_place_after_a_confirmed_move_keeps_the_match(tmp_path):
+    verifier, reference, detector, _, _ = setup_arrival(tmp_path)
+    detector.detections = [Detection("printer", "red printer", RIGHT)]
+    detector.absence = False
+    assert len(ingest(verifier.tracker, observation(tmp_path, 1050, (RIGHT,)))) == 2
+    detector.absence = True
+    obs = observation(tmp_path, 1100, (RIGHT,))
+    verdict = verifier.verify(reference, obs)
+    assert verdict.result == "matched" and verdict.evidence.moved
+    # The arrival frame gives the new place to the other record and the old place an absence.
+    ingest(verifier.tracker, obs)
+    target = verifier.tracker.store.objects.get(reference.record.id)
+    assert (target.misses, target.last_miss, target.position) == (1, 1100, reference.record.position)
+    assert verifier.holds(reference, verdict.evidence)
+
+
+@pytest.mark.parametrize("x,held", [(0.1, False), (5.0, True)])
+def test_only_a_new_lookalike_that_could_be_the_matched_object_withdraws_it(tmp_path, x, held):
+    verifier, reference, _, _, _ = setup_arrival(tmp_path)
+    verdict = verifier.verify(reference, observation(tmp_path, 1100))
+    add_lookalike(verifier, reference, position=replace(reference.record.position, x=x, surface_points=()))
+    assert verifier.holds(reference, verdict.evidence) is held
+
+
+@pytest.mark.parametrize("change", ["deleted", "relabeled"])
+def test_a_removed_or_relabeled_target_withdraws_the_match(tmp_path, change):
+    verifier, reference, _, _, _ = setup_arrival(tmp_path)
+    verdict = verifier.verify(reference, observation(tmp_path, 1100))
+    if change == "deleted":
+        verifier.tracker.store.objects.delete(reference.record.id)
+    else:
+        verifier.tracker.store.objects.save(replace(reference.record, revision=2, label="copier"))
+    assert not verifier.holds(reference, verdict.evidence)
+
+
+def test_a_changed_target_position_needs_a_fresh_position_to_agree_with(tmp_path):
+    verifier, reference, _, _, _ = setup_arrival(tmp_path)
+    verdict = verifier.verify(reference, observation(tmp_path, 1100, depth=False))
+    assert verdict.result == "matched" and verdict.position is None
+    record = verifier.tracker.store.objects.get(reference.record.id)
+    moved = replace(record.position, x=0.05, surface_points=())
+    verifier.tracker.store.objects.save(replace(record, revision=2, last_seen=1100, position=moved))
+    assert not verifier.holds(reference, verdict.evidence)
+
+
+def test_an_oversized_scope_cannot_confirm_a_match(tmp_path, monkeypatch):
+    verifier, reference, _, _, _ = setup_arrival(tmp_path)
+    verdict = verifier.verify(reference, observation(tmp_path, 1100))
+
+    def oversized(_):
+        raise TargetValidationError("arrival comparison exceeds the object scope limit", "retrieval")
+
+    monkeypatch.setattr(verifier, "_rivals", oversized)
+    assert not verifier.holds(reference, verdict.evidence)

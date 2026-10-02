@@ -35,7 +35,7 @@ from placecell.navigation_state import (
     TripState,
 )
 from placecell.navigation_status import StatusPublisher, trace_destination
-from placecell.object_arrival import ObjectArrivalVerdict, ObjectArrivalVerifier, ObjectReference
+from placecell.object_arrival import ArrivalEvidence, ObjectArrivalVerdict, ObjectArrivalVerifier, ObjectReference
 from placecell.object_search import ObjectSearch
 from placecell.objects import ObjectRecall
 from placecell.pipeline import Observation
@@ -253,7 +253,8 @@ class DestinationResolver:
             raise TargetValidationError(str(e), "geometry") from e
         return replace(destination, pose=plan.pose, approach=plan) if plan else destination
 
-    def arrival_available(self, destination: Destination, checked_generation: int | None = None) -> bool:
+    def arrival_available(self, destination: Destination, checked: ArrivalEvidence | None = None) -> bool:
+        """Whether the target still supports arrival; `checked` also rechecks what a match relied on."""
         if not destination.object_id:
             return self.current(destination)
         return bool(
@@ -263,7 +264,7 @@ class DestinationResolver:
             and self._object_arrival.available(destination.object_reference)
             and destination.memory is not None
             and self._recall.confidence(destination.memory) >= self._policy.min_confidence
-            and (checked_generation is None or self._store.objects.evidence_generation == checked_generation)
+            and (checked is None or self._object_arrival.holds(destination.object_reference, checked))
         )
 
     def verify_object_arrival(
@@ -1331,7 +1332,7 @@ class NavigationCommands:
                     object_verdict.reason,
                     object_verdict.result,
                     failure_stage=object_verdict.failure_stage,
-                    checked_generation=object_verdict.checked_generation,
+                    checked=object_verdict.evidence,
                 )
                 return
             verdict = self._resolver.verify(destination.target, image)
@@ -1475,7 +1476,7 @@ class NavigationCommands:
         object_result: str = "",
         *,
         failure_stage: FailureStage = "",
-        checked_generation: int | None = None,
+        checked: ArrivalEvidence | None = None,
         error_type: str = "",
     ) -> None:
         outcome = ArrivalOutcome(matched, reason, object_result, failure_stage, error_type)
@@ -1505,7 +1506,7 @@ class NavigationCommands:
                 outcome = outcome.late()
             if outcome.matched and self._trip.destination is not None:
                 outcome = outcome.checked(
-                    self._resolver.arrival_available(self._trip.destination, checked_generation),
+                    self._resolver.arrival_available(self._trip.destination, checked),
                     bool(self._trip.destination.object_id),
                 )
             outcome = outcome.settled()

@@ -68,12 +68,26 @@ class ObjectArrivalPolicy:
 
 
 @dataclass(frozen=True)
+class ArrivalEvidence:
+    """What a match relied on, rechecked when the controller accepts it."""
+
+    target: ObjectRecord
+    candidate: ObjectView = field(repr=False)
+    score: float
+    live_alternative: float
+    position: ObjectPosition | None
+    moved: bool
+    timestamp: float
+    depth: DepthSnapshot | None = field(repr=False)
+
+
+@dataclass(frozen=True)
 class ObjectArrivalVerdict:
     result: Literal["matched", "missing", "ambiguous", "unobserved", "unavailable"]
     reason: str
     position: ObjectPosition | None = None
     failure_stage: FailureStage = ""
-    checked_generation: int | None = None
+    evidence: ArrivalEvidence | None = field(default=None, repr=False)
 
 
 class ObjectArrivalVerifier:
@@ -139,6 +153,71 @@ class ObjectArrivalVerifier:
             return False
         # Another lookalike may have moved here as far as the target may.
         return distance <= max(nearby, p.max_move_m)
+
+    def _known_alternative(
+        self,
+        candidate: ObjectView,
+        target: ObjectRecord,
+        known: tuple[KnownObject, ...],
+        position: ObjectPosition | None,
+        moved: bool,
+        depth: DepthSnapshot | None,
+    ) -> float:
+        rivals = tuple(
+            memory
+            for other in known
+            if self._could_be(other.record, target, position, moved, depth)
+            for memory in other.memories
+        )
+        return self._similarity(candidate, rivals)
+
+    def holds(self, reference: ObjectReference, evidence: ArrivalEvidence) -> bool:
+        """Whether a match still stands: only the target and records that could rival it matter.
+
+        Other objects may change freely. The target may only gain a consistent sighting: the
+        same identity, nothing newer than the arrival image, no new absence, and any new
+        position at the verified one. No saved object may have become a close rival.
+        """
+        with self.tracker.store.transaction():
+            current = self.tracker.store.objects.get(evidence.target.id)
+            reason = self._recheck(reference, evidence, current)
+        trace_event(
+            "arrival.recheck",
+            object_id=reference.record.id,
+            held=not reason,
+            reason=reason,
+            target_changed=current != evidence.target,
+        )
+        return not reason
+
+    def _recheck(self, reference: ObjectReference, evidence: ArrivalEvidence, current: ObjectRecord | None) -> str:
+        """The first reason the match no longer stands, or ""; runs inside the caller's transaction."""
+        p, before, fresh = self.policy, evidence.target, evidence.position
+        if current is None or not self.available(reference):
+            return "target removed or identity changed"
+        if current != before:
+            if max(current.last_seen, current.last_miss) > evidence.timestamp:
+                return "target evidence newer than the arrival image"
+            # A moved match confirmed its old place empty; absence there agrees with it.
+            old_place = evidence.moved and current.position == reference.record.position
+            if current.last_miss not in (0, before.last_miss) and not old_place:
+                return "new absence evidence"
+            if current.position != before.position and (
+                fresh is None
+                or current.position is None
+                or current.position.distance(fresh)
+                > max(p.nearby_m, current.position.uncertainty_m + fresh.uncertainty_m)
+            ):
+                return "target position changed"
+        try:
+            known = self._rivals(current)
+        except TargetValidationError:
+            return "object scope limit"
+        alternative = max(
+            evidence.live_alternative,
+            self._known_alternative(evidence.candidate, current, known, fresh, evidence.moved, evidence.depth),
+        )
+        return "new rival" if evidence.score - alternative < p.similarity_margin else ""
 
     def capture(self, identity: str) -> ObjectReference:
         journal = self.tracker.store.objects
@@ -291,18 +370,13 @@ class ObjectArrivalVerifier:
             > max(p.nearby_m, position.uncertainty_m + record.position.uncertainty_m)
         )
 
+        live_alternative = scored[1][0] if len(scored) > 1 else -1
+
         def ambiguous() -> bool:
             with self.tracker.store.transaction():
                 latest = self.tracker.store.objects.get(record.id) or record
                 known = reference.rivals + self._rivals(record)
-            rivals = tuple(
-                memory
-                for other in known
-                if self._could_be(other.record, latest, position, moved, observation.depth)
-                for memory in other.memories
-            )
-            live_alternative = scored[1][0] if len(scored) > 1 else -1
-            known_alternative = self._similarity(candidate, rivals)
+            known_alternative = self._known_alternative(candidate, latest, known, position, moved, observation.depth)
             alternative = max(live_alternative, known_alternative)
             trace_event(
                 "arrival.identity_scores",
@@ -413,9 +487,9 @@ class ObjectArrivalVerifier:
                 return ObjectArrivalVerdict(
                     "ambiguous", "New object evidence prevents a unique identity match.", failure_stage="identity"
                 )
-            return ObjectArrivalVerdict(
-                "matched",
-                reason + verdict.reason,
-                position,
-                checked_generation=self.tracker.store.objects.evidence_generation,
+            current = self.tracker.store.objects.get(record.id)
+            assert current is not None  # check() above, in this transaction
+            evidence = ArrivalEvidence(
+                current, candidate, score, live_alternative, position, moved, observation.timestamp, observation.depth
             )
+            return ObjectArrivalVerdict("matched", reason + verdict.reason, position, evidence=evidence)
