@@ -56,10 +56,10 @@ fields are:
   rejection. Unsupported requests may allow either clarification or rejection.
 - `destinations`: ordered lists of explicitly permitted textual aliases, one list per visit.
   Repeated visits stay repeated. Matching ignores case, extra whitespace and leading
-  articles (`the`, `a`, `an`), which the controller's place check ignores too; it is not
-  an LLM judge or a fuzzy semantic match. Unexpected phrasing needs independent label review.
-  Reports state this rule in `destination_matching`. Reports without that field compared
-  case and whitespace only, so `the printer` failed against `printer` there.
+  articles (`the`, `a`, `an`); it is not an LLM judge or a fuzzy semantic match. Unexpected
+  phrasing needs independent label review. Reports state this rule in `destination_matching`.
+  Reports without that field compared case and whitespace only, so `the printer` failed
+  against `printer` there.
 - `outcomes`: permitted final execution outcomes, separate from the planning decision.
 - `target_ids`: physical target IDs in the permitted dispatch order. For a target that
   cannot be grounded, this can be empty even though the planned description is nonempty.
@@ -77,7 +77,10 @@ Declaring places does not relax the split check: identical instruction/context p
 cannot cross splits, whatever places they list. The loader also rejects a ready label with
 an alias that matches a configured place which neither the instruction nor an earlier
 instruction in the context names: the controller would refuse that plan
-([named-place check](missions.md)).
+([named-place check](missions.md)). The loader and the scorer resolve a destination to a
+configured place with the controller's own key (`placecell.navigation.place_key`), which
+drops only a leading `the`: `a printer` means any printer, looked up in memory, not the
+configured `printer`.
 
 Scenario assumptions and expected target IDs are evaluator information. Do not add them to
 the model input as a shortcut. They become visual labels only after an annotator checks the
@@ -177,9 +180,9 @@ dispatch, but it is not a completed successful mission either.
 Each case row also reports `unnamed_configured_place`: the first planned leg that the
 controller's named-place check would refuse, because it resolves to a configured place the
 user's words never name. The report counts them in `unnamed_configured_place_trials`. Such a
-plan cannot match valid labels, so it has already failed; the field shows that execution
-would have stopped for clarification at that leg rather than dispatching it. Legs before it
-would still run.
+plan fails even when its text matches an alias (alias matching also drops a leading `a`, so
+`printer` matches `a printer`); the field shows that execution would have stopped for
+clarification at that leg rather than dispatching it. Legs before it would still run.
 
 ## Interpret the report
 

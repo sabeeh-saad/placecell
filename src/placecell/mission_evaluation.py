@@ -17,7 +17,7 @@ from typing import Any, cast
 from placecell.chat import ChatMessage, ChatReply, ToolCall
 from placecell.errors import ProviderError, ValidationError
 from placecell.missions import MissionPlanner, PlanReviewAgent
-from placecell.navigation import mentions_place
+from placecell.navigation import mentions_place, place_key
 
 SPLITS = {"development", "held_out"}
 DECISIONS = {"ready", "clarify", "reject"}
@@ -92,11 +92,6 @@ class MissionDataset:
     cases: tuple[MissionCase, ...]
 
 
-def _place_key(text: str) -> str:
-    """A place name or planned destination as the destination resolver keys it."""
-    return " ".join(text.casefold().split()).removeprefix("the ")
-
-
 def _user_words(case: MissionCase) -> tuple[str, ...]:
     """What the controller searches for a configured place: this and earlier instructions the planner saw."""
     return (
@@ -114,7 +109,7 @@ def _user_words(case: MissionCase) -> tuple[str, ...]:
 def _unnamed_place(case: MissionCase, destinations: Sequence[str]) -> str | None:
     """The first leg the controller would refuse: a configured place the user's words never name."""
     words = _user_words(case)
-    keys = (_place_key(destination) for destination in destinations)
+    keys = (place_key(destination) for destination in destinations)
     return next((key for key in keys if key in case.configured_places and not mentions_place(key, words)), None)
 
 
@@ -200,7 +195,7 @@ def load_dataset(path: str | Path) -> MissionDataset:
         if "succeeded" in outcomes and (not targets or len(targets) != len(destinations)):
             raise ValidationError("successful missions need one target ID per requested visit")
         places = _strings(row.get("configured_places", []), empty=True)
-        if any(len(name) > 100 or name != _place_key(name) for name in places) or list(places) != sorted(set(places)):
+        if any(len(name) > 100 or name != place_key(name) for name in places) or list(places) != sorted(set(places)):
             raise ValidationError(
                 "configured places must be at most 100 sorted, distinct names of at most 100 characters, "
                 "as the resolver keys them (casefolded, single-spaced, no leading 'the ')"
@@ -219,10 +214,8 @@ def load_dataset(path: str | Path) -> MissionDataset:
             expected["visual_required"],
             places,
         )
-        # No plan that matches a label may be one the controller refuses.
-        words = _user_words(case)
-        unnamed = {_normalize(name) for name in places if not mentions_place(name, words)}
-        if any(_normalize(alias) in unnamed for aliases in destinations for alias in aliases):
+        # No label may expect a leg the controller refuses; the scorer fails other plans that resolve to one.
+        if any(_unnamed_place(case, aliases) for aliases in destinations):
             raise ValidationError("labels cannot expect a configured place that the request never names")
         cases.append(case)
     return MissionDataset(_text(data["id"]), digest, data["label_status"], groups, tuple(cases))
@@ -239,7 +232,8 @@ def _selected(dataset: MissionDataset, split: str) -> tuple[MissionCase, ...]:
 
 def _normalize(text: str) -> str:
     words = text.casefold().split()
-    # Articles are not part of the destination, as in the controller's place check; one word always stays.
+    # Leading articles do not change a scored description; one word always stays. Configured places are
+    # resolved by the controller's place_key, which drops only 'the', so plans are also checked with it.
     while len(words) > 1 and words[0] in {"the", "a", "an"}:
         words.pop(0)
     return " ".join(words)
@@ -355,7 +349,13 @@ def score_trials(dataset: MissionDataset, document: Any, *, split: str = "develo
                 _normalize(actual) in {_normalize(alias) for alias in aliases}
                 for actual, aliases in zip(plan["destinations"], case.destinations, strict=True)
             )
-            correct = plan["status"] == "ok" and plan["decision"] in case.decisions and matching
+            # A leg the controller would refuse fails even when it matches an alias ('printer' vs 'a printer').
+            correct = (
+                plan["status"] == "ok"
+                and plan["decision"] in case.decisions
+                and matching
+                and row["unnamed_configured_place"] is None
+            )
             row.update(
                 plan="passed" if correct else "failed",
                 reason="matched" if correct else (plan["status"] if plan["status"] != "ok" else "plan_mismatch"),

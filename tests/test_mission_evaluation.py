@@ -344,7 +344,7 @@ def test_configured_places_must_be_bounded_resolver_names(tmp_path, places):
         load_dataset(write_json(tmp_path, data))
 
 
-@pytest.mark.parametrize("alias", ["the Printer", "A  printer"])
+@pytest.mark.parametrize("alias", ["the Printer", " PRINTER ", "The  printer"])
 def test_labels_cannot_expect_a_configured_place_the_request_never_names(tmp_path, alias):
     data = json.loads(DATA_V2.read_text())
     case = next(case for case in data["cases"] if case["id"] == "dev-place-purpose-print")
@@ -357,6 +357,25 @@ def test_labels_cannot_expect_a_configured_place_the_request_never_names(tmp_pat
     assert next(case for case in loaded.cases if case.id == "dev-place-purpose-print").context[0]["data"] == (
         "not an object"
     )
+
+
+def test_configured_places_are_resolved_with_the_controllers_key(tmp_path):
+    from placecell.navigation import place_key
+
+    assert (place_key(" The  Printer"), place_key("A  printer")) == ("printer", "a printer")
+    data = json.loads(DATA_V2.read_text())
+    case = next(case for case in data["cases"] if case["id"] == "dev-place-purpose-print")
+    case["expected"]["destinations"][0].append("A  printer")  # Any printer: the controller looks it up in memory.
+    v2 = load_dataset(write_json(tmp_path, data))
+    fixtures = json.loads(REPLIES_V2.read_text())
+    proposal = fixtures["cases"]["dev-place-purpose-print"]["planner"]["tool_calls"][0]["arguments"]
+    rows = {}
+    for destination in ("a printer", "printer"):  # Both match the alias; the controller refuses only 'printer'.
+        proposal["destinations"] = [destination]
+        report = score_trials(v2, run_scripted(v2, fixtures, run_id=destination))
+        rows[destination] = next(row for row in report["cases"] if row["case_id"] == "dev-place-purpose-print")
+    assert (rows["a printer"]["plan"], rows["a printer"]["unnamed_configured_place"]) == ("passed", None)
+    assert (rows["printer"]["plan"], rows["printer"]["unnamed_configured_place"]) == ("failed", "printer")
 
 
 @pytest.mark.parametrize("leak", ["layout", "recording", "instruction"])

@@ -168,6 +168,14 @@ def _words(text: str, articles: bool) -> list[str]:
     return words if articles else [w for w in words if w not in _ARTICLES]
 
 
+def place_key(text: str) -> str:
+    """Key of a configured place or destination: casefolded, single-spaced, without a leading 'the '.
+
+    Only 'the' is dropped: 'a printer' means any printer, looked up in memory, never the configured printer.
+    """
+    return " ".join(text.casefold().split()).removeprefix("the ")
+
+
 def mentions_place(place: str, texts: tuple[str, ...]) -> bool:
     """The place name appears as whole words in one text, ignoring case, punctuation, spacing and articles."""
     articles = all(w in _ARTICLES for w in _words(place, True))  # A name made only of articles keeps them.
@@ -189,7 +197,7 @@ def load_named_places(path: str | Path) -> dict[str, Pose]:
         for name, pose in data.items():
             if not name.strip() or not isinstance(pose, dict):
                 raise ValidationError("each named place needs a name and pose")
-            key = " ".join(name.casefold().split()).removeprefix("the ")
+            key = place_key(name)
             if key in result:
                 raise ValidationError(f"duplicate named place: {key}")
             result[key] = Pose(**pose)
@@ -223,7 +231,7 @@ class DestinationResolver:
             robot_id=robot_id, camera_id=camera_id or None, frame_id=frame_id, map_id=map_id, role="episodic"
         )
         self._origin = Pose(0, 0, frame_id=frame_id, map_id=map_id)
-        self._places = {" ".join(k.casefold().split()).removeprefix("the "): v for k, v in (places or {}).items()}
+        self._places = {place_key(k): v for k, v in (places or {}).items()}
         self._policy, self._clock = policy or NavigationPolicy(), clock
         self._verifier = verifier
         self._objects = objects
@@ -301,7 +309,7 @@ class DestinationResolver:
         )
         if command.kind != "go":
             raise ValidationError("only a go command has a destination")
-        command = replace(command, destination=" ".join(command.destination.casefold().split()).removeprefix("the "))
+        command = replace(command, destination=place_key(command.destination))
         if command.coordinates is not None:
             x, y, yaw = command.coordinates
             pose = Pose(x, y, yaw, self._origin.frame_id, self._origin.map_id)
