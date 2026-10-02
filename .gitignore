@@ -9,3 +9,15 @@ build/
 data/
 !tests/data/
 simulation/artifacts/
+
+# Coverage data and CI report outputs
+.coverage
+.coverage.*
+coverage.json
+tests.xml
+fault-report.json
+execution-gate.json
+recovery-report/
+backup-report/
+package-deps/
+package-checks/

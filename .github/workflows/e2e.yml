@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run every simulation check
         env:
           LIVE: ${{ inputs.live }}
@@ -43,7 +43,7 @@ jobs:
           for summary in simulation/artifacts/e2e-*/summary.md; do
             if [[ -f "$summary" ]]; then cat "$summary" >> "$GITHUB_STEP_SUMMARY"; fi
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: gazebo-e2e
