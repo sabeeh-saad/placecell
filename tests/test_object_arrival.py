@@ -4,11 +4,12 @@ import numpy as np
 import pytest
 
 from placecell import CollectionInfo, InMemoryStore, ObjectArrivalPolicy, ObjectArrivalVerifier, ObjectTracker, Pose
+from placecell.depth import DepthSnapshot
 from placecell.errors import ValidationError
 from placecell.object_types import Detection
 from placecell.providers.captioning import data_url
 from placecell.verification import SceneVerdict
-from tests.test_objects import LEFT, RIGHT, Detector, PixelEmbedder, ingest, observation
+from tests.test_objects import CENTER, LEFT, RIGHT, SCOPE, Detector, PixelEmbedder, ingest, observation
 
 
 class Comparator:
@@ -22,11 +23,14 @@ class Comparator:
         return SceneVerdict(self.result, "Compared visible distinguishing details.")
 
 
-def setup_arrival(tmp_path, *, initial=None):
+def setup_arrival(tmp_path, *, initial=None, detections=None):
     embedder, detector, comparator = PixelEmbedder(), Detector(), Comparator()
     store = InMemoryStore(CollectionInfo("arrival", embedder.model_name, 3))
     tracker = ObjectTracker(store, embedder, detector)
-    obj = ingest(tracker, initial or observation(tmp_path))[0]
+    detector.detections = detections or detector.detections
+    # The target is the object nearest the image centre.
+    obj = min(ingest(tracker, initial or observation(tmp_path)), key=lambda r: abs(r.position.x))
+    detector.detections = [Detection("printer", "red printer", CENTER)]
     now = [1100]
     verifier = ObjectArrivalVerifier(tracker, comparator, clock=lambda: now[0])
     return verifier, verifier.capture(obj.id), detector, comparator, now
@@ -214,3 +218,83 @@ def test_reference_excludes_unlocalized_historical_views_and_requires_saved_crop
     journal.delete(reference.record.id)
     with pytest.raises(ValidationError, match="unavailable"):
         verifier.capture(reference.record.id)
+
+
+def add_lookalike(verifier, reference, identity="lookalike", **fields):
+    """Another record with the target's appearance, optionally elsewhere or seen at another time."""
+    view = reference.views[0]
+    other = replace(reference.record, id=identity, **fields)
+    verifier.tracker.store.objects.save(
+        other, replace(view, object_id=identity, memory=replace(view.memory, id=identity + "-view"))
+    )
+    return other
+
+
+def test_ingested_record_of_the_moved_target_is_not_its_own_rival(tmp_path):
+    verifier, reference, detector, comparator, _ = setup_arrival(tmp_path)
+    # Ingestion sees the printer at its new place before the old place is confirmed empty,
+    # so it keeps the target and records a second identity there.
+    detector.detections = [Detection("printer", "red printer", RIGHT)]
+    detector.absence = False
+    records = ingest(verifier.tracker, observation(tmp_path, 1050, (RIGHT,)))
+    assert len(records) == 2 and verifier.tracker.store.objects.get(reference.record.id) == reference.record
+    detector.absence = True
+    verdict = verifier.verify(reference, observation(tmp_path, 1100, (RIGHT,)))
+    assert verdict.result == "matched" and verdict.position.x > 0.6
+    assert "previous location is confirmed empty" in verdict.reason and len(comparator.calls) == 1
+
+
+def test_lookalike_seen_with_the_target_still_makes_a_move_ambiguous(tmp_path):
+    pair = [Detection("printer", "red printer", CENTER), Detection("printer", "red printer", RIGHT)]
+    initial = observation(tmp_path, 1000, (CENTER, RIGHT), ("red", "red"))
+    verifier, reference, detector, comparator, _ = setup_arrival(tmp_path, initial=initial, detections=pair)
+    assert len(verifier.tracker.store.objects.records(**SCOPE)) == 2
+    detector.detections = [Detection("printer", "red printer", RIGHT)]
+    assert verifier.verify(reference, observation(tmp_path, 1100, (RIGHT,))).result == "ambiguous"
+    assert not comparator.calls
+
+
+@pytest.mark.parametrize("x,expected", [(5.0, "matched"), (0.2, "ambiguous")])
+def test_only_a_lookalike_near_the_fresh_position_competes_with_a_stationary_match(tmp_path, x, expected):
+    verifier, reference, _, _, _ = setup_arrival(tmp_path)
+    add_lookalike(verifier, reference, position=replace(reference.record.position, x=x, surface_points=()))
+    assert verifier.verify(reference, observation(tmp_path, 1100)).result == expected
+
+
+@pytest.mark.parametrize("x,expected", [(1.6, "ambiguous"), (4.5, "matched")])
+def test_a_lookalike_that_could_have_moved_there_competes_with_a_moved_target(tmp_path, x, expected):
+    verifier, reference, detector, _, _ = setup_arrival(tmp_path)
+    # Seen together with the target, so it is another object, not the target's new record.
+    add_lookalike(verifier, reference, position=replace(reference.record.position, x=x, surface_points=()))
+    detector.detections = [Detection("printer", "red printer", RIGHT)]
+    assert verifier.verify(reference, observation(tmp_path, 1100, (RIGHT,))).result == expected
+
+
+def test_a_newer_lookalike_elsewhere_is_still_a_rival_for_a_moved_target(tmp_path):
+    verifier, reference, detector, _, _ = setup_arrival(tmp_path)
+    position = replace(reference.record.position, x=1.6, surface_points=())
+    add_lookalike(verifier, reference, first_seen=1050, last_seen=1050, position=position, position_timestamp=1050)
+    detector.detections = [Detection("printer", "red printer", RIGHT)]
+    assert verifier.verify(reference, observation(tmp_path, 1100, (RIGHT,))).result == "ambiguous"
+
+
+@pytest.mark.parametrize("depth", [True, False])
+def test_a_lookalike_without_a_stored_position_or_rgb_only_arrival_stays_a_rival(tmp_path, depth):
+    verifier, reference, _, _, _ = setup_arrival(tmp_path)
+    if depth:
+        add_lookalike(verifier, reference, position=None, position_timestamp=None)
+    else:
+        add_lookalike(verifier, reference, position=replace(reference.record.position, x=5.0, surface_points=()))
+    assert verifier.verify(reference, observation(tmp_path, 1100, depth=depth)).result == "ambiguous"
+
+
+@pytest.mark.parametrize("z,expected", [(3.0, "ambiguous"), (-3.0, "matched")])
+def test_without_a_fresh_position_only_a_lookalike_this_camera_may_see_competes(tmp_path, z, expected):
+    verifier, reference, _, _, _ = setup_arrival(tmp_path)
+    add_lookalike(verifier, reference, position=replace(reference.record.position, x=0.5, z=z, surface_points=()))
+    obs = observation(tmp_path, 1100)
+    array = np.full((100, 100), 5, dtype=np.float32)
+    array[45:55, 45:55] = 0  # No valid depth on the detected object.
+    obs = replace(obs, depth=DepthSnapshot.capture(array, (100, 100, 50, 50), np.eye(4), position_error_m=0.02))
+    verdict = verifier.verify(reference, obs)
+    assert verdict.result == expected and verdict.position is None

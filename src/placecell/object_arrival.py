@@ -13,7 +13,7 @@ from typing import Literal, Protocol
 
 import numpy as np
 
-from placecell.depth import ObjectPosition
+from placecell.depth import DepthSnapshot, ObjectPosition
 from placecell.errors import FailureStage, TargetValidationError, ValidationError
 from placecell.memory import Evidence, EvidenceKind, Memory
 from placecell.object_types import ArrivalComparator, ObjectRecord, ObjectView
@@ -28,10 +28,18 @@ class ObjectComparator(Protocol):
 
 
 @dataclass(frozen=True)
+class KnownObject:
+    """Another identity in the target's scope and its saved crop vectors."""
+
+    record: ObjectRecord
+    memories: tuple[Memory, ...] = field(repr=False)
+
+
+@dataclass(frozen=True)
 class ObjectReference:
     record: ObjectRecord
     views: tuple[ObjectView, ...] = field(repr=False)
-    rivals: tuple[Memory, ...] = field(default=(), repr=False)
+    rivals: tuple[KnownObject, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)
@@ -88,7 +96,7 @@ class ObjectArrivalVerifier:
     def supports_comparison(self) -> bool:
         return isinstance(self.tracker.detector, ArrivalComparator)
 
-    def _rivals(self, record: ObjectRecord) -> tuple[Memory, ...]:
+    def _rivals(self, record: ObjectRecord) -> tuple[KnownObject, ...]:
         journal = self.tracker.store.objects
         records = journal.records(
             robot_id=record.robot_id, camera_id=record.camera_id, frame_id=record.frame_id, map_id=record.map_id
@@ -97,11 +105,40 @@ class ObjectArrivalVerifier:
             raise TargetValidationError("arrival comparison exceeds the object scope limit", "retrieval")
         # Labels can change (printer/copier). Appearance rivals must not be excluded by a label.
         return tuple(
-            view.memory
+            KnownObject(other, tuple(view.memory for view in journal.views(other.id, include_crops=False, limit=4)))
             for other in records
             if other.id != record.id
-            for view in journal.views(other.id, include_crops=False, limit=4)
         )
+
+    def _could_be(
+        self,
+        other: ObjectRecord,
+        target: ObjectRecord,
+        position: ObjectPosition | None,
+        moved: bool,
+        depth: DepthSnapshot | None,
+    ) -> bool:
+        """Whether another record could be the fresh candidate, judged by where it was last measured.
+
+        `moved` means the candidate lies outside the target's nearby gate, so success needs the
+        old place confirmed empty in this view.
+        """
+        p = self.policy
+        if other.position is None:
+            return True
+        if position is None:
+            # Without a fresh position, anything this camera may show could be the candidate.
+            return depth is None or depth.may_show(other.position)
+        distance = other.position.distance(position)
+        nearby = max(p.nearby_m, position.uncertainty_m + other.position.uncertainty_m)
+        if not moved:
+            return distance <= nearby
+        if distance <= nearby and other.label == target.label and other.first_seen > target.last_seen:
+            # Ingestion's own record of the moved target: first seen only after the target's
+            # last sighting, at the candidate's position, while the old place is empty here.
+            return False
+        # Another lookalike may have moved here as far as the target may.
+        return distance <= max(nearby, p.max_move_m)
 
     def capture(self, identity: str) -> ObjectReference:
         journal = self.tracker.store.objects
@@ -244,10 +281,26 @@ class ObjectArrivalVerifier:
             )
         score, index = scored[0]
         candidate = fresh[index]
+        position = observation.depth.locate(candidate.box) if observation.depth else None
+        # Outside the target's nearby gate, a match needs a confirmed move.
+        moved = bool(
+            position_known
+            and position is not None
+            and record.position is not None
+            and position.distance(record.position)
+            > max(p.nearby_m, position.uncertainty_m + record.position.uncertainty_m)
+        )
 
         def ambiguous() -> bool:
             with self.tracker.store.transaction():
-                rivals = reference.rivals + self._rivals(record)
+                latest = self.tracker.store.objects.get(record.id) or record
+                known = reference.rivals + self._rivals(record)
+            rivals = tuple(
+                memory
+                for other in known
+                if self._could_be(other.record, latest, position, moved, observation.depth)
+                for memory in other.memories
+            )
             live_alternative = scored[1][0] if len(scored) > 1 else -1
             known_alternative = self._similarity(candidate, rivals)
             alternative = max(live_alternative, known_alternative)
@@ -269,7 +322,6 @@ class ObjectArrivalVerifier:
                 failure_stage="identity",
             )
 
-        position = observation.depth.locate(candidate.box) if observation.depth else None
         trace_event(
             "arrival.geometry",
             box=asdict(candidate.box),
@@ -279,22 +331,19 @@ class ObjectArrivalVerifier:
             observation_timestamp=observation.timestamp,
             candidate_position=asdict(position) if position else None,
         )
-        moved = False
         if position_known and position is not None and record.position is not None:
             if position.uncertainty_m > p.max_uncertainty_m:
                 return ObjectArrivalVerdict(
                     "unavailable", "The fresh object position is too uncertain.", failure_stage="geometry"
                 )
-            distance = position.distance(record.position)
-            nearby = max(p.nearby_m, position.uncertainty_m + record.position.uncertainty_m)
-            if distance > nearby:
-                if score < p.moved_similarity or distance > p.max_move_m or not absent():
-                    return ObjectArrivalVerdict(
-                        "ambiguous",
-                        "Appearance suggests a match, but movement is unconfirmed.",
-                        failure_stage="geometry",
-                    )
-                moved = True
+            if moved and (
+                score < p.moved_similarity or position.distance(record.position) > p.max_move_m or not absent()
+            ):
+                return ObjectArrivalVerdict(
+                    "ambiguous",
+                    "Appearance suggests a match, but movement is unconfirmed.",
+                    failure_stage="geometry",
+                )
         elif not any(
             observation.pose.distance_to(view.memory.pose) <= p.same_view_m
             and observation.pose.heading_difference(view.memory.pose) <= p.same_heading_rad

@@ -56,8 +56,12 @@ writes a sighting, absence claim or updated target location into memory.
 - An occluded target remains `unobserved`; a lookalike or uncertain comparison remains
   `ambiguous`. Neither is a success or evidence of confirmed removal.
 - Rival appearances include both the departure snapshot and current objects in the same
-  robot/camera/frame/map scope, even if their category labels differ. They are checked
-  again after the paired model response. Comparisons refuse scopes above 1,000 objects.
+  robot/camera/frame/map scope, even if their category labels differ, when their stored
+  position lets them be the selected object: near its fresh position, within the movement
+  limit of a moved target, or in view when it has no fresh position. Ingestion's own record
+  of a moved target is not its rival ([details](object-arrival.md#which-saved-objects-compete)).
+  They are checked again after the paired model response. Comparisons refuse scopes above
+  1,000 objects.
 - Deletion, identity changes and target evidence newer than the arrival image invalidate
   that image's result. Scene references are also rechecked before accepting success.
 

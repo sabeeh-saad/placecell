@@ -227,14 +227,7 @@ class DepthSnapshot:
         """
         if len(position.surface_points) >= 9:
             return self._clear_surface(position)
-        camera = np.linalg.inv(np.asarray(self.map_from_camera).reshape(4, 4)) @ [position.x, position.y, position.z, 1]
-        x, y, z = (float(v) for v in camera[:3])
-        radius = (
-            position.radius_m
-            + position.uncertainty_m
-            + self.position_error_m
-            + abs(z) * math.sin(self.angular_error_rad)
-        )
+        x, y, z, radius = self._sphere(position)
         if z <= radius + 0.2 or z + radius >= 8:
             return None
         u, v = (self.fx * x / z + self.cx) / self.width, (self.fy * y / z + self.cy) / self.height
@@ -247,6 +240,27 @@ class DepthSnapshot:
         if patch.size < 9 or not np.all(patch > z + radius + 0.15):
             return None
         return box
+
+    def may_show(self, position: ObjectPosition) -> bool:
+        """Whether any part of a stored position, widened by its uncertainty, can fall inside this view."""
+        x, y, z, radius = self._sphere(position)
+        if z <= radius:
+            return z + radius > 0  # Straddles the image plane: count it unless wholly behind the camera.
+        du, dv = self.fx * radius / (z - radius), self.fy * radius / (z - radius)
+        u, v = self.fx * x / z + self.cx, self.fy * y / z + self.cy
+        return u + du > 0 and u - du < self.width and v + dv > 0 and v - dv < self.height
+
+    def _sphere(self, position: ObjectPosition) -> tuple[float, float, float, float]:
+        """Camera-frame centre and a radius covering extent, position and camera uncertainty."""
+        camera = np.linalg.inv(np.asarray(self.map_from_camera).reshape(4, 4)) @ [position.x, position.y, position.z, 1]
+        x, y, z = (float(v) for v in camera[:3])
+        radius = (
+            position.radius_m
+            + position.uncertainty_m
+            + self.position_error_m
+            + abs(z) * math.sin(self.angular_error_rad)
+        )
+        return x, y, z, radius
 
     def _clear_surface(self, position: ObjectPosition) -> Box | None:
         if any(

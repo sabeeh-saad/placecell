@@ -23,6 +23,8 @@ RGB-only path. Object verification starts with a capture no older than five seco
 1. Detects fresh objects and compares their crop embeddings with the saved image vectors.
    The best score must reach 0.85 and exceed competing live detections and saved
    alternatives by at least 0.08. Close alternatives produce an ambiguous result.
+   A saved alternative competes only if it could be the selected object (see
+   [which saved objects compete](#which-saved-objects-compete)).
 2. Checks RGB-D geometry. By default, the saved surface position must be no older than
    300 seconds and both positions must have uncertainty at most 0.35 m. A nearby
    candidate must agree within the larger of 0.35 m and the summed position uncertainty.
@@ -44,6 +46,31 @@ RGB-only path. Object verification starts with a capture no older than five seco
 
 `arrival.identity_scores` traces expose the target, live-rival and known-rival cosine
 scores, the required margin and the observed margin when deciding uniqueness.
+
+### Which saved objects compete
+
+Every other live detection in the frame always competes. A saved object from the departure
+snapshot or the current scope competes only if its last stored position allows it to be
+the selected object:
+
+- With a fresh depth position for the selected object, a saved object competes if its
+  position lies within the larger of 0.35 m and the two positions' summed uncertainty.
+  When the selected object would be a moved target (outside that gate around the target's
+  saved position), the reach widens to the 3 m movement limit: another lookalike could
+  have moved there as far as the target may.
+- Without a fresh position, a saved object competes if its position, widened by its
+  extent and uncertainty, can fall inside the current camera view. Without depth, or
+  for a saved object with no stored position, every saved object competes.
+- For a moved target only, a record with the same category that ingestion first saw
+  after the target's last sighting, at the selected object's position, does not compete.
+  It is ingestion's own record of the moved object, made before it could confirm the old
+  place empty; the move itself still needs the empty old place in this observation.
+
+Status does not exclude a saved object: a missing lookalike near the selected object
+may have returned there. A lookalike stored elsewhere no longer makes a stationary match
+ambiguous. These rules cannot tell the target from an identical object that took its
+stored place unseen, or from one that appeared nearby only after the target's last
+sighting while the target itself was removed; such a replacement can match.
 
 Depth positions retain at most 25 map-frame samples from the observed central surface.
 Absence projects these samples into the new view and requires valid background across
