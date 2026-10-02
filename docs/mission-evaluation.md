@@ -106,7 +106,12 @@ German and mixed-language requests, typos and filler. `scripted-replies-v2.json`
 64 development cases. All labels are still **draft and assistant-authored in one session**:
 the held-out split keeps those cases out of tuning but is not independent evidence, and the
 live preflight refuses it until real review. It uses schema 2: its eight `configured_place`
-cases list their map's configured places, and every other case has none.
+cases list their map's configured places, and every other case has none. On 2 October 2026
+a separate AI review agent, not the author of the cases, cross-checked the 80 new cases. It
+found no safety-relevant disagreement; eight cases were adjusted: borderline non-requests
+accept `clarify` or `reject`, the resume case expects `clarify`, five description legs accept
+more rewordings and one mixed named-place case no longer requires visual confirmation. This
+is provenance, not human review: `label_status` stays `draft`.
 
 ## Import actual runner outcomes
 

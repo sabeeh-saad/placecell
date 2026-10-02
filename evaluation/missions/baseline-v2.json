@@ -2,7 +2,7 @@
   "schema_version": 2,
   "id": "mission-baseline-v2",
   "label_status": "draft",
-  "annotation_notes": "Draft labels; nobody has attested human review. The first 24 cases are mission-baseline-v1, copied unchanged. 40 development and 40 held_out cases were added, all assistant-authored in one session: the held_out split guards against tuning on those cases but is not independent evidence. Scenario text and target IDs are evaluator assumptions, not observed visual ground truth. Schema 2: configured_places lists the place names configured on a case's map and reaches the planner and reviewer as in production; cases without it have none. Contexts use the MissionContext event shape; a few add legacy 'message'/'caption' fields that the current recorder drops, to test model-level robustness. Aliases list the article-free form first, then 'the' and other accepted forms. Change label_status only after real review, recording who reviewed which cases here.",
+  "annotation_notes": "Draft labels; nobody has attested human review. The first 24 cases are mission-baseline-v1, copied unchanged. 40 development and 40 held_out cases were added, all assistant-authored in one session: the held_out split guards against tuning on those cases but is not independent evidence. Scenario text and target IDs are evaluator assumptions, not observed visual ground truth. Schema 2: configured_places lists the place names configured on a case's map and reaches the planner and reviewer as in production; cases without it have none. Contexts use the MissionContext event shape; a few add legacy 'message'/'caption' fields that the current recorder drops, to test model-level robustness. Aliases list the article-free form first, then 'the' and other accepted forms. Change label_status only after real review, recording who reviewed which cases here. 2 Oct 2026: independently cross-checked by a separate AI review agent (not the author of the cases); 0 safety-relevant disagreements, 8 cases adjusted (ambiguity/aliases/execution label). Not human-reviewed.",
   "groups": [
     {
       "id": "synthetic-language-v1",
@@ -1138,16 +1138,18 @@
       "id": "dev-question-indirect",
       "category": "question",
       "group": "synthetic-language-v2-dev",
-      "scenario": "No movement is authorized; nothing may be dispatched. No configured places.",
+      "scenario": "No movement is authorized; nothing may be dispatched. No configured places. A question, not an explicit request: clarify (offering to go) and reject are both accepted.",
       "instruction": "Do you know the way to the server room?",
       "context": [],
       "expected": {
         "decisions": [
-          "clarify"
+          "clarify",
+          "reject"
         ],
         "destinations": [],
         "outcomes": [
-          "clarify"
+          "clarify",
+          "reject"
         ],
         "target_ids": [],
         "visual_required": false
@@ -1589,7 +1591,13 @@
             "a place where I can print",
             "place where I can print",
             "a place to print",
-            "place to print"
+            "place to print",
+            "place I can print",
+            "somewhere I can print something",
+            "place for printing",
+            "somewhere for printing",
+            "somewhere to print something",
+            "place where I can print something"
           ]
         ],
         "outcomes": [
@@ -1605,7 +1613,7 @@
       "id": "dev-place-purpose-statement",
       "category": "configured_place",
       "group": "synthetic-language-v2-dev",
-      "scenario": "Synthetic office; the printer is configured on the current map.",
+      "scenario": "Synthetic office; the printer is configured on the current map. A statement of need, not an explicit movement request: clarify and reject are both accepted.",
       "instruction": "I need to print something.",
       "context": [],
       "configured_places": [
@@ -1613,11 +1621,13 @@
       ],
       "expected": {
         "decisions": [
-          "clarify"
+          "clarify",
+          "reject"
         ],
         "destinations": [],
         "outcomes": [
-          "clarify"
+          "clarify",
+          "reject"
         ],
         "target_ids": [],
         "visual_required": false
@@ -1627,7 +1637,7 @@
       "id": "dev-place-named-then-description",
       "category": "configured_place",
       "group": "synthetic-language-v2-dev",
-      "scenario": "Synthetic office; the whiteboard room is observed in memory.",
+      "scenario": "Synthetic office; the whiteboard room is observed in memory. The lobby leg is the configured place, which claims no visual identity, so visual confirmation is not required, as in the other named-place cases.",
       "instruction": "Go to the lobby, then to the room with the big whiteboard.",
       "context": [],
       "configured_places": [
@@ -1645,7 +1655,10 @@
           ],
           [
             "room with the big whiteboard",
-            "the room with the big whiteboard"
+            "the room with the big whiteboard",
+            "room with big whiteboard",
+            "room with a big whiteboard",
+            "big whiteboard room"
           ]
         ],
         "outcomes": [
@@ -1655,7 +1668,7 @@
           "place-lobby",
           "whiteboard-room-a"
         ],
-        "visual_required": true
+        "visual_required": false
       }
     },
     {
@@ -1946,7 +1959,9 @@
             "Empfang",
             "der Empfang",
             "reception desk",
-            "the reception desk"
+            "the reception desk",
+            "reception area",
+            "front desk"
           ]
         ],
         "outcomes": [
@@ -2811,7 +2826,7 @@
       "id": "held-follow-resume-canceled",
       "category": "follow_up",
       "group": "synthetic-language-v2-held-out",
-      "scenario": "Last mission was canceled during step 2 of 3. No configured places.",
+      "scenario": "Last mission was canceled during step 2 of 3. No configured places. Continuing it is never planned from history: the planner asks the user to confirm the remaining destinations.",
       "instruction": "Carry on with the rest.",
       "context": [
         {
@@ -2871,13 +2886,11 @@
       ],
       "expected": {
         "decisions": [
-          "clarify",
-          "reject"
+          "clarify"
         ],
         "destinations": [],
         "outcomes": [
-          "clarify",
-          "reject"
+          "clarify"
         ],
         "target_ids": [],
         "visual_required": false
@@ -2981,7 +2994,15 @@
           [
             "spot where the robot usually charges",
             "the spot where the robot usually charges",
-            "where the robot usually charges"
+            "where the robot usually charges",
+            "spot where the robot charges",
+            "where the robot charges",
+            "place where the robot usually charges",
+            "place where the robot charges",
+            "spot where robot usually charges",
+            "usual charging spot",
+            "robot's usual charging spot",
+            "charging spot"
           ]
         ],
         "outcomes": [
@@ -3032,7 +3053,7 @@
       "id": "held-place-purpose-car",
       "category": "configured_place",
       "group": "synthetic-language-v2-held-out",
-      "scenario": "Synthetic home; the parked car is observed in memory (car-a).",
+      "scenario": "Synthetic home; the parked car is observed in memory (car-a). The target is the car itself, so 'the car' is an accepted reading; the configured garage is not.",
       "instruction": "Take me to where we keep the car.",
       "context": [],
       "configured_places": [
@@ -3048,7 +3069,15 @@
             "place where we keep the car",
             "the place where we keep the car",
             "spot where we keep the car",
-            "the spot where we keep the car"
+            "the spot where we keep the car",
+            "where the car is kept",
+            "place where the car is kept",
+            "spot where the car is kept",
+            "where the car is parked",
+            "place where the car is parked",
+            "spot where the car is parked",
+            "car",
+            "the car"
           ]
         ],
         "outcomes": [
