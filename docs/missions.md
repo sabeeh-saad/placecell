@@ -179,8 +179,13 @@ Planning and review receive up to twenty recent history events within a 16,000-c
 serialized context budget, with timestamps and
 actual outcomes. They can use them to interpret follow-ups such as "take me there again";
 the destination must still be retrieved and verified now. Missing or ambiguous references
-should prompt clarification. Persistent history now has row, content and age limits:
-1,000 events, 2 MiB and 30 days by default, across all scopes sharing that database.
+should prompt clarification. An explicit request to repeat a completed request ("do that
+again") is such a follow-up. A request to continue or resume an unfinished or canceled
+mission ("carry on with the rest", "continue where you stopped") is not: neither agent plans
+its remaining visits from history, even on request. The planner asks the user to confirm the
+remaining destinations (`clarify`), and the reviewer clarifies such a plan. Persistent
+history now has row, content and age limits: 1,000 events, 2 MiB and 30 days by default,
+across all scopes sharing that database.
 Pruning removes whole requests and exposes a history boundary. Deleted or superseded
 scene/object references remove their request and older events from the planning window;
 an older destination is never substituted for an unavailable latest reference. Both
@@ -189,7 +194,8 @@ agents are told to clarify when required context is missing. See the
 Text history remains separate from image/object memory and does not rewrite it.
 
 Restarting loads context only. It never resumes movement or replays unfinished steps.
-A new instruction is always needed. History is untrusted context, not executable work.
+A new instruction is always needed, and "carry on" is not one: the user confirms the remaining
+destinations first. History is untrusted context, not executable work.
 If persistence fails, new motion is blocked and an active mission requests cancellation
 on its next poll; failure to write history never prevents a stop request.
 
