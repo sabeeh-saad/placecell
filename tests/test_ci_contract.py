@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -150,3 +151,88 @@ def test_subprocess_failure_retains_install_output(tmp_path):
             log=log,
         )
     assert "installation failure" in log.read_text()
+
+
+def offline_check(tmp_path, report, *, github, code=1):
+    """Run simulation/sim check-cancel against a stub docker that writes report and exits with code."""
+    sim = tmp_path / "simulation/sim"
+    sim.parent.mkdir(exist_ok=True)
+    for name in ("sim", "ci_annotation.py"):
+        shutil.copy2(ROOT / "simulation" / name, sim.parent / name)
+    docker = tmp_path / "bin/docker"
+    docker.parent.mkdir(exist_ok=True)
+    (tmp_path / "report.json").write_text(json.dumps(report))
+    write = "" if report is None else f'cp "{tmp_path}/report.json" "${{mount%%:*}}/report.json"\n'
+    docker.write_text(
+        '#!/usr/bin/env bash\nwhile (($#)); do if [[ "$1" == -v ]]; then mount="$2"; fi; shift; done\n'
+        f"{write}echo 'check output'\nexit {code}\n"
+    )
+    docker.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k != "GITHUB_ACTIONS"}
+    env["PATH"] = f"{docker.parent}{os.pathsep}{env.get('PATH', '')}"
+    if github:
+        env["GITHUB_ACTIONS"] = "true"
+    return subprocess.run(  # noqa: S603 - the repository's own launcher with a stub docker
+        [BASH, str(sim), "check-cancel"], env=env, capture_output=True, text=True, timeout=30, check=False
+    )
+
+
+FAILED_CANCEL = {
+    "passed": False,
+    "checks": ["stop while planner blocked; late reply discarded"],
+    "error": (
+        "Traceback (most recent call last):\n"
+        '  File "/opt/placecell-sim/scripts/cancellation_test.py", line 300, in main\n'
+        "    check.run(args.samples)\n"
+        '  File "/opt/placecell-sim/scripts/cancellation_test.py", line 230, in blocked_model\n'
+        '    assert handled_ms <= 500, f"stop took {handled_ms:.1f} ms"\n'
+        "           ^^^^^^^^^^^^^^^^^\n"
+        "AssertionError: stop while reviewer blocked took 612.5 ms to handle (limit 500 ms, 100%)\r\n"
+    ),
+    "trials": [
+        {"id": 1, "mode": "planner", "passed": True},
+        {"id": 2, "mode": "reviewer", "passed": False, "received_s": 1.0, "command_to_cancel_ms": 3.25},
+    ],
+    "capture_error": "writer stalled\rat close",
+    "trace_health": {"dropped_events": 0, "write_errors": 2},
+}
+
+
+@pytest.mark.skipif(BASH is None or shutil.which("python3") is None, reason="needs bash and python3")
+def test_failed_offline_check_reports_an_escaped_github_annotation(tmp_path):
+    result = offline_check(tmp_path, FAILED_CANCEL, github=True)
+    assert result.returncode == 1
+    (line,) = [line for line in result.stdout.splitlines() if line.startswith("::")]
+    assert line.startswith("::error title=check-cancel::exit code 1%0A")
+    message = line.split("::", 2)[2]
+    assert "\r" not in message and "\n" not in message
+    # Every literal % is escaped, so the message decodes back exactly.
+    assert not re.search(r"%(?!25|0A|0D)", message)
+    decoded = message.replace("%0A", "\n").replace("%0D", "\r").replace("%25", "%")
+    assert decoded.splitlines()[1:4] == [
+        "AssertionError: stop while reviewer blocked took 612.5 ms to handle (limit 500 ms, 100%)",
+        "cancellation_test.py:300 in main: check.run(args.samples)",
+        'cancellation_test.py:230 in blocked_model: assert handled_ms <= 500, f"stop took {handled_ms:.1f} ms"',
+    ]
+    assert 'failing trial: {"command_to_cancel_ms": 3.25, "id": 2, "mode": "reviewer"}' in decoded
+    assert 'trace_health: {"write_errors": 2}' in decoded
+    assert "capture: writer stalled%0Dat close%0A" in message
+    assert "checks passed: 1, last: stop while planner blocked" in decoded
+
+
+@pytest.mark.skipif(BASH is None or shutil.which("python3") is None, reason="needs bash and python3")
+def test_offline_check_annotation_is_bounded_and_only_on_github(tmp_path):
+    huge = {**FAILED_CANCEL, "error": "AssertionError: " + "%\n" * 5000}
+    line = offline_check(tmp_path, huge, github=True).stdout.splitlines()[-1]
+    assert line.startswith("::error title=check-cancel::") and len(line.encode()) <= 4100
+    # The cut never splits an escape sequence.
+    assert line.endswith("%25 [truncated]") and not re.search(r"%(?!25|0A|0D)", line)
+    missing = offline_check(tmp_path, None, github=True, code=124)
+    assert missing.returncode == 124
+    assert missing.stdout.splitlines()[-1] == (
+        "::error title=check-cancel::exit code 124%0Ano report.json was written (480 s timeout)"
+    )
+    for code in (0, 1):
+        local = offline_check(tmp_path, FAILED_CANCEL, github=False, code=code)
+        assert local.returncode == code and local.stdout == "check output\n"
+    assert offline_check(tmp_path, FAILED_CANCEL, github=True, code=0).stdout == "check output\n"

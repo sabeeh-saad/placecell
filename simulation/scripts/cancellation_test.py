@@ -231,8 +231,10 @@ class Check:
         wait(model.entered.is_set, "model not entered")
         self.stop(row)
         wait(lambda: "handled_s" in row and not self.commands.busy, "model blocked stop")
-        assert self.events[-1].state == "canceled" and len(self.handles) == before
-        assert (row["handled_s"] - row["received_s"]) * 1000 <= 500
+        state, goals = self.events[-1].state, len(self.handles) - before
+        assert state == "canceled" and goals == 0, f"stop while {which} blocked: last state {state}, {goals} new goals"
+        handled_ms = (row["handled_s"] - row["received_s"]) * 1000
+        assert handled_ms <= 500, f"stop while {which} blocked took {handled_ms:.1f} ms to handle (limit 500 ms)"
         model.release.set()
         drained = threading.Event()
         wait(lambda: self.tasks.submit(drained.set), "command worker queue remained full")
@@ -251,7 +253,8 @@ class Check:
         self.stop(row)
         if mode == "late_accept":
             wait(lambda: self.commands.snapshot().status.state == "uncertain", "paused-time response deadline failed")
-            assert self.commands.busy and "issued_s" not in row
+            busy = self.commands.busy
+            assert busy and "issued_s" not in row, f"late accept: busy {busy}, cancel issued {'issued_s' in row}"
             row["accept_release"].set()
         wait(lambda: "issued_s" in row, "cancel request not issued")
         if mode == "missing_ack":
@@ -263,7 +266,8 @@ class Check:
         assert self.commands.busy, "acknowledgement released ownership before terminal result"
         self.instruction()
         wait(lambda: self.events[-1].state == "busy", "replacement trip was not refused")
-        assert len(self.handles) == before + 1
+        goals = len(self.handles) - before
+        assert goals == 1, f"{mode} trial {row['id']}: {goals} goals reached the server, expected 1"
         if mode == "missing_ack":
             row["ack_release"].set()
             wait(lambda: row.get("ack_accepted", False), "released acknowledgement missing")
@@ -273,15 +277,21 @@ class Check:
         self.handles[row["goal_uuid"]].publish_feedback(NavigateToPose.Feedback(distance_remaining=1.0))
         row["finish_release"].set()
         wait(lambda: not self.commands.busy, "terminal result did not release ownership")
-        assert self.commands.snapshot().status.state == "canceled"
+        state = self.commands.snapshot().status.state
+        assert state == "canceled", f"{mode} trial {row['id']} ended {state}, expected canceled"
         assert len(self.handles) == before + 1, "second mission leg was dispatched"
         if mode == "late_accept":
             row["accept_to_cancel_ms"] = (row["issued_s"] - row["server_accepted_s"]) * 1000
-            assert row["accept_to_cancel_ms"] <= 500
+            assert row["accept_to_cancel_ms"] <= 500, (
+                f"late accept: cancel issued {row['accept_to_cancel_ms']:.1f} ms after acceptance (limit 500 ms)"
+            )
         else:
             row["command_to_cancel_ms"] = (row["issued_s"] - row["received_s"]) * 1000
             row["publish_to_cancel_ms"] = (row["issued_s"] - row["published_s"]) * 1000
-            assert row["command_to_cancel_ms"] <= 500
+            assert row["command_to_cancel_ms"] <= 500, (
+                f"{mode} trial {row['id']}: cancel issued {row['command_to_cancel_ms']:.1f} ms after the stop "
+                f"command (limit 500 ms; {row['publish_to_cancel_ms']:.1f} ms after publishing)"
+            )
         row["cancel_to_ack_ms"] = (row["ack_received_s"] - row["issued_s"]) * 1000
         row["passed"] = True
 
@@ -304,8 +314,10 @@ class Check:
                 # Avoid exiting with a large queue behind the bounded background writer.
                 assert self.traces.flush(timeout=30), "trace capture did not drain between trial batches"
         self.checks.append("loaded cancellation with persistent context/traces and paused simulation clock")
-        assert self.node.get_clock().now().nanoseconds == 0
-        assert not any(e.state in {"succeeded", "step_succeeded"} for e in self.events)
+        now_ns = self.node.get_clock().now().nanoseconds
+        assert now_ns == 0, f"paused simulation clock advanced to {now_ns} ns"
+        succeeded = [e.state for e in self.events if e.state in {"succeeded", "step_succeeded"}]
+        assert not succeeded, f"canceled trials reported {succeeded}"
         # A real two-goal success is a control against an adapter that always cancels.
         row = self.row("ordered_success_control")
         before = len(self.handles)
@@ -313,8 +325,9 @@ class Check:
         wait(lambda: self.commands.snapshot().status.state == "navigating", "control goal not accepted")
         row["finish_release"].set()
         wait(lambda: len(self.handles) == before + 2 and not self.commands.busy, "control chain did not finish")
-        assert self.commands.snapshot().status.state == "succeeded"
-        assert "issued_s" not in row
+        state = self.commands.snapshot().status.state
+        assert state == "succeeded", f"positive control ended {state}, expected succeeded"
+        assert "issued_s" not in row, "positive control issued a cancel request"
         row["passed"] = True
         self.checks.append("positive control: two real action goals complete in order without cancellation")
 

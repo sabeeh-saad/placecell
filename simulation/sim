@@ -55,9 +55,16 @@ case "$command" in
     if [[ "$command" == check-recovery* ]]; then test_output=/out/recovery; fi
     # Hosted CI runners have 4 CPUs, and docker rejects a limit above the host's count.
     cpus=$(( $(nproc) < 8 ? $(nproc) : 8 ))
+    result=0
     docker run --rm --network none --cpus "$cpus" --memory 16g --user "$(id -u):$(id -g)" -e HOME=/tmp \
       -v "$sim_dir/artifacts/$run_name:/out" placecell-sim:jazzy \
-      timeout 480 python3 "/opt/placecell-sim/scripts/$script" --output "$test_output" "$@"
+      timeout 480 python3 "/opt/placecell-sim/scripts/$script" --output "$test_output" "$@" || result=$?
+    # Annotations are public on GitHub, unlike the job log.
+    if [[ "$result" != 0 && "${GITHUB_ACTIONS:-}" == true ]]; then
+      python3 "$sim_dir/ci_annotation.py" "$command" \
+        "$sim_dir/artifacts/$run_name${test_output#/out}/report.json" "$result" || true
+    fi
+    exit "$result"
     ;;
   check-nav|check-pipeline|check-missions|check-live-mission|record-commands)
     run_name="${command}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
