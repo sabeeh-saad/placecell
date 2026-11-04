@@ -264,8 +264,10 @@ class Check:
         else:
             wait(lambda: row.get("ack_accepted", False), "cancel acknowledgement missing")
         assert self.commands.busy, "acknowledgement released ownership before terminal result"
+        # Later status updates can follow the refusal before the next poll, so search all of them.
+        sent_at = len(self.events)
         self.instruction()
-        wait(lambda: self.events[-1].state == "busy", "replacement trip was not refused")
+        wait(lambda: any(e.state == "busy" for e in self.events[sent_at:]), "replacement trip was not refused")
         goals = len(self.handles) - before
         assert goals == 1, f"{mode} trial {row['id']}: {goals} goals reached the server, expected 1"
         if mode == "missing_ack":
