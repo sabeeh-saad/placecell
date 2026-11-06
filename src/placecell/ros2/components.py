@@ -635,18 +635,21 @@ def build_navigation(
             max_age_s=config.navigation.max_memory_age_s,
         ),
     )
+    ownership = NavigationOwnership(
+        config.navigation.ownership_path,
+        NavigationScope(
+            config.camera.robot_id,
+            config.localization.map_id,
+            ros.resolve_topic_name(config.navigation.nav2_action),
+        ),
+    )
+    # Released even if the navigator is never built; the navigator closes it again otherwise.
+    resources.callback(ownership.close)
     navigator = ros.create_navigator(
         config.navigation.nav2_action,
         config.navigation.response_timeout_s,
         config.navigation.timeout_s,
-        ownership=NavigationOwnership(
-            config.navigation.ownership_path,
-            NavigationScope(
-                config.camera.robot_id,
-                config.localization.map_id,
-                ros.resolve_topic_name(config.navigation.nav2_action),
-            ),
-        ),
+        ownership=ownership,
     )
     resources.callback(navigator.close)
     tasks = BoundedTasks(1, 1, log)

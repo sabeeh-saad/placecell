@@ -261,6 +261,23 @@ def test_failed_start_releases_what_it_acquired_in_reverse_order(make_node, ros,
     assert navigation_node(make_node, tmp_path).destroy_node()
 
 
+def test_failed_navigator_creation_releases_nav2_ownership(make_node, ros, monkeypatch, tmp_path):
+    original, failing = Nav2Navigator.__init__, [True]
+
+    def unavailable(self, *args, **kwargs):
+        if failing:
+            raise RuntimeError("action client unavailable")
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Nav2Navigator, "__init__", unavailable)
+    with pytest.raises(RuntimeError, match="action client unavailable") as failure:
+        navigation_node(make_node, tmp_path)
+    failing.clear()
+    # The traceback still references the ownership object; its lock must not depend on garbage collection.
+    assert failure.traceback
+    assert navigation_node(make_node, tmp_path).destroy_node()
+
+
 def test_running_node_holds_the_storage_lease(make_node, tmp_path):
     node = make_node()
     parameters = hermetic_parameters(tmp_path)
