@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import fields
 
+import pytest
+
 from placecell.ros2.config import DEFAULTS, PARAMETER_ORDER, NodeConfig
 
 
@@ -20,6 +22,12 @@ def test_every_parameter_backs_exactly_one_setting():
 def test_defaults_give_the_flat_parameters_in_declaration_order():
     parameters = NodeConfig().parameters()
     assert parameters == DEFAULTS and list(parameters) == list(PARAMETER_ORDER)
+
+
+def test_defaults_cannot_be_changed_in_place():
+    with pytest.raises(TypeError):
+        DEFAULTS["robot_id"] = "other"  # type: ignore[index]
+    assert NodeConfig().camera.robot_id == "robot"
 
 
 def test_values_round_trip_through_the_settings():

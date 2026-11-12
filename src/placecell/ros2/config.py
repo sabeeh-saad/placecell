@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
+from types import MappingProxyType
 from typing import Any
 
-DEFAULTS: Mapping[str, Any] = {
+_DEFAULTS: dict[str, Any] = {
     "robot_id": "robot",
     "camera_id": "front",
     "image_topic": "/camera/color/image_raw",
@@ -175,6 +176,8 @@ DEFAULTS: Mapping[str, Any] = {
     "navigation_lookup_timeout_s": 30.0,
     "navigation_timeout_s": 600.0,
 }
+# Read-only: every node and helper shares these defaults.
+DEFAULTS: Mapping[str, Any] = MappingProxyType(_DEFAULTS)
 
 
 PARAMETER_ORDER = tuple(DEFAULTS)
