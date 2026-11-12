@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import threading
@@ -54,6 +55,8 @@ from placecell.tracing import (
     traced,
 )
 from placecell.verification import ObjectSceneVerifier, SceneVerdict, SceneVerifier, SemanticQueryResolver
+
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -674,6 +677,7 @@ class NavigationCommands:
         self._submit_callback, self._publish_callback = submit, publish
         self._trace_store = trace_store
         self._trace_context: TraceContext | None = None
+        self._logged_phases: set[tuple[str, str]] = set()
         self._timeout, self._clock = request_timeout_s, clock
         self._choices_at = 0.0
         self._lock = threading.RLock()
@@ -799,6 +803,10 @@ class NavigationCommands:
         context = current_trace() or self._trace_context
         if context:
             context.emit("phase.unexpected", from_phase=before, to_phase=after)
+        elif (before, after) not in self._logged_phases:
+            # Without a trace store this is the only record; once per pair so it cannot flood the log.
+            self._logged_phases.add((before, after))
+            _LOG.warning("navigation phase changed %s -> %s, which TRANSITIONS does not list", before, after)
 
     def _reset_leg(self, request_id: str) -> None:
         self._active = request_id

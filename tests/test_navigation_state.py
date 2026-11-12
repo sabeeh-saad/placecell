@@ -76,6 +76,24 @@ def test_unexpected_phase_change_is_traced_not_refused(tmp_path, unexpected_phas
         rig.close()
 
 
+def test_unexpected_phase_change_is_logged_once_without_a_trace(tmp_path, unexpected_phases, caplog):
+    rig = faults._Rig(tmp_path)
+    try:
+        rig.commands._trace_context = None
+        with caplog.at_level("WARNING", logger="placecell.navigation"):
+            for _ in range(2):
+                rig.commands._set_phase(NavState.NAVIGATING)
+                rig.commands._set_phase(NavState.IDLE)
+        assert unexpected_phases == [("idle", "navigating"), ("navigating", "idle")] * 2
+        unexpected_phases.clear()
+        assert [r.getMessage() for r in caplog.records if r.name == "placecell.navigation"] == [
+            "navigation phase changed idle -> navigating, which TRANSITIONS does not list",
+            "navigation phase changed navigating -> idle, which TRANSITIONS does not list",
+        ]
+    finally:
+        rig.close()
+
+
 def test_fault_contract_fails_on_an_unexpected_phase_change(monkeypatch, unexpected_phases):
     def stray(rig, case):
         rig.start()

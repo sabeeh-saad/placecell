@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Log an unexpected navigation phase change once per pair when no trace store records it.
 - Release the Nav2 ownership lock when the navigator cannot be created, so a retry in the same process can start.
 - Report a failed offline simulation check (`check-operator`, `check-cancel`, ...) on GitHub Actions as an error annotation with the failure, its innermost source lines and key measurements from `report.json`, so the reason is readable without signing in; local output is unchanged. `check-cancel` assertions now state the measured value.
 - Recheck only the evidence an object arrival match relied on before accepting it: the target record, the fresh position and the saved objects that could rival it. Writes about other objects and a consistent re-sighting of the target (for example ingestion of the arrival frame itself) no longer turn a verified arrival into `destination_unverified`; deletion, relabelling, newer evidence, new absence evidence (except at the old place a confirmed move found empty), a moved-away target or a new close rival still do. `ObjectArrivalVerdict.checked_generation` and `ObjectJournal.evidence_generation` are replaced by `ObjectArrivalVerdict.evidence` and `ObjectArrivalVerifier.holds()`.
