@@ -17,7 +17,7 @@ from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from placecell.agent import Agent
 from placecell.approach import ApproachPlanner, ApproachPolicy, PlanningEnvironment
@@ -57,6 +57,10 @@ from placecell.store import CollectionInfo, VectorStore
 from placecell.store.limits import StoreLimits
 from placecell.tracing import TraceStore
 from placecell.verification import VisionVerifier
+
+if TYPE_CHECKING:
+    # Imported where used at run time, so the simulation can patch the detector classes.
+    from placecell.providers.object_detection import GeminiObjectDetector
 
 
 def build_embedder(
@@ -251,7 +255,7 @@ class Components:
     object_policy: ObjectPolicy
     object_recall: ObjectRecall | None
     tracker: ObjectTracker | None
-    detector_type: Any  # the object detector class, reused for arrival checks
+    detector_type: type[GeminiObjectDetector] | None  # the object detector class, reused for arrival checks
     corrections: JsonlCorrectionLog
     recall: Recall
     agent: Agent | None
@@ -337,7 +341,7 @@ def build_components(config: NodeConfig, *, clock: Callable[[], float], log: Any
     )
     object_recall: ObjectRecall | None = None
     tracker = None
-    detector_type: Any = None
+    detector_type: type[GeminiObjectDetector] | None = None
     if config.objects.backend not in {"gemini", "chat"}:
         raise ValidationError("object_backend must be gemini or chat")
     if config.objects.enabled:
@@ -568,7 +572,7 @@ def build_navigation(
         else None
     )
     object_arrival = None
-    if parts.tracker is not None:
+    if parts.tracker is not None and parts.detector_type is not None:
         arrival_detector = parts.detector_type(
             config.object_arrival.model or config.objects.model,
             api_key=os.environ.get(config.objects.api_key_env, ""),
