@@ -415,7 +415,7 @@ def test_worker_logs_object_failures_and_capacity_and_completes_the_jobs(setup, 
             done.set()
 
     log = Log()
-    worker = IngestWorker(ingester, None, 2, 4, log)
+    worker = IngestWorker(ingester, 2, 4, log)
     for timestamp in (2000, 3000):
         worker.submit(observation(tmp_path, timestamp, (CENTER, RIGHT), ("red", "blue")))
     worker.start()

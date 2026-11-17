@@ -79,8 +79,7 @@ def test_provider_wait_does_not_block_submission_or_state_reads(
             assert release.wait(5)
             return super().caption(items)
 
-    lock = threading.Lock()
-    worker = IngestWorker(Ingester(hashing, store, BlockingCaptioner("printer")), lock, 1, 1, _Log())
+    worker = IngestWorker(Ingester(hashing, store, BlockingCaptioner("printer")), 1, 1, _Log())
     builder = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path))
     first = builder.from_compressed(100, "jpeg", b"one", Pose(0, 0))
     second = builder.from_compressed(200, "jpeg", b"two", Pose(1, 0))
@@ -94,8 +93,6 @@ def test_provider_wait_does_not_block_submission_or_state_reads(
 
     try:
         assert entered.wait(5)
-        assert lock.acquire(blocking=False)
-        lock.release()
         thread = threading.Thread(target=submit_full)
         thread.start()
         assert submitted.wait(2), "provider call blocked the callback or state read"
@@ -121,7 +118,7 @@ def test_worker_retries_without_double_counting(store: VectorStore, hashing: Has
             super().info(message)
             done.set()
 
-    worker = IngestWorker(Ingester(hashing, store, FailOnce("printer")), None, 1, 4, Log(), retry_delay_s=0)
+    worker = IngestWorker(Ingester(hashing, store, FailOnce("printer")), 1, 4, Log(), retry_delay_s=0)
     obs = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path)).from_compressed(100, "jpeg", b"image", Pose(0, 0))
     worker.submit(obs)
     worker.start()

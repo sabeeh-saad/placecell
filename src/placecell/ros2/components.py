@@ -413,7 +413,6 @@ def build_components(config: NodeConfig, *, clock: Callable[[], float], log: Any
             consolidator = Consolidator(store, embedder, ChatSummarizer(chat))
     worker = IngestWorker(
         ingester,
-        None,
         config.ingest.batch_size,
         config.ingest.max_queue,
         log,

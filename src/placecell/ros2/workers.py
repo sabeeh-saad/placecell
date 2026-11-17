@@ -22,7 +22,6 @@ class IngestWorker:
     def __init__(
         self,
         ingester: Ingester,
-        lock: threading.Lock | None,
         batch_size: int,
         max_queue: int,
         log: Any,

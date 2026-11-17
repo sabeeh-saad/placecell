@@ -149,7 +149,7 @@ def test_ingestion_flood_retains_only_accepted_images_and_recovers_without_dupli
 
     store = StateStore(CollectionInfo("c", hashing.model_name, hashing.dimension), tmp_path / "state.sqlite3")
     caption = Caption("printer")
-    worker = IngestWorker(Ingester(hashing, store, caption), None, 1, 4, _Log())
+    worker = IngestWorker(Ingester(hashing, store, caption), 1, 4, _Log())
     writer = KeyframeWriter(tmp_path / "images")
     builder = ObservationBuilder("r", "c", writer)
     observations = []
@@ -235,7 +235,7 @@ def test_rgb_depth_buffers_reject_oversized_packets_and_count_overwrites():
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
 def test_invalid_ingest_retry_configuration_refused(value, store, hashing):
     with pytest.raises(ValidationError):
-        IngestWorker(Ingester(hashing, store), None, 1, 4, _Log(), retry_delay_s=value)
+        IngestWorker(Ingester(hashing, store), 1, 4, _Log(), retry_delay_s=value)
     with pytest.raises(ValidationError):
         store.jobs.fail([], "invalid", retry_delay_s=value)
 
@@ -255,7 +255,7 @@ def test_last_failed_job_cannot_bypass_provider_cooldown_for_next_job(tmp_path, 
 
     store = StateStore(CollectionInfo("c", hashing.model_name, hashing.dimension), tmp_path / "state.sqlite3")
     builder = ObservationBuilder("r", "c", KeyframeWriter(tmp_path / "images"))
-    worker = IngestWorker(Ingester(hashing, store, Caption()), None, 1, 4, Log(), max_attempts=1)
+    worker = IngestWorker(Ingester(hashing, store, Caption()), 1, 4, Log(), max_attempts=1)
     first = builder.from_compressed(100, "jpeg", b"one", Pose(0, 0))
     assert worker.submit(first)
     assert worker.submit(replace(first, timestamp=200))

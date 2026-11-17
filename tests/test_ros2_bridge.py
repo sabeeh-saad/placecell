@@ -105,7 +105,7 @@ def test_ingest_worker_batches_in_the_background(tmp_path: Path, hashing: Hashin
     store = InMemoryStore(CollectionInfo("c", hashing.model_name, hashing.dimension))
     ingester = Ingester(hashing, store, captioner=FakeCaptioner("a door"))
     log = _Log()
-    worker = IngestWorker(ingester, threading.Lock(), batch_size=4, max_queue=2, log=log)
+    worker = IngestWorker(ingester, batch_size=4, max_queue=2, log=log)
     writer = KeyframeWriter(tmp_path)
     for i in range(3):  # queue holds two, the third is dropped before the worker starts
         evidence = writer.write_jpeg("front", float(i), b"\xff\xd8")
@@ -141,7 +141,7 @@ def test_worker_retains_failed_and_abandoned_jobs(tmp_path: Path, hashing: Hashi
 
     store = InMemoryStore(CollectionInfo("worker", hashing.model_name, hashing.dimension))
     log = SignalLog()
-    worker = IngestWorker(Ingester(hashing, store, FailedCaptioner()), threading.Lock(), 1, 4, log, max_attempts=1)
+    worker = IngestWorker(Ingester(hashing, store, FailedCaptioner()), 1, 4, log, max_attempts=1)
     builder = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path))
     failed = builder.from_compressed(100, "jpeg", b"image", Pose(0, 0))
     worker.submit(failed)
@@ -156,7 +156,7 @@ def test_worker_retains_failed_and_abandoned_jobs(tmp_path: Path, hashing: Hashi
 
     # A worker stopped before processing a pending batch still owns its queued images.
     abandoned = builder.from_compressed(200, "jpeg", b"image", Pose(2, 0))
-    worker = IngestWorker(Ingester(hashing, store, FakeCaptioner()), threading.Lock(), 1, 4, log)
+    worker = IngestWorker(Ingester(hashing, store, FakeCaptioner()), 1, 4, log)
     worker.submit(abandoned)
     worker._stop.set()
     worker.start()
@@ -177,7 +177,7 @@ def test_dropped_duplicate_does_not_delete_a_queued_frame(tmp_path: Path, hashin
             return super().caption(items)
 
     store = InMemoryStore(CollectionInfo("queued", hashing.model_name, hashing.dimension))
-    worker = IngestWorker(Ingester(hashing, store, ReadingCaptioner("printer")), threading.Lock(), 1, 1, _Log())
+    worker = IngestWorker(Ingester(hashing, store, ReadingCaptioner("printer")), 1, 1, _Log())
     observation = ObservationBuilder("r1", "front", KeyframeWriter(tmp_path)).from_compressed(
         100, "jpeg", b"image", Pose(0, 0)
     )
