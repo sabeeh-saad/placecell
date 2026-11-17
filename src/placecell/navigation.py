@@ -1030,7 +1030,7 @@ class NavigationCommands:
         with self._lock:
             if request_id != self._active:
                 return
-            if self._clock() - self._trip.requested_at > self._timeout:
+            if self._clock() - self._trip.requested_at >= self._timeout:
                 self._complete(
                     NavigationUpdate(
                         request_id,
@@ -1057,7 +1057,7 @@ class NavigationCommands:
                         with self._lock:
                             return (
                                 request_id != self._active
-                                or self._clock() - self._trip.requested_at > self._timeout
+                                or self._clock() - self._trip.requested_at >= self._timeout
                                 or not self._provenance_ready()
                             )
 
@@ -1083,7 +1083,7 @@ class NavigationCommands:
             if request_id != self._active:
                 trace_event("lookup.discarded", reason="request no longer active")
                 return
-            if self._clock() - self._trip.requested_at > self._timeout:
+            if self._clock() - self._trip.requested_at >= self._timeout:
                 result = Resolution(
                     "not_found", "Destination lookup timed out. Please repeat the command.", failure_stage="execution"
                 )

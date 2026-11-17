@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Treat a destination lookup as expired once its timeout is reached, as choices and planning already did.
 - Log an unexpected navigation phase change once per pair when no trace store records it.
 - Release the Nav2 ownership lock when the navigator cannot be created, so a retry in the same process can start.
 - Report a failed offline simulation check (`check-operator`, `check-cancel`, ...) on GitHub Actions as an error annotation with the failure, its innermost source lines and key measurements from `report.json`, so the reason is readable without signing in; local output is unchanged. `check-cancel` assertions now state the measured value.

@@ -370,6 +370,17 @@ def test_configuration_and_status_payload(store, hashing, tmp_path):
     assert payload["destination"]["yaw"] == 0.5 and payload["distance_remaining"] == 1.5
 
 
+def test_a_request_expires_exactly_at_the_lookup_timeout(store, hashing, monkeypatch):
+    store.upsert([embedded(hashing, "printer", t=1000)])
+    commands, navigator, tasks, events = make_commands(store, hashing)
+    clock = [0.0]
+    monkeypatch.setattr(commands, "_clock", lambda: clock[0])
+    commands.handle("go to printer")
+    clock[0] = commands._timeout
+    tasks.pop()()
+    assert not commands.busy and not navigator.sent and "expired" in events[-1].message
+
+
 def test_delayed_requests_and_choices_expire(store, hashing, monkeypatch):
     store.upsert([embedded(hashing, "printer", t=t, x=x) for t, x in ((1000, 1), (1001, 8))])
     commands, navigator, tasks, events = make_commands(store, hashing)
