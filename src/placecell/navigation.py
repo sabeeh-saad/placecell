@@ -908,9 +908,6 @@ class NavigationCommands:
             self.cancel()
             self._record_instruction(request_id, text)
             return
-        if not isinstance(text, str) or not text.strip() or len(text) > 2000:
-            self._publish(NavigationUpdate(request_id, "invalid", "Instructions must contain 1..2000 characters."))
-            return
         with self._lock:
             reason = self._refresh_startup()
             if reason:
